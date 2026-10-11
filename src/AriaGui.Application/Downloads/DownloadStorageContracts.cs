@@ -42,4 +42,5 @@ public interface IDownloadDestination
 }
 
 public sealed class DownloadStorageException(string message) : Exception(message);
-public sealed class DownloadRequestException(string message) : Exception(message);
+public sealed class DownloadRequestException(string message, AriaGui.Browser.Contracts.RejectionReason? reason = null) : Exception(message)
+{ public AriaGui.Browser.Contracts.RejectionReason? Reason { get; } = reason; }

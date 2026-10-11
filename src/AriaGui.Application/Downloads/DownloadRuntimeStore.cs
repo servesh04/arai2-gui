@@ -6,7 +6,8 @@ public enum EngineConnectionState { Starting, Connected, Disconnected }
 
 public sealed record DownloadEntry(DownloadJob Job, TransferAttempt Attempt,
     DownloadFile File, DownloadSnapshot Progress, PendingOperation? PendingOperation = null, string? ErrorMessage = null,
-    int? QueuePosition = null, bool DesiredPaused = false, bool DesiredRemoved = false, DateTimeOffset? ObservedAt = null);
+    int? QueuePosition = null, bool DesiredPaused = false, bool DesiredRemoved = false, DateTimeOffset? ObservedAt = null,
+    string? ExactSourceUrl = null);
 public sealed record CompletionNotice(Guid AttemptId, string FileName);
 
 public sealed record DownloadRuntimeSnapshot(long Revision, IReadOnlyList<DownloadEntry> Downloads,

@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../AriaGui.Core/AriaGui.Core.csproj" />
+    <ProjectReference Include="../AriaGui.Browser.Contracts/AriaGui.Browser.Contracts.csproj" />
   </ItemGroup>
 </Project>

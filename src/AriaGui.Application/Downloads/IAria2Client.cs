@@ -3,7 +3,7 @@ using AriaGui.Core.Downloads;
 namespace AriaGui.Application.Downloads;
 
 public sealed record EngineDownloadRequest(string EngineId, Uri Source, bool SimulateUnknownSize = false,
-    string Directory = "", string FileName = "", bool ContinueExisting = false, bool StartPaused = false);
+    string Directory = "", string FileName = "", bool ContinueExisting = false, bool StartPaused = false, string? ExactSourceUrl = null);
 public sealed record EngineDownload(string EngineId, DownloadSnapshot Progress, string? ErrorMessage = null,
     int? QueuePosition = null);
 public sealed record EngineObservation(string Generation, IReadOnlyList<EngineDownload> Downloads, int MaxConcurrentDownloads,

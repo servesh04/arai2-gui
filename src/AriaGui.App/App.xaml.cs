@@ -54,6 +54,10 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddSingleton<IDownloadFolderPicker>(folderPicker);
         registrations.AddSingleton<DownloadRuntimeStore>();
         registrations.AddSingleton<DownloadCoordinator>();
+        registrations.AddSingleton(services => new DownloadPreferencesService(services.GetRequiredService<IUserPreferencesRepository>(), DownloadPreferencesService.DefaultFallbackFolder));
+        registrations.AddSingleton(services => new ExternalDownloadIntakeService(services.GetRequiredService<DownloadCoordinator>(),
+            services.GetRequiredService<DownloadPreferencesService>(), TimeProvider.System, _lifetime.Token,
+            new EngineDispatchReadiness(services.GetRequiredService<EngineStateStore>())));
         registrations.AddSingleton<DownloadsViewModel>();
         registrations.AddSingleton<DownloadSummaryViewModel>();
         registrations.AddSingleton(new Aria2ProcessOptions(AppDataPaths.EngineExecutable, runtimeDirectory));
@@ -89,17 +93,17 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         }
         catch (Exception) { _window.SetDesktopStatus("Tray unavailable. Close will keep this window visible; use Exit to stop."); }
         _window.Activate();
-        _updates = RunDownloadsAsync(_services.GetRequiredService<DownloadCoordinator>(), _lifetime.Token);
+        _updates = RunDownloadsAsync(_services.GetRequiredService<DownloadCoordinator>(), _services.GetRequiredService<ExternalDownloadIntakeService>(), _lifetime.Token);
         var lifecycle = _services.GetRequiredService<EngineLifecycleService>();
         if (storageFailure is not null) lifecycle.ReportStartupFailure(storageFailure);
         else _engineLoop = RunEngineAsync(lifecycle, _lifetime.Token);
     }
 
-    private static async Task RunDownloadsAsync(DownloadCoordinator coordinator, CancellationToken cancellationToken)
+    private static async Task RunDownloadsAsync(DownloadCoordinator coordinator, ExternalDownloadIntakeService intake, CancellationToken cancellationToken)
     {
         try
         {
-            await coordinator.InitializeAsync(cancellationToken);
+            await intake.InitializeAsync(cancellationToken);
             await coordinator.RunAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
@@ -175,6 +179,12 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             if (_updates is not null) await _updates;
             if (_engineLoop is not null) await _engineLoop;
             if (_preferencesLoad is not null) await _preferencesLoad;
+            if (_services is not null)
+            {
+                using var drain = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                try { await _services.GetRequiredService<ExternalDownloadIntakeService>().DrainAsync(drain.Token); }
+                catch (OperationCanceledException) { /* Durable claims are reconciled on restart; never replay. */ }
+            }
             // A retry or manual health check may still be unwinding its cancellation.
             foreach (var operation in new[] { engineViewModel?.StartCommand.ExecutionTask, engineViewModel?.CheckCommand.ExecutionTask,
                 _services?.GetRequiredService<PreferencesViewModel>().SaveCommand.ExecutionTask }.OfType<Task>().Concat(downloadViewModel?.PendingTasks ?? []))

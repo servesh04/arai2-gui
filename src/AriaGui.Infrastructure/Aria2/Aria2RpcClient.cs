@@ -40,7 +40,7 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
             ["content-disposition"] = "false", ["follow-torrent"] = "false", ["follow-metalink"] = "false",
             ["check-certificate"] = "true", ["split"] = "1", ["max-connection-per-server"] = "1"
         };
-        var gid = await CallAsync<string>("aria2.addUri", token, [new[] { request.Source.AbsoluteUri }, options]).ConfigureAwait(false);
+        var gid = await CallAsync<string>("aria2.addUri", token, [new[] { request.ExactSourceUrl ?? request.Source.AbsoluteUri }, options]).ConfigureAwait(false);
         if (gid != request.EngineId) throw InvalidResponse();
         return await FindAsync(gid, token).ConfigureAwait(false) ?? throw InvalidResponse();
     }

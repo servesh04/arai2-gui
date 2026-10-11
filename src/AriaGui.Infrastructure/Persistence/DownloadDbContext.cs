@@ -11,9 +11,13 @@ public sealed class DownloadDbContext(DbContextOptions<DownloadDbContext> option
     public DbSet<FileRow> Files => Set<FileRow>();
     public DbSet<OperationRow> Operations => Set<OperationRow>();
     public DbSet<QueuePolicyRow> QueuePolicies => Set<QueuePolicyRow>();
+    public DbSet<ExternalRequestRow> ExternalRequests => Set<ExternalRequestRow>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        model.Entity<ExternalRequestRow>().HasKey(row => new { row.CallerKey, row.InstallationId, row.RequestId });
+        model.Entity<ExternalRequestRow>().HasIndex(row => row.JobId).IsUnique();
+        model.Entity<ExternalRequestRow>().HasOne<JobRow>().WithMany().HasForeignKey(row => row.JobId).OnDelete(DeleteBehavior.Restrict);
         model.Entity<JobRow>().HasIndex(row => row.DestinationKey).IsUnique();
         model.Entity<AttemptRow>().HasIndex(row => row.EngineId).IsUnique();
         model.Entity<AttemptRow>().HasOne<JobRow>().WithMany().HasForeignKey(row => row.JobId);
@@ -76,6 +80,21 @@ public sealed class QueuePolicyRow
     public int? RequestedLimit { get; set; }
     public Guid? OperationId { get; set; }
     public OperationStatus? RequestStatus { get; set; }
+}
+
+public sealed class ExternalRequestRow
+{
+    public string CallerKey { get; set; } = "";
+    public Guid InstallationId { get; set; }
+    public Guid RequestId { get; set; }
+    public string PayloadDigest { get; set; } = "";
+    public Guid? JobId { get; set; }
+    public AriaGui.Browser.Contracts.ResultCode Code { get; set; }
+    public AriaGui.Browser.Contracts.RejectionReason? Reason { get; set; }
+    public AriaGui.Application.Downloads.ExternalDispatchPhase DispatchPhase { get; set; }
+    public long CreatedAtUtcTicks { get; set; }
+    public long UpdatedAtUtcTicks { get; set; }
+    public long? TombstonedAtUtcTicks { get; set; }
 }
 
 // EF tools can generate migrations without launching WinUI or touching the user's database.

@@ -34,7 +34,7 @@ public sealed partial class FileDownloadDestination : IDownloadDestination
                 return target with { ContinueExisting = retry && File.Exists(target.FullPath + ".aria2") };
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
-            { throw new DownloadRequestException("The destination folder is not writable. Choose another folder or check its permissions."); }
+            { throw new DownloadRequestException("The destination folder is not writable. Choose another folder or check its permissions.", AriaGui.Browser.Contracts.RejectionReason.DestinationUnavailable); }
         }, cancellationToken);
 
     public static string SuggestedName(Uri source)

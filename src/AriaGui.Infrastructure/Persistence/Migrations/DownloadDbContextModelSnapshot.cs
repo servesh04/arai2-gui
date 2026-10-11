@@ -69,6 +69,50 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.ToTable("Attempts");
                 });
 
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.ExternalRequestRow", b =>
+                {
+                    b.Property<string>("CallerKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("InstallationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Code")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DispatchPhase")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadDigest")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("Reason")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("TombstonedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UpdatedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("CallerKey", "InstallationId", "RequestId");
+
+                    b.HasIndex("JobId")
+                        .IsUnique();
+
+                    b.ToTable("ExternalRequests");
+                });
+
             modelBuilder.Entity("AriaGui.Infrastructure.Persistence.FileRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -197,6 +241,14 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.HasOne("AriaGui.Infrastructure.Persistence.AttemptRow", null)
                         .WithMany()
                         .HasForeignKey("ParentAttemptId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.ExternalRequestRow", b =>
+                {
+                    b.HasOne("AriaGui.Infrastructure.Persistence.JobRow", null)
+                        .WithMany()
+                        .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

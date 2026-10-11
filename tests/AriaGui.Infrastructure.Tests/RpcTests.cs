@@ -9,6 +9,22 @@ namespace AriaGui.Infrastructure.Tests;
 public sealed class RpcTests
 {
     [Fact]
+    public async Task Exact_signed_source_is_serialized_without_Uri_normalization()
+    {
+        const string source = "https://example.invalid/file?sig=%41%7e%2f%2Fb&b=2&a=1";
+        const string gid = "aaaaaaaaaaaaaaaa";
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token)); var root = body.RootElement;
+            var id = root.GetProperty("id").GetString();
+            if (root.GetProperty("method").GetString() == "aria2.addUri")
+            { Assert.Equal(source, root.GetProperty("params")[1][0].GetString()); return Json(new { jsonrpc="2.0", id, result=gid }); }
+            return Json(new { jsonrpc="2.0", id, result=new { gid, status="waiting", totalLength="0", completedLength="0", downloadSpeed="0", errorCode="0" } });
+        }));
+        await new Aria2RpcClient(http, new("http://127.0.0.1:16800/jsonrpc"), "synthetic", TimeSpan.FromSeconds(1))
+            .AddAsync(new(gid, new(source), ExactSourceUrl:source), default);
+    }
+    [Fact]
     public async Task Typed_health_requests_use_unique_ids_and_authentication()
     {
         var ids = new List<string>();

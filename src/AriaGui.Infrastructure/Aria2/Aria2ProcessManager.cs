@@ -541,7 +541,7 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
             var target = await new AriaGui.Infrastructure.Downloads.FileDownloadDestination().ValidateRetryAsync(entry.Job.Source,
                 Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, token).ConfigureAwait(false);
             var result = await rpc.AddAsync(new(entry.Attempt.EngineId, entry.Job.Source, Directory: target.Directory, FileName: target.FileName,
-                ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused), token).ConfigureAwait(false);
+                ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused, ExactSourceUrl: entry.ExactSourceUrl), token).ConfigureAwait(false);
             _knownIds.Add(entry.Attempt.EngineId);
             await rpc.SaveSessionAsync(token).ConfigureAwait(false);
             return result;

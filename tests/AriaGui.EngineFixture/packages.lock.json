@@ -186,6 +186,13 @@
       "ariagui.application": {
         "type": "Project",
         "dependencies": {
+          "AriaGui.Browser.Contracts": "[1.0.0, )",
+          "AriaGui.Core": "[1.0.0, )"
+        }
+      },
+      "ariagui.browser.contracts": {
+        "type": "Project",
+        "dependencies": {
           "AriaGui.Core": "[1.0.0, )"
         }
       },

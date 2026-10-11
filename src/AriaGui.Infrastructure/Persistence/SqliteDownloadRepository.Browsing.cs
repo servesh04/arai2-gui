@@ -65,6 +65,7 @@ public sealed partial class SqliteDownloadRepository
         if (attempts.Length == 0) return [];
         var jobIds = attempts.Select(row => row.JobId).ToArray(); var ids = attempts.Select(row => row.Id).ToArray();
         var jobs = db.Jobs.AsNoTracking().Where(row => jobIds.Contains(row.Id)).ToDictionary(row => row.Id);
+        var externalJobs = db.ExternalRequests.Where(row => row.JobId != null && jobIds.Contains(row.JobId.Value)).Select(row => row.JobId!.Value).ToHashSet();
         var files = db.Files.AsNoTracking().Where(row => ids.Contains(row.AttemptId)).ToDictionary(row => row.AttemptId);
         var operations = db.Operations.AsNoTracking().Where(row => ids.Contains(row.AttemptId)
             && (row.Status == OperationStatus.Pending || row.Status == OperationStatus.Uncertain)).ToArray()
@@ -76,7 +77,8 @@ public sealed partial class SqliteDownloadRepository
                 new(attempt.Id, job.Id, attempt.EngineId, At(attempt.StartedAtUtcTicks), attempt.ParentAttemptId),
                 new(file.Id, job.Id, attempt.Id, file.FileName, file.TotalBytes), new(attempt.Status, attempt.DownloadedBytes, attempt.TotalBytes, 0),
                 op is null ? null : new(op.Id, job.Id, op.Action, op.Status, At(op.RequestedAtUtcTicks), op.QueuePosition),
-                attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks));
+                attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),
+                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null);
         }).ToArray();
     }
 }

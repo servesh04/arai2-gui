@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AriaGui.Infrastructure.Persistence;
 
-public sealed partial class SqliteDownloadRepository(string databasePath) : IDownloadRepository
+public sealed partial class SqliteDownloadRepository(string databasePath, ExternalIntakePersistenceHooks? externalHooks = null) : IDownloadRepository, IExternalRequestRepository
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DownloadDbContext CreateContext() => new(new DbContextOptionsBuilder<DownloadDbContext>()
@@ -26,6 +26,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath) : IDow
         var attempts = db.Attempts.AsNoTracking().ToArray();
         var files = db.Files.AsNoTracking().ToArray();
         var operations = db.Operations.AsNoTracking().ToArray();
+        var externalJobs = db.ExternalRequests.Where(row => row.JobId != null).Select(row => row.JobId!.Value).ToHashSet();
         return jobs.Select(job =>
         {
             var attempt = attempts.Where(row => row.JobId == job.Id).MaxBy(row => row.StartedAtUtcTicks)
@@ -38,14 +39,23 @@ public sealed partial class SqliteDownloadRepository(string databasePath) : IDow
                 new(file.Id, job.Id, attempt.Id, file.FileName, file.TotalBytes),
                 new(attempt.Status, attempt.DownloadedBytes, attempt.TotalBytes, 0),
                 operation is null ? null : new(operation.Id, job.Id, operation.Action, operation.Status, At(operation.RequestedAtUtcTicks), operation.QueuePosition),
-                attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks));
+                attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),
+                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null);
         }).ToArray();
     }, token);
 
     public Task InsertIntentAsync(DownloadEntry entry, CancellationToken token) => OnDatabaseThreadAsync(db =>
     {
+        AddIntentRows(db, entry);
+        // SaveChanges wraps all four inserts in one SQLite transaction.
+        db.SaveChanges();
+        return true;
+    }, token);
+
+    private static void AddIntentRows(DownloadDbContext db, DownloadEntry entry)
+    {
         var operation = entry.PendingOperation ?? throw new InvalidOperationException("An Add intent is required.");
-        db.Jobs.Add(new() { Id = entry.Job.Id, DisplayName = entry.Job.DisplayName, Source = entry.Job.Source.AbsoluteUri,
+        db.Jobs.Add(new() { Id = entry.Job.Id, DisplayName = entry.Job.DisplayName, Source = entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri,
             Destination = entry.Job.Destination, DestinationKey = entry.Job.Destination.ToUpperInvariant(), CreatedAtUtcTicks = entry.Job.CreatedAt.UtcTicks });
         db.Attempts.Add(new() { Id = entry.Attempt.Id, JobId = entry.Job.Id, EngineId = entry.Attempt.EngineId,
             StartedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, ParentAttemptId = entry.Attempt.ParentAttemptId,
@@ -53,10 +63,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath) : IDow
         db.Files.Add(new() { Id = entry.File.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, FileName = entry.File.FileName });
         db.Operations.Add(new() { Id = operation.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, Action = operation.Action,
             Status = operation.Status, RequestedAtUtcTicks = operation.RequestedAt.UtcTicks });
-        // SaveChanges wraps all four inserts in one SQLite transaction.
-        db.SaveChanges();
-        return true;
-    }, token);
+    }
 
     public async Task SaveAsync(IReadOnlyList<DownloadEntry> entries, CancellationToken token) =>
         _ = await SaveAndReportCompletionsAsync(entries, token).ConfigureAwait(false);

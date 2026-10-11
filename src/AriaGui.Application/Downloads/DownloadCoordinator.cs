@@ -5,7 +5,7 @@ using AriaGui.Core.Downloads;
 
 namespace AriaGui.Application.Downloads;
 
-public sealed class DownloadCoordinator(IAria2Client engine, DownloadRuntimeStore store, TimeProvider clock,
+public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRuntimeStore store, TimeProvider clock,
     IDownloadRepository repository, IDownloadDestination destination)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -43,14 +43,8 @@ public sealed class DownloadCoordinator(IAria2Client engine, DownloadRuntimeStor
         if (!string.IsNullOrEmpty(source.UserInfo)) throw new ArgumentException("Use a URL without embedded credentials.");
         await InitializeAsync(cancellationToken).ConfigureAwait(false);
         var target = await destination.ValidateAsync(source, directory, fileName, cancellationToken).ConfigureAwait(false);
-        var now = clock.GetUtcNow();
-        var jobId = Guid.NewGuid();
-        var attemptId = Guid.NewGuid();
-        var gid = NewGid();
-        var operation = new PendingOperation(Guid.NewGuid(), jobId, DownloadAction.Add, OperationStatus.Pending, now);
-        var entry = new DownloadEntry(new(jobId, target.FileName, source, target.FullPath, now),
-            new(attemptId, jobId, gid, now), new(Guid.NewGuid(), jobId, attemptId, target.FileName, null),
-            new(DownloadStatus.Queued, 0, null, 0), operation);
+        var entry = BuildIntent(source, target, clock.GetUtcNow());
+        var jobId = entry.Job.Id;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -58,15 +52,28 @@ public sealed class DownloadCoordinator(IAria2Client engine, DownloadRuntimeStor
                 throw new DownloadRequestException("History already contains this destination. Choose a different filename or folder.");
             // Durable intent commits BEFORE any mutation is sent to aria2.
             await repository.InsertIntentAsync(entry, cancellationToken).ConfigureAwait(false);
-            _inFlight.Add(jobId);
-            _epoch++;
+            _inFlight.Add(jobId); _epoch++;
             store.Publish(store.Current.Downloads.Append(entry), store.Current.Connection);
         }
         finally { _gate.Release(); }
+        await DispatchAddAsync(entry, unknownSize, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static DownloadEntry BuildIntent(Uri source, DownloadTarget target, DateTimeOffset now)
+    {
+        var jobId = Guid.NewGuid(); var attemptId = Guid.NewGuid();
+        return new(new(jobId, target.FileName, source, target.FullPath, now), new(attemptId, jobId, NewGid(), now),
+            new(Guid.NewGuid(), jobId, attemptId, target.FileName, null), new(DownloadStatus.Queued, 0, null, 0),
+            new(Guid.NewGuid(), jobId, DownloadAction.Add, OperationStatus.Pending, now));
+    }
+    private async Task DispatchAddAsync(DownloadEntry entry, bool unknownSize, CancellationToken cancellationToken)
+    {
+        var operation = entry.PendingOperation!; var jobId = entry.Job.Id;
         try
         {
             // Network waits do not hold the state-update gate. Polling can continue.
-            var result = await engine.AddAsync(new(gid, source, unknownSize, target.Directory, target.FileName), cancellationToken).ConfigureAwait(false);
+            var result = await engine.AddAsync(new(entry.Attempt.EngineId, entry.Job.Source, unknownSize,
+                Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, ExactSourceUrl: entry.ExactSourceUrl), cancellationToken).ConfigureAwait(false);
             await CommitAsync(ApplyObservation(entry, result), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -141,10 +148,13 @@ public sealed class DownloadCoordinator(IAria2Client engine, DownloadRuntimeStor
                 await repository.SaveQueuePolicyAsync(_policy, cancellationToken).ConfigureAwait(false);
             }
             var save = new List<DownloadEntry>();
+            var neverSent = repository is IExternalRequestRepository external
+                ? (await external.LoadNeverSentExternalJobsAsync(cancellationToken).ConfigureAwait(false)).ToHashSet() : [];
             var now = clock.GetUtcNow();
             var updated = store.Current.Downloads.Select(entry =>
             {
-                if (!requested.Contains(entry.Attempt.EngineId) || _inFlight.Contains(entry.Job.Id)) return entry;
+                if (!requested.Contains(entry.Attempt.EngineId) || _inFlight.Contains(entry.Job.Id)
+                    || neverSent.Contains(entry.Job.Id) && IsDispatchableExternalIntent(entry)) return entry;
                 DownloadEntry next;
                 if (observed.TryGetValue(entry.Attempt.EngineId, out var item))
                 {
@@ -353,7 +363,7 @@ public sealed class DownloadCoordinator(IAria2Client engine, DownloadRuntimeStor
             try
             {
                 var result = await engine.AddAsync(new(attempt.EngineId, previous.Job.Source, Directory: target.Directory,
-                    FileName: target.FileName, ContinueExisting: target.ContinueExisting), token).ConfigureAwait(false);
+                    FileName: target.FileName, ContinueExisting: target.ContinueExisting, ExactSourceUrl: retry.ExactSourceUrl), token).ConfigureAwait(false);
                 await CommitAsync(ApplyObservation(retry, result), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)

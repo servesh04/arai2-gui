@@ -38,7 +38,7 @@ internal static class SessionRecoveryPlanner
                 {
                     if (!known.TryGetValue(record.Gid, out var entry)) { unknown++; continue; }
                     if (entry.Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed or DownloadStatus.Removed || entry.DesiredRemoved) continue;
-                    if (record.Source != entry.Job.Source.AbsoluteUri || !CanRestore(entry)) { blocked++; continue; }
+                    if (record.Source != (entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri) || !CanRestore(entry)) { blocked++; continue; }
                     restore.Add(entry);
                 }
                 // POS_SET intent can be reapplied safely only after the old process is gone.
@@ -106,7 +106,7 @@ internal static class SessionRecoveryPlanner
     }
     private static string Format(DownloadEntry entry) => string.Join("\n", new[]
     {
-        entry.Job.Source.AbsoluteUri, $" gid={entry.Attempt.EngineId}", $" dir={Path.GetDirectoryName(entry.Job.Destination)}",
+        entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri, $" gid={entry.Attempt.EngineId}", $" dir={Path.GetDirectoryName(entry.Job.Destination)}",
         $" out={entry.File.FileName}", " pause=true", " continue=false", " always-resume=true", " allow-overwrite=false",
         " auto-file-renaming=false", " content-disposition=false", " follow-torrent=false", " follow-metalink=false",
         " check-certificate=true", " split=1", " max-connection-per-server=1", ""
