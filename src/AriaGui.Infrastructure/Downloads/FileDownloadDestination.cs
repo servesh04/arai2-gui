@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using AriaGui.Core.Downloads;
 using AriaGui.Application.Downloads;
 
 namespace AriaGui.Infrastructure.Downloads;
@@ -42,9 +42,5 @@ public sealed partial class FileDownloadDestination : IDownloadDestination
         var name = Uri.UnescapeDataString(source.Segments.LastOrDefault() ?? "").Trim('/');
         return string.IsNullOrWhiteSpace(name) ? "download.bin" : name;
     }
-    public static bool IsValidName(string name) => name.Length is > 0 and <= 240 && name is not "." and not ".."
-        && !name.EndsWith('.') && !name.EndsWith(' ') && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
-        && !name.Contains('/') && !name.Contains('\\') && !ReservedName().IsMatch(name);
-    [GeneratedRegex(@"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)", RegexOptions.IgnoreCase)]
-    private static partial Regex ReservedName();
+    public static bool IsValidName(string name) => WindowsFileNamePolicy.IsValid(name);
 }

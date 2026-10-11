@@ -8,11 +8,13 @@
     </Project>
     <Project Path="src/AriaGui.Application/AriaGui.Application.csproj" />
     <Project Path="src/AriaGui.Core/AriaGui.Core.csproj" />
+    <Project Path="src/AriaGui.Browser.Contracts/AriaGui.Browser.Contracts.csproj" />
     <Project Path="src/AriaGui.Infrastructure/AriaGui.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AriaGui.Application.Tests/AriaGui.Application.Tests.csproj" />
     <Project Path="tests/AriaGui.Core.Tests/AriaGui.Core.Tests.csproj" />
+    <Project Path="tests/AriaGui.Browser.Contracts.Tests/AriaGui.Browser.Contracts.Tests.csproj" />
     <Project Path="tests/AriaGui.EngineFixture/AriaGui.EngineFixture.csproj" />
     <Project Path="tests/AriaGui.Infrastructure.Tests/AriaGui.Infrastructure.Tests.csproj" />
   </Folder>
