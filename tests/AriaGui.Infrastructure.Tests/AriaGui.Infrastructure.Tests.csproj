@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
+    <ProjectReference Include="../../src/AriaGui.Infrastructure/AriaGui.Infrastructure.csproj" />
+    <ProjectReference Include="../AriaGui.EngineFixture/AriaGui.EngineFixture.csproj" ReferenceOutputAssembly="false" />
+    <Content Include="../../vendor/aria2/win-x64/aria2c.exe" Link="Engine/aria2c.exe" CopyToOutputDirectory="PreserveNewest" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <Target Name="CopyEngineFixture" AfterTargets="Build">
+    <ItemGroup><FixtureFiles Include="../AriaGui.EngineFixture/bin/$(Configuration)/net10.0/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(FixtureFiles)" DestinationFiles="@(FixtureFiles->'$(OutDir)Fixtures/%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+</Project>

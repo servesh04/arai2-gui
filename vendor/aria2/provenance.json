@@ -1,0 +1,10 @@
+{
+  "version": "1.37.0",
+  "platform": "win-x64",
+  "assetName": "aria2-1.37.0-win-64bit-build1.zip",
+  "assetUrl": "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip",
+  "sourceUrl": "https://github.com/aria2/aria2/tree/release-1.37.0",
+  "archiveSha256": "67D015301EEF0B612191212D564C5BB0A14B5B9C4796B76454276A4D28D9B288",
+  "executableSha256": "BE2099C214F63A3CB4954B09A0BECD6E2E34660B886D4C898D260FEBFE9D70C2",
+  "notices": ["COPYING", "LICENSE.OpenSSL", "AUTHORS", "README.mingw"]
+}

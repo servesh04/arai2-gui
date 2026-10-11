@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsPackable>false</IsPackable><IsTestProject>true</IsTestProject></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <ProjectReference Include="../../src/AriaGui.Infrastructure/AriaGui.Infrastructure.csproj" />
+    <!-- Compile the actual platform-neutral ViewModels without a WinUI host. No copied implementation. -->
+    <Compile Include="../../src/AriaGui.App/ViewModels/*.cs" Link="ViewModels/%(Filename)%(Extension)" />
+    <Compile Include="../../src/AriaGui.App/Services/IUiDispatcher.cs" Link="Services/IUiDispatcher.cs" />
+    <Compile Include="../../src/AriaGui.App/Services/IDownloadFolderPicker.cs" Link="Services/IDownloadFolderPicker.cs" />
+    <Compile Include="../../src/AriaGui.App/Services/IDownloadFileActions.cs" Link="Services/IDownloadFileActions.cs" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

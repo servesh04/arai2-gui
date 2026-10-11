@@ -1,0 +1,148 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <RootNamespace>AriaGui.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('Assets\AppIcon.ico')">Assets\AppIcon.ico</ApplicationIcon>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <!-- Select a publish profile explicitly for release; normal build/run share these settings. -->
+    <SelfContained>false</SelfContained>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Optimized verification copies may opt into a marked private profile, without
+       DEBUG UI/geometry hooks. Normal Release builds never inspect the marker. -->
+  <PropertyGroup Condition="'$(AriaGuiVerificationProfile)' == 'true'">
+    <DefineConstants>$(DefineConstants);ARIAGUI_VERIFICATION</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Release packaging ships both runtimes; development builds keep their smaller defaults. -->
+  <PropertyGroup Condition="'$(AriaGuiRelease)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <AriaGuiRuntimeVersion>10.0.9</AriaGuiRuntimeVersion>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <EnableWinAppRunSupport>false</EnableWinAppRunSupport>
+    <GenerateAppxPackageOnBuild>true</GenerateAppxPackageOnBuild>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    <AppxBundle>Never</AppxBundle>
+    <AppxSymbolPackageEnabled>false</AppxSymbolPackageEnabled>
+    <UapAppxPackageBuildMode>SideloadOnly</UapAppxPackageBuildMode>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <Target Name="PinReleaseRuntime" BeforeTargets="ProcessFrameworkReferences" Condition="'$(AriaGuiRelease)' == 'true'">
+    <ItemGroup>
+      <!-- Pin .NET only: a global RuntimeFrameworkVersion also overrides the Windows SDK reference. -->
+      <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="$(AriaGuiRuntimeVersion)" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup Condition="'$(AriaGuiRelease)' == 'true' and '$(AriaGuiReleaseNoticesDir)' != ''">
+    <Content Include="$(AriaGuiReleaseNoticesDir)\**\*" Link="Notices\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- An explicit development fallback when this PC has not enabled MSIX Developer Mode. -->
+  <PropertyGroup Condition="'$(AriaGuiUnpackaged)' == 'true'">
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <EnableWinAppRunSupport>false</EnableWinAppRunSupport>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <OutputPath>bin\$(Platform)\$(Configuration)\unpackaged\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\SplashScreen.scale-200.png" />
+    <Content Include="Assets\LockScreenLogo.scale-200.png" />
+    <Content Include="Assets\Square150x150Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-48_altform-lightunplated.png" />
+    <Content Include="Assets\StoreLogo.png" />
+    <Content Include="Assets\AppIcon.ico" />
+    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <!-- Unpackaged publish also needs physical assets, including the Win32 tray icon. -->
+    <Content Update="Assets\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- WinUI generates these outside normal Content items; dotnet publish must carry
+       both the resource index and compiled pages into the unpackaged app folder. -->
+  <Target Name="PublishUnpackagedXamlResources" AfterTargets="ComputeFilesToPublish"
+          Condition="'$(AriaGuiUnpackaged)' == 'true'">
+    <Error Condition="!Exists('$(TargetDir)$(AssemblyName).pri')"
+           Text="The WinUI resource index is missing. Build the app before publishing." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)$(AssemblyName).pri">
+        <RelativePath>$(AssemblyName).pri</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <_UnpackagedXamlResource Include="$(TargetDir)**\*.xbf" />
+      <ResolvedFileToPublish Include="@(_UnpackagedXamlResource)">
+        <RelativePath>%(_UnpackagedXamlResource.RecursiveDir)%(_UnpackagedXamlResource.Filename)%(_UnpackagedXamlResource.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <Content Include="..\..\vendor\aria2\win-x64\aria2c.exe" Link="Engine\aria2c.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\vendor\aria2\COPYING;..\..\vendor\aria2\LICENSE.OpenSSL;..\..\vendor\aria2\AUTHORS;..\..\vendor\aria2\README.mingw"
+             Link="Engine\Notices\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\vendor\aria2\provenance.json" Link="Engine\Notices\provenance.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <!--
+    Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
+    Tools extension to be activated for this project even if the Windows App SDK Nuget
+    package has not yet been restored.
+  -->
+  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <ProjectCapability Include="Msix"/>
+  </ItemGroup>
+
+  <!--
+    Microsoft.Windows.SDK.BuildTools.WinApp adds first-class support for
+    `dotnet run` on packaged WinUI apps: it hooks the .NET CLI Run target to
+    register a debug identity via the winapp CLI and launch the app with
+    package identity (AUMID).
+    Set <EnableWinAppRunSupport>false</EnableWinAppRunSupport> in a
+    <PropertyGroup> above to opt out.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.7.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <ProjectReference Include="../AriaGui.Application/AriaGui.Application.csproj" />
+    <ProjectReference Include="../AriaGui.Infrastructure/AriaGui.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <!--
+    Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
+    Explorer "Package and Publish" context menu entry to be enabled for this project even if
+    the Windows App SDK Nuget package has not yet been restored.
+  -->
+  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+  </PropertyGroup>
+
+  <!-- Publish Properties -->
+  <PropertyGroup>
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
+    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug' and '$(AriaGuiRelease)' != 'true'">True</PublishReadyToRun>
+    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
+    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">False</PublishTrimmed>
+  </PropertyGroup>
+</Project>

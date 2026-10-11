@@ -1,0 +1,14 @@
+<ContentDialog x:Class="AriaGui.App.Views.AddDownloadDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Add download" CloseButtonText="Close" PrimaryButtonText="Download" PrimaryButtonClick="DownloadClick" Opened="DialogOpened" Closed="DialogClosed">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="12">
+            <TextBlock Text="Paste an HTTP or HTTPS link. Existing files are kept." FontSize="12" TextWrapping="Wrap" />
+            <TextBox x:Name="UrlBox" Header="Download URL" Text="{x:Bind ViewModel.InputUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="https://example.com/file.zip" AutomationProperties.AutomationId="DownloadUrl" />
+            <TextBox Header="Filename" Text="{x:Bind ViewModel.FileName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Output filename" AutomationProperties.AutomationId="OutputFilename" />
+            <TextBox Header="Save to folder" Text="{x:Bind ViewModel.DirectoryPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Destination folder" AutomationProperties.AutomationId="DestinationFolder" />
+            <Button Content="Browse…" Command="{x:Bind ViewModel.BrowseCommand}" />
+            <InfoBar IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}" IsClosable="False" Severity="Error" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
+        </StackPanel>
+    </ScrollViewer>
+</ContentDialog>

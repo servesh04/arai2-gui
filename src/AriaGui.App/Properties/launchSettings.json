@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "AriaGui.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "AriaGui.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

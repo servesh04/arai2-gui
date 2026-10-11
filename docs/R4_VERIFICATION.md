@@ -1,0 +1,20 @@
+# R4 responsive regression verification
+
+11 October 2026. Same single GPT-6.1 Sol MEDIUM agent implemented, tested and reviewed the snapshot diff. **Published local responsive preview:** [AriaGui.App.exe](../artifacts/exe/AriaGui.App.exe). User explicitly authorized publication and fresh isolated native input. Production preferences/data were preserved; this is an unpackaged local EXE update, not an external/MSIX release. Full provenance is in [the appendix](R4_VERIFICATION_APPENDIX.md).
+
+| Area | Result |
+| --- | --- |
+| Populated idle CPU | Controlled direct Debug/optimized Release 60-second samples without targeted UIA/geometry harness:1.327%/1.535% one core. Earlier high CPU was automation-conditioned; no speculative performance fix retained. |
+| Work-area/persistence | Startup/tray-reopen physical rectangle clamp policy tests pass, including negative origins/smaller areas. Saved widths load 60–600 DIP without rewriting JSON; explicit Save normalizes while preserving unrelated preferences. Extreme native old widths produce 2012 DIP canvas with 21 aligned rows. |
+| Responsive UI | Prior supported minimum 560×420, breakpoints, Fit/Manual/customization, dialogs/notices, snap/restore and localhost mixed-batch resize passes retain their exact DLL identities in the appendix. |
+| Display conditions | **User-attested:** 150%/200% display scaling “clean and works perfectly.” Separate Windows text size 150% and user-labelled default high-contrast images show readable static shell/table/footer. Numeric default display scale/theme name and detailed screenshot-case interactions are not inferred. |
+| Final isolated Release smoke | Launch, populated table, search 0402, selection/inspector, File menu and clean Exit/window absence pass. Rebuilt column grip announces 218.2→228.2 DIP after Right, matching saved 228.15385; selection survives. Deep scroll 0402→final rows→0402 retains checkbox/inspector and visible alignment. |
+| Accessibility/cache limits | Native sealed Thumb retains native focus/drag semantics; guarded Name/ItemStatus expose preferred values, no RangeValue provider claim. CacheLength 1 visible deep-scroll/selection pass; final realized-grid identity/count instrumentation and actual Narrator speech remain untested. |
+| Tests/build | Core 16 + Application 94 + Infrastructure 74 = 184/184 serial passes. After the final UI-only grip announcement repair, Application 94 reran and both normal/isolated self-contained Release publishes passed. Cached NU1900 audit warning only; no restore/download. |
+| Artifact integrity | 604-file candidate/staging/published SHA256 match, embedded .NET10.0.9/WinAppSDK, XBF/PRI, pinned engine/notices present. Normal DLL excludes private-profile/DEBUG markers. Previous604-file folder preserved in `artifacts/exe-before-responsive-20261011` and `artifacts/r4-sol/publish/replaced-primary`. |
+
+Final normal DLL SHA256 `3CBEF06A696FC8073493FA5E60E74DC9F51647BEBF9A01447C81AD864FF4CC99`; apphost SHA256 `26EFD35520BC1B50CCA073491C41BB658DC11878A08ED97D3E2A512E68F42C84`. Apphost file version 1.0.0.0; manifest preview 0.7.0.0 unchanged. Keep the entire EXE folder together.
+
+**Before launch:** Exit the old user-controlled test fixture via File→Exit. Its engine still occupies loopback port 6800; the fresh smoke correctly reported that conflict. No old-fixture input/termination occurred. Final engine readiness was not proven in the conflicting smoke environment; prior real localhost engine/batch evidence remains separate.
+
+Known untested: Narrator speech, final realized-grid ID/count profiling, physical smaller-monitor reopen, mixed-DPI movement, historical R0 mismatch causation and clean-machine installer certification. The initial auto-review rejection stopped input; the user's later explicit fresh-window authorization enabled the successful smoke, with no bypass. Normal published DLL was statically validated; native smoke used opt-in isolated DLL `740D6178B36B73F5BBF7090A02B512E6FC2FFDA2DD03F42FEE20C1467B164D93`, identical final apphost/resources and only synthetic-profile routing enabled.

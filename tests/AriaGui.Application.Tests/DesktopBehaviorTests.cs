@@ -1,0 +1,106 @@
+using AriaGui.Application.Downloads;
+using AriaGui.Core.Downloads;
+using AriaGui.App.Services;
+using AriaGui.App.ViewModels;
+
+namespace AriaGui.Application.Tests;
+
+public sealed class DesktopBehaviorTests
+{
+    [Fact]
+    public async Task Selection_survives_progress_updates_explicit_sort_and_is_pruned_after_filter()
+    {
+        var first = Entry(DownloadStatus.Downloading); var second = Entry(DownloadStatus.Downloading);
+        second = second with { Job = second.Job with { DisplayName = "other.bin" }, Attempt = second.Attempt with { EngineId = "0000000000000002" } };
+        var repository = new MemoryDownloadRepository(); repository.Entries.Add(first.Job.Id, first); repository.Entries.Add(second.Job.Id, second);
+        var engine = new MutableEngine(); engine.Rows[first.Attempt.EngineId] = new(DownloadStatus.Downloading, 1, 100, 10); engine.Rows[second.Attempt.EngineId] = new(DownloadStatus.Downloading, 2, 100, 20);
+        var store = new DownloadRuntimeStore(); var coordinator = new DownloadCoordinator(engine, store, TimeProvider.System, repository, new TestDownloadDestination());
+        await coordinator.RefreshAsync(); using var vm = new DownloadsViewModel(coordinator, store, new ImmediateDispatcher());
+        vm.SetSort(DownloadSortColumn.Speed); var selectedRow = vm.Downloads[0]; vm.SetSelection([selectedRow.Id]);
+        engine.Rows[first.Attempt.EngineId] = new(DownloadStatus.Downloading, 3, 100, 40);
+        await coordinator.RefreshAsync(); Assert.Same(selectedRow, vm.Downloads[0]); Assert.Contains(selectedRow.Id, vm.SelectedIds); Assert.Equal(3, selectedRow.DownloadedBytes);
+        vm.SortColumn = DownloadSortColumn.Name; Assert.Same(selectedRow, vm.Downloads[0]);
+        vm.SortDescending = true; Assert.Same(selectedRow, vm.Downloads[1]); Assert.Contains(selectedRow.Id, vm.SelectedIds);
+        vm.SearchText = "other"; Assert.Empty(vm.SelectedIds); Assert.Null(vm.SelectedItem);
+    }
+    [Fact]
+    public async Task Layout_save_waits_for_full_save_and_preserves_saved_theme_and_folder_without_applied_event()
+    {
+        var repository = new BlockingPreferences(); var vm = new PreferencesViewModel(repository); await vm.LoadAsync(default);
+        var applied = 0; vm.Applied += _ => applied++;
+        vm.ThemeIndex = (int)AppTheme.Dark; vm.DefaultFolder = @"C:\Saved";
+        var full = vm.SaveCommand.ExecuteAsync(null); await repository.Entered.Task;
+        vm.CompactRows = false; var layout = vm.SaveLayoutAsync(); vm.ThemeIndex = (int)AppTheme.Light; vm.DefaultFolder = @"C:\Draft";
+        repository.Release.TrySetResult(); await full; await layout;
+        Assert.Equal(AppTheme.Dark, repository.Saved.Theme); Assert.Equal(@"C:\Saved", repository.Saved.DefaultFolder);
+        Assert.False(repository.Saved.EffectiveLayout.CompactRows); Assert.Equal(1, applied); Assert.Equal(1, repository.MaxConcurrent);
+    }
+    private sealed class ImmediateDispatcher : IUiDispatcher { public void Enqueue(Action action) => action(); }
+    private sealed class MutableEngine : IAria2Client
+    {
+        public Dictionary<string, DownloadSnapshot> Rows { get; } = [];
+        public Task<EngineDownload> AddAsync(EngineDownloadRequest request, CancellationToken token) => throw new NotSupportedException();
+        public Task<IReadOnlyList<EngineDownload>> GetDownloadsAsync(IReadOnlyList<string> ids, CancellationToken token) => Task.FromResult<IReadOnlyList<EngineDownload>>(ids.Select(id => new EngineDownload(id, Rows[id])).ToArray());
+        public Task SetConcurrencyAsync(int limit, CancellationToken token) => Task.CompletedTask;
+    }
+    private sealed class BlockingPreferences : IUserPreferencesRepository
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public UserPreferences Saved = new(); public int MaxConcurrent; private int _running; private bool _first = true;
+        public Task<UserPreferences> LoadAsync(CancellationToken token) => Task.FromResult(Saved);
+        public async Task SaveAsync(UserPreferences preferences, CancellationToken token)
+        {
+            MaxConcurrent = Math.Max(MaxConcurrent, Interlocked.Increment(ref _running));
+            try { if (_first) { _first = false; Entered.TrySetResult(); await Release.Task; } Saved = preferences; }
+            finally { Interlocked.Decrement(ref _running); }
+        }
+    }
+    private static DownloadEntry Entry(DownloadStatus status)
+    {
+        var id = Guid.NewGuid(); var attempt = Guid.NewGuid(); var time = DateTimeOffset.UtcNow;
+        return new(new(id, "file.bin", new("https://example.com/file.bin"), @"C:\Downloads\file.bin", time),
+            new(attempt, id, "0000000000000001", time), new(Guid.NewGuid(), id, attempt, "file.bin", 100), new(status, 0, 100, 0));
+    }
+    [Fact]
+    public async Task Batch_rechecks_mixed_stale_and_disconnected_selection_and_deduplicates()
+    {
+        var active = Entry(DownloadStatus.Downloading); var paused = Entry(DownloadStatus.Paused); var late = Entry(DownloadStatus.Downloading);
+        var rows = new[] { active, paused, late }.ToDictionary(row => row.Job.Id); var connected = true; var calls = 0;
+        var results = await DownloadBatch.ExecuteAsync([active.Job.Id, active.Job.Id, paused.Job.Id, Guid.NewGuid(), late.Job.Id], DownloadAction.Pause,
+            id => rows.GetValueOrDefault(id), () => connected, (id, _, _) =>
+            { calls++; rows[id] = rows[id] with { Progress = new(DownloadStatus.Paused, 0, 100, 0) }; connected = false; return Task.CompletedTask; }, default);
+        Assert.Equal(1, calls); Assert.Single(results, row => row.Outcome == BatchOutcome.Confirmed); Assert.Equal(3, results.Count(row => row.Outcome == BatchOutcome.Skipped));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Saved_uncertain_intent_is_unconfirmed_even_after_failure_or_cancellation(bool canceled)
+    {
+        var row = Entry(DownloadStatus.Downloading);
+        var result = await DownloadBatch.ExecuteAsync([row.Job.Id], DownloadAction.Pause, _ => row, () => true, (id, action, _) =>
+        {
+            row = row with { PendingOperation = new(Guid.NewGuid(), id, action, OperationStatus.Uncertain, DateTimeOffset.UtcNow) };
+            return Task.FromException(canceled ? new OperationCanceledException() : new IOException());
+        }, default);
+        Assert.Equal(BatchOutcome.Unconfirmed, Assert.Single(result).Outcome);
+    }
+    [Fact]
+    public async Task Cancellation_stops_submitting_remaining_items()
+    {
+        var rows = new[] { Entry(DownloadStatus.Downloading), Entry(DownloadStatus.Downloading) }.ToDictionary(row => row.Job.Id);
+        using var cancellation = new CancellationTokenSource(); var calls = 0;
+        var results = await DownloadBatch.ExecuteAsync(rows.Keys, DownloadAction.Pause, id => rows[id], () => true, (id, _, _) =>
+        { calls++; rows[id] = rows[id] with { Progress = new(DownloadStatus.Paused, 0, 100, 0) }; cancellation.Cancel(); return Task.CompletedTask; }, cancellation.Token);
+        Assert.Equal(1, calls); Assert.Equal(BatchOutcome.Canceled, results[1].Outcome);
+    }
+    [Fact]
+    public void Layout_validation_rejects_nonfinite_duplicate_and_hidden_name()
+    {
+        var defaults = new DesktopLayout(); defaults.Validate();
+        Assert.Throws<DownloadRequestException>(() => (defaults with { SidebarWidth = double.NaN }).Validate());
+        Assert.Throws<DownloadRequestException>(() => (defaults with { DetailsHeight = double.PositiveInfinity }).Validate());
+        Assert.Throws<DownloadRequestException>(() => (defaults with { Columns = defaults.EffectiveColumns.Select(c => c with { Column = DownloadSortColumn.Name }).ToArray() }).Validate());
+        Assert.Throws<DownloadRequestException>(() => (defaults with { Columns = defaults.EffectiveColumns.Select(c => c.Column == DownloadSortColumn.Name ? c with { Visible = false } : c).ToArray() }).Validate());
+    }
+}

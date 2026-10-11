@@ -1,0 +1,63 @@
+# Build, publish, and package output
+**/bin/
+**/obj/
+**/publish/
+artifacts/
+AppPackages/
+BundleArtifacts/
+*.msix
+*.msixbundle
+*.msixupload
+*.appx
+*.appxbundle
+*.appxupload
+*.nupkg
+*.snupkg
+
+# IDE and local tools
+.vs/
+.vscode/
+.idea/
+.tools/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+*.pubxml
+
+# Test and diagnostic output
+**/TestResults/
+**/test-results/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+*.log
+*.binlog
+*.dmp
+*.etl
+*.db
+*.db-shm
+*.db-wal
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+
+# Browser extension build output
+**/node_modules/
+extensions/**/dist/
+extensions/**/build/
+extensions/**/web-ext-artifacts/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
