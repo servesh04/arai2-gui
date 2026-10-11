@@ -5,6 +5,7 @@ using AriaGui.Infrastructure.Downloads;
 using AriaGui.Infrastructure.Persistence;
 
 // Isolated owner process used by recovery tests. The parent kills this host, not a user app.
+if (args.Length > 0 && args[0].StartsWith("--bridge-", StringComparison.Ordinal)) return await BrowserBridgeFixture.RunAsync(args);
 if (args.Length == 6 && args[0] == "--recovery-host")
 {
     var runtime = args[1]; var executable = args[2]; var port = int.Parse(args[3]); var url = args[4]; var mode = args[5];

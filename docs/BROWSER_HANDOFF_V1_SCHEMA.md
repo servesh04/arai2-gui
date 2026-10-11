@@ -30,7 +30,7 @@ Filename uses the shared pure `WindowsFileNamePolicy` in Core, also used by File
 | `processing` | retryAfterMs (1–10000) |
 | `not_found`, `expired`, `unavailable`, `unknown` | none |
 
-Job intake states are queued, active, paused, completed, failed, interrupted and engine_uncertain. Rejection reasons are unsupported_protocol, invalid_request, unsupported_url, invalid_filename, destination_conflict, destination_unavailable, integration_disabled, not_ready, shutting_down, busy, storage_unavailable and request_id_conflict. Accepted is a future durable receipt contract, not evidence that this library creates work or transfers bytes.
+Job intake states are queued, active, paused, completed, failed, interrupted, engine_uncertain and removed. Package 3 adds `removed` before v1 deployment so retained removed history has an accurate terminal state; `expired` remains a deleted-history tombstone. Rejection reasons are unsupported_protocol, invalid_request, unsupported_url, invalid_filename, destination_conflict, destination_unavailable, integration_disabled, not_ready, shutting_down, busy, storage_unavailable and request_id_conflict. Accepted means durable application intent, not evidence that bytes have transferred.
 
 Parse failures contain only a safe enum. A correlation UUID is retained only after the complete JSON document passes UTF-8, syntax/depth and recursive duplicate checks and its requestId is canonical. A caller may send a v1 rejected result with that ID; when it is null, close without echoing raw input. Major mismatch yields unsupported_protocol when correlation is trustworthy. Frame errors have fixed messages and no payload/correlation. No arbitrary raw exception text is part of the wire contract.
 

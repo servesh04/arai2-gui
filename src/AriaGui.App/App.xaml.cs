@@ -6,6 +6,7 @@ using AriaGui.Application.Engine;
 using AriaGui.Infrastructure.Aria2;
 using AriaGui.Infrastructure.Persistence;
 using AriaGui.Infrastructure.Downloads;
+using AriaGui.Infrastructure.Browser;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -26,6 +27,8 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     private bool _allowClose;
     private Win32TrayIcon? _tray;
     private DesktopLifetimeController? _desktop;
+    private BrowserBridgeServer? _browserBridge;
+    private Task? _browserStart = null;
 
     public App() => InitializeComponent();
 
@@ -97,6 +100,28 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         var lifecycle = _services.GetRequiredService<EngineLifecycleService>();
         if (storageFailure is not null) lifecycle.ReportStartupFailure(storageFailure);
         else _engineLoop = RunEngineAsync(lifecycle, _lifetime.Token);
+#if DEBUG || ARIAGUI_VERIFICATION
+        // No production browser listener. Explicit synthetic profile + trusted peer marker only.
+        if (storageFailure is null && _instance is { IsPrimary: true } && AppDataPaths.VerificationDirectory is { } fixture)
+        {
+            var peerMarker = Path.Combine(fixture, "browser-bridge-synthetic-peer.txt");
+            if (File.Exists(peerMarker) && new FileInfo(peerMarker).Length <= 2048)
+                _browserStart = StartSyntheticBridgeAsync(runtimeDirectory, File.ReadAllText(peerMarker).Trim());
+        }
+#endif
+    }
+
+    private async Task StartSyntheticBridgeAsync(string runtime, string peerExecutable)
+    {
+        try
+        {
+            var services = _services ?? throw new InvalidOperationException("Synthetic bridge composition unavailable.");
+            _browserBridge = new(services.GetRequiredService<ExternalDownloadIntakeService>(),
+                services.GetRequiredService<DownloadPreferencesService>(), _instance!,
+                BrowserBridgeEndpoint.Open(runtime, "verification", "synthetic-gui"), peerExecutable, _lifetime.Token);
+            await _browserBridge.StartAsync(_lifetime.Token);
+        }
+        catch (Exception) { _window?.SetDesktopStatus("Synthetic browser bridge unavailable; no browser work admitted."); }
     }
 
     private static async Task RunDownloadsAsync(DownloadCoordinator coordinator, ExternalDownloadIntakeService intake, CancellationToken cancellationToken)
@@ -167,6 +192,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     {
         if (_closing) return;
         _closing = true;
+        _browserBridge?.StopAdmission();
         _window?.DisableInput();
         try
         {
@@ -176,6 +202,16 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             downloadViewModel?.CancelOperations();
             _services?.GetRequiredService<PreferencesViewModel>().SaveCommand.Cancel();
             _lifetime.Cancel();
+            if (_browserStart is not null)
+            {
+                try { await _browserStart.WaitAsync(TimeSpan.FromSeconds(2)); } catch (TimeoutException) { }
+            }
+            if (_browserBridge is not null)
+            {
+                using var bridgeDrain = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                try { await _browserBridge.DrainAsync(bridgeDrain.Token); } catch (OperationCanceledException) { }
+                await _browserBridge.DisposeAsync();
+            }
             if (_updates is not null) await _updates;
             if (_engineLoop is not null) await _engineLoop;
             if (_preferencesLoad is not null) await _preferencesLoad;

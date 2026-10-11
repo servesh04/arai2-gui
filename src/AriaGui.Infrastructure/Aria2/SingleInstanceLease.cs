@@ -6,9 +6,12 @@ namespace AriaGui.Infrastructure.Aria2;
 public sealed class SingleInstanceLease : IDisposable
 {
     private readonly FileStream? _handle;
-    public bool IsPrimary => _handle is not null;
+    private int _disposed;
+    public bool IsPrimary => _handle is not null && Volatile.Read(ref _disposed) == 0;
+    public string RuntimeDirectory { get; }
     public SingleInstanceLease(string runtimeDirectory)
     {
+        RuntimeDirectory = Path.GetFullPath(runtimeDirectory);
         UserRuntimeDirectory.EnsurePrivate(runtimeDirectory);
         try { _handle = new FileStream(Path.Combine(runtimeDirectory, "app.lock"), FileMode.OpenOrCreate,
             FileAccess.ReadWrite, FileShare.None); }
@@ -16,5 +19,5 @@ public sealed class SingleInstanceLease : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { throw new EngineException(EngineFailure.StorageUnavailable, "The app could not open its private instance lock. Check folder access."); }
     }
-    public void Dispose() => _handle?.Dispose();
+    public void Dispose() { if (Interlocked.Exchange(ref _disposed, 1) == 0) _handle?.Dispose(); }
 }

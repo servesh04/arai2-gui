@@ -76,7 +76,7 @@ function parse(text, kind) {
       if (!Array.isArray(result.capabilities) || result.capabilities.length > 2 || new Set(result.capabilities).size !== result.capabilities.length || result.capabilities.some(value => !capabilities.includes(value))) invalid();
     } else if (result?.code === 'accepted') {
       fields(result, ['code', 'jobId', 'state', 'duplicate']); id(result.jobId);
-      if (!['queued', 'active', 'paused', 'completed', 'failed', 'interrupted', 'engine_uncertain'].includes(result.state) || typeof result.duplicate !== 'boolean') invalid();
+      if (!['queued', 'active', 'paused', 'completed', 'failed', 'interrupted', 'engine_uncertain', 'removed'].includes(result.state) || typeof result.duplicate !== 'boolean') invalid();
     } else if (result?.code === 'rejected') { fields(result, ['code', 'reason']); if (!reasons.includes(result.reason)) invalid(); }
     else if (result?.code === 'processing') { fields(result, ['code', 'retryAfterMs']); integer(result.retryAfterMs, 1, 10000); }
     else { fields(result, ['code']); if (!['not_found', 'expired', 'unavailable', 'unknown'].includes(result.code)) invalid(); }

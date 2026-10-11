@@ -14,7 +14,7 @@ public enum BrowserAction { Hello, AddPublicGet, GetRequestStatus }
 public enum ResultCode { Ready, Accepted, Rejected, Processing, NotFound, Expired, Unavailable, Unknown }
 public enum RejectionReason { UnsupportedProtocol, InvalidRequest, UnsupportedUrl, InvalidFilename, DestinationConflict,
     DestinationUnavailable, IntegrationDisabled, NotReady, ShuttingDown, Busy, StorageUnavailable, RequestIdConflict }
-public enum JobIntakeState { Queued, Active, Paused, Completed, Failed, Interrupted, EngineUncertain }
+public enum JobIntakeState { Queued, Active, Paused, Completed, Failed, Interrupted, EngineUncertain, Removed }
 public enum Capability { AddPublicGet, GetRequestStatus }
 public abstract record RequestPayload;
 public sealed record HelloPayload(
