@@ -1,6 +1,6 @@
-using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
+using AriaGui.Browser.Contracts;
 using AriaGui.Infrastructure.Aria2;
 
 namespace AriaGui.Infrastructure.Browser;
@@ -36,6 +36,5 @@ public sealed record BrowserBridgeEndpoint(Guid InstallationId, string PipeName,
         return new(installation, Name(runtime, channel, packageModel, sid, installation), Path.GetFullPath(runtime), sid, channel, packageModel);
     }
     public static string Name(string runtime, string channel, string packageModel, string sid, Guid installation) =>
-        "AriaGUI.browser.v1." + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n',
-            "1", channel, packageModel, Path.TrimEndingDirectorySeparator(Path.GetFullPath(runtime)).ToUpperInvariant(), sid, installation.ToString("D")))));
+        BridgeEndpointName.Create(runtime, channel, packageModel, sid, installation);
 }

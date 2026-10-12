@@ -1,0 +1,8 @@
+{
+  "channel": "development",
+  "hostName": "com.ariagui.browser.development",
+  "chromeKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqhiE8PyYUdgmHoTdEQWyrr2anNweCePoa/XwQaRyJc9pLkt1h2vgZ85xJwnPoZHwm4UBrQlmHpr04JZauAT736uHkjfJyx8z/Ro6xn4ktC+Ogwfz11JNy5lOBHjXkgJNFUV3Mpoe0e3/vrPPKWQ3Gtn/hjC9FlE8q9dkmOVEtOsdgGC64GYNuVot8KDMsBB2G+NxA4oqFjoEWazHSEeCmohuzKvswYQ/mDn9l5slvE22dLNQz11Cd3BM/HSLKo9rDDPTa3z3zMlwvNzjJnzxLBpZks0+sUGvUC5NpXkOWbg80IbcpZ5F9n4LZ78qAQRZ/Ym2LOuDg5tz7kzJl838DQIDAQAB",
+  "edgeKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqhiE8PyYUdgmHoTdEQWyrr2anNweCePoa/XwQaRyJc9pLkt1h2vgZ85xJwnPoZHwm4UBrQlmHpr04JZauAT736uHkjfJyx8z/Ro6xn4ktC+Ogwfz11JNy5lOBHjXkgJNFUV3Mpoe0e3/vrPPKWQ3Gtn/hjC9FlE8q9dkmOVEtOsdgGC64GYNuVot8KDMsBB2G+NxA4oqFjoEWazHSEeCmohuzKvswYQ/mDn9l5slvE22dLNQz11Cd3BM/HSLKo9rDDPTa3z3zMlwvNzjJnzxLBpZks0+sUGvUC5NpXkOWbg80IbcpZ5F9n4LZ78qAQRZ/Ym2LOuDg5tz7kzJl838DQIDAQAB",
+  "firefoxId": "ariagui-development@example.invalid",
+  "hostExecutableTemplate": "__INSTALLER_ABSOLUTE_HOST_PATH__"
+}

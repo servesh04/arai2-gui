@@ -9,6 +9,7 @@
     <Project Path="src/AriaGui.Application/AriaGui.Application.csproj" />
     <Project Path="src/AriaGui.Core/AriaGui.Core.csproj" />
     <Project Path="src/AriaGui.Browser.Contracts/AriaGui.Browser.Contracts.csproj" />
+    <Project Path="src/AriaGui.NativeHost/AriaGui.NativeHost.csproj" />
     <Project Path="src/AriaGui.Infrastructure/AriaGui.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">

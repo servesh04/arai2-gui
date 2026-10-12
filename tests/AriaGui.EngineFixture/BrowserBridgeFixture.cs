@@ -19,6 +19,7 @@ internal static class BrowserBridgeFixture
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
+            if (args[0] == "--bridge-fault-host") return await FaultAsync(args, deadline.Token);
             if (args[0] is "--bridge-client" or "--bridge-client-drop")
             {
                 using var pipe = new NamedPipeClientStream(".", args[1], PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation);
@@ -45,12 +46,18 @@ internal static class BrowserBridgeFixture
             var engine = new FixtureEngine(); var coordinator = new DownloadCoordinator(engine, new(), TimeProvider.System, repository, new FileDownloadDestination());
             var preferenceService = new DownloadPreferencesService(preferences, defaultFolder);
             var intake = new ExternalDownloadIntakeService(coordinator, preferenceService, TimeProvider.System, lifetime.Token, new Offline());
-            await using var server = new BrowserBridgeServer(intake, preferenceService, lease, endpoint, Environment.ProcessPath!, lifetime.Token);
+            await using var server = new BrowserBridgeServer(intake, preferenceService, lease, endpoint, args.Length >= 3 ? args[2] : Environment.ProcessPath!, lifetime.Token);
             Console.WriteLine("STARTING"); Console.Out.Flush();
-            if (await Console.In.ReadLineAsync(deadline.Token) != "START") return 7;
+            var automatic = args[0] == "--bridge-auto-host";
+            if (!automatic && await Console.In.ReadLineAsync(deadline.Token) != "START") return 7;
             await server.StartAsync(deadline.Token);
             Console.WriteLine(JsonSerializer.Serialize(new { endpoint.InstallationId, endpoint.PipeName, Pid = Environment.ProcessId })); Console.Out.Flush();
-            while (await Console.In.ReadLineAsync(deadline.Token) is { } command)
+            if (automatic)
+            {
+                Console.WriteLine("synthetic_gui_noise"); Console.Error.WriteLine("synthetic_gui_noise");
+                while (!File.Exists(Path.Combine(root, "bridge-auto-stop")) && !deadline.IsCancellationRequested) await Task.Delay(50);
+            }
+            while (!automatic && await Console.In.ReadLineAsync(deadline.Token) is { } command)
             {
                 if (command == "STATS") { Console.WriteLine($"STATS {engine.Adds} {(await repository.LoadAsync(deadline.Token)).Count}"); Console.Out.Flush(); }
                 else if (command == "TRAY") { Console.WriteLine("HIDDEN_SIMULATION"); Console.Out.Flush(); }
@@ -62,6 +69,25 @@ internal static class BrowserBridgeFixture
             Console.WriteLine("CLOSED"); return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("bridge_fixture_error:" + ex.GetType().Name); return 9; }
+    }
+    private static async Task<int> FaultAsync(string[] args, CancellationToken token)
+    {
+        var root = Path.GetFullPath(args[1]); if (!File.Exists(Path.Combine(root,"synthetic-browser-bridge"))) return 6;
+        using var lease = new SingleInstanceLease(root); if (!lease.IsPrimary) return 7;
+        var endpoint = BrowserBridgeEndpoint.Open(root,"fixture","unpackaged");
+        using var pipe = new NamedPipeServerStream(endpoint.PipeName, PipeDirection.InOut,1,PipeTransmissionMode.Byte,PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        Console.WriteLine("FAULT_READY"); Console.Out.Flush(); await pipe.WaitForConnectionAsync(token);
+        var frames = new FrameConnection(pipe, FrameTransport.PipeLittleEndian);
+        var hello = ContractJson.ParseRequest((await frames.ReadAsync(token))!).Value!;
+        await frames.WriteAsync(ContractJson.Serialize(new ResponseEnvelope(new(1,0),hello.RequestId,new(ResultCode.Ready,AppVersion:args[3]=="incompatible"?"2.0.0":"1.0.0",
+            Capabilities:[Capability.AddPublicGet,Capability.GetRequestStatus],MaxMessageBytes:ProtocolLimits.MaximumMessageBytes))),token);
+        if(args[3]=="incompatible"){await frames.ReadAsync(token);return 0;}
+        var add = ContractJson.ParseRequest((await frames.ReadAsync(token))!).Value!;
+        if(add.Action!=BrowserAction.AddPublicGet)return 8;
+        File.WriteAllText(Path.Combine(root,"forwarded-add"),"observed");
+        if(args[3]=="wrong-response-id") await frames.WriteAsync(ContractJson.Serialize(new ResponseEnvelope(new(1,0),Guid.NewGuid(),new(ResultCode.Accepted,
+            JobId:Guid.NewGuid(),State:JobIntakeState.Queued,Duplicate:false))),token);
+        return 0;
     }
     private sealed class Offline : IExternalDispatchReadiness
     { public Task WaitForReadyAsync(CancellationToken token) => Task.Delay(Timeout.InfiniteTimeSpan, token); }
