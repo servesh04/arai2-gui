@@ -52,6 +52,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddSingleton<IDownloadDestination, FileDownloadDestination>();
         registrations.AddSingleton<IDownloadFileActions, WindowsDownloadFileActions>();
         registrations.AddSingleton<IUserPreferencesRepository>(new JsonUserPreferencesRepository(Path.Combine(runtimeDirectory, "preferences.json")));
+        registrations.AddSingleton<IBrowserIntegrationDiagnostics>(new BrowserIntegrationDiagnostics());
         registrations.AddSingleton<PreferencesViewModel>();
         var folderPicker = new WinUiFolderPicker();
         registrations.AddSingleton<IDownloadFolderPicker>(folderPicker);
@@ -201,6 +202,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             var downloadViewModel = _services?.GetRequiredService<DownloadsViewModel>();
             downloadViewModel?.CancelOperations();
             _services?.GetRequiredService<PreferencesViewModel>().SaveCommand.Cancel();
+            _services?.GetRequiredService<PreferencesViewModel>().CheckBrowserCommand.Cancel();
             _lifetime.Cancel();
             if (_browserStart is not null)
             {

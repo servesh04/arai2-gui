@@ -14,6 +14,14 @@
             <Button Content="Save preferences" Command="{x:Bind Preferences.SaveCommand}" />
             <TextBlock Text="{x:Bind Preferences.Message, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" />
             <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <TextBlock Text="Browser public-link handoff" FontWeight="SemiBold" />
+            <CheckBox Content="Enable browser integration (release verification pending)" IsChecked="{x:Bind Preferences.BrowserEnabled, Mode=OneWay}" IsEnabled="False" />
+            <TextBox Header="Selected app installation UUID" Text="{x:Bind Preferences.BrowserInstallationId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="36" />
+            <TextBox Header="Selected unpackaged installation folder" Text="{x:Bind Preferences.BrowserInstallRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="1024" />
+            <Button Content="Check browser handoff readiness" Command="{x:Bind Preferences.CheckBrowserCommand}" />
+            <TextBlock Text="{x:Bind Preferences.BrowserStatus, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock Text="Public GET links only. App history retains URLs; browser cookies, automatic capture and private browsing are unsupported. Use the extension's Test connection after installer setup." TextWrapping="Wrap" FontSize="12" />
+            <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" />
             <NumberBox Header="Simultaneous downloads" Minimum="1" Maximum="16" SmallChange="1" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.ConcurrencyLimit, Mode=TwoWay}" AutomationProperties.Name="Concurrent download limit" />
             <Button Content="Apply queue limit" Command="{x:Bind ViewModel.ApplyLimitCommand}" />
             <TextBlock Text="{x:Bind ViewModel.QueueMessage, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" />

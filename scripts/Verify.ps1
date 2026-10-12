@@ -5,6 +5,11 @@ try {
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js 22+ is required for browser contract fixture compatibility tests.' }
     $nodeVersion = & node --version
     if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v(\d+)\.' -or [int]$Matches[1] -lt 22) { throw 'Node.js 22+ is required for browser contract fixture compatibility tests.' }
+    foreach ($browserTool in @('BrowserRegistration.psm1','Register-BrowserHost.ps1','New-BrowserBundle.ps1','Install-BrowserCompanion.ps1','Test-BrowserRegistration.ps1','Test-BrowserCompanionInstaller.ps1')) {
+        $parseTokens = $null; $parseErrors = $null
+        $null = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $browserTool), [ref]$parseTokens, [ref]$parseErrors)
+        if ($parseErrors.Count) { throw "Browser tool syntax failed: $browserTool" }
+    }
     $provenance = Get-Content vendor/aria2/provenance.json -Raw | ConvertFrom-Json
     if ((Get-FileHash vendor/aria2/win-x64/aria2c.exe -Algorithm SHA256).Hash -ne $provenance.executableSha256) {
         throw 'Bundled aria2 integrity check failed.'

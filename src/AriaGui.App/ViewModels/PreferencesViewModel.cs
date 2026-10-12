@@ -4,11 +4,50 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AriaGui.App.ViewModels;
 
-public sealed class PreferencesViewModel(IUserPreferencesRepository repository) : ObservableObject
+public sealed class PreferencesViewModel(IUserPreferencesRepository repository, IBrowserIntegrationDiagnostics? browserDiagnostics = null) : ObservableObject
 {
     private int _themeIndex; private string _defaultFolder = "", _message = "Theme and default folder apply when you save.";
     private DesktopLayout _layout = new();
     private UserPreferences _saved = new();
+    private bool _browserEnabled;
+    private string _browserInstallRoot = "", _browserInstallationId = "", _browserStatus = "Browser traffic is disabled pending release verification. Extension presence is unverified.";
+    public bool BrowserEnabled { get => _browserEnabled; set => SetProperty(ref _browserEnabled, value); }
+    public string BrowserInstallRoot { get => _browserInstallRoot; set => SetProperty(ref _browserInstallRoot, value); }
+    public string BrowserInstallationId { get => _browserInstallationId; set => SetProperty(ref _browserInstallationId, value); }
+    public string BrowserStatus { get => _browserStatus; private set => SetProperty(ref _browserStatus, value); }
+    private BrowserIntegrationPreferences BrowserSettings()
+    {
+        Guid? installation = null;
+        if (BrowserInstallationId.Length > 0)
+        {
+            if (!Guid.TryParseExact(BrowserInstallationId.Trim(), "D", out var id) || id == Guid.Empty)
+                throw new DownloadRequestException("Choose a valid app installation UUID.");
+            installation = id;
+        }
+        var settings = new BrowserIntegrationPreferences(BrowserEnabled, installation, BrowserInstallRoot.Trim()); settings.Validate(); return settings;
+    }
+    private IAsyncRelayCommand? _checkBrowser;
+    public IAsyncRelayCommand CheckBrowserCommand => _checkBrowser ??= new AsyncRelayCommand(async token =>
+    {
+        try
+        {
+            // Inspect selected metadata even while enablement remains disabled; no production transport is composed.
+            var result = browserDiagnostics is null ? new(BrowserIntegrationDiagnosticCode.ReleaseBlocked)
+                : await browserDiagnostics.CheckAsync(BrowserSettings() with { Enabled = true }, token);
+            BrowserStatus = result.Code switch
+            {
+                BrowserIntegrationDiagnosticCode.HostMissing => "Native host is missing from the selected installation. Repair installation; extension presence is unverified.",
+                BrowserIntegrationDiagnosticCode.InstallationNotSelected => "Select an app installation UUID and folder. Extension presence is unverified.",
+                BrowserIntegrationDiagnosticCode.VersionMismatch => "App/host protocol version mismatch. Repair both components.",
+                BrowserIntegrationDiagnosticCode.AppNotReady => "App hello could not be verified. Open AriaGUI and use the extension's connection test.",
+                BrowserIntegrationDiagnosticCode.AppHelloVerified => $"App hello verified ({result.AppVersion}). Browser extension presence is still unverified.",
+                _ => "Production browser traffic is disabled pending DNS, browser acceptance and installer trust verification. Registry presence is not a connection test."
+            };
+        }
+        catch (OperationCanceledException) { }
+        catch (DownloadRequestException ex) { BrowserStatus = ex.Message; }
+        catch { BrowserStatus = "Browser diagnostics unavailable; no connection was verified."; }
+    });
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     public Task LayoutSaveTask { get; private set; } = Task.CompletedTask;
     public DesktopLayout Layout => _layout;
@@ -45,7 +84,7 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository) 
         try
         {
             await _saveGate.WaitAsync(token); acquired = true;
-            var preferences = new UserPreferences((AppTheme)ThemeIndex, DefaultFolder.Trim(), _layout);
+            var preferences = new UserPreferences((AppTheme)ThemeIndex, DefaultFolder.Trim(), _layout, BrowserSettings());
             await repository.SaveAsync(preferences, token); _saved = preferences; Applied?.Invoke(preferences); Message = "Saved. The folder applies to new downloads.";
         }
         catch (OperationCanceledException) { }
@@ -59,6 +98,8 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository) 
         {
             var preferences = await repository.LoadAsync(token); ThemeIndex = (int)preferences.Theme; DefaultFolder = preferences.DefaultFolder;
             _saved = preferences; UpdateLayout(preferences.EffectiveLayout);
+            BrowserEnabled = preferences.EffectiveBrowser.Enabled; BrowserInstallRoot = preferences.EffectiveBrowser.InstallRoot;
+            BrowserInstallationId = preferences.EffectiveBrowser.SelectedInstallationId?.ToString("D") ?? "";
             Applied?.Invoke(preferences);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }

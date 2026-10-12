@@ -3,15 +3,17 @@ using System.Text.Json.Serialization;
 namespace AriaGui.Application.Downloads;
 
 public enum AppTheme { System, Light, Dark }
-public sealed record UserPreferences(AppTheme Theme = AppTheme.System, string DefaultFolder = "", DesktopLayout? Layout = null)
+public sealed record UserPreferences(AppTheme Theme = AppTheme.System, string DefaultFolder = "", DesktopLayout? Layout = null, BrowserIntegrationPreferences? Browser = null)
 {
     [JsonIgnore] public DesktopLayout EffectiveLayout => Layout ?? new();
+    [JsonIgnore] public BrowserIntegrationPreferences EffectiveBrowser => Browser ?? new();
     public void Validate()
     {
         if (!Enum.IsDefined(Theme) || DefaultFolder is null || DefaultFolder.Length > 32760 || (!string.IsNullOrEmpty(DefaultFolder)
             && (!Path.IsPathFullyQualified(DefaultFolder) || DefaultFolder.IndexOfAny(['\r', '\n']) >= 0)))
             throw new DownloadRequestException("Choose a theme and an absolute destination folder.");
         EffectiveLayout.Validate();
+        EffectiveBrowser.Validate();
     }
 }
 public sealed record DownloadColumnLayout(DownloadSortColumn Column, double Width, bool Visible = true);

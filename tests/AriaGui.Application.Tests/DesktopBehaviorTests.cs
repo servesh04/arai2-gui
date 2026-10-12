@@ -29,10 +29,13 @@ public sealed class DesktopBehaviorTests
         var repository = new BlockingPreferences(); var vm = new PreferencesViewModel(repository); await vm.LoadAsync(default);
         var applied = 0; vm.Applied += _ => applied++;
         vm.ThemeIndex = (int)AppTheme.Dark; vm.DefaultFolder = @"C:\Saved";
+        var selectedInstallation = Guid.NewGuid(); vm.BrowserInstallationId = selectedInstallation.ToString("D"); vm.BrowserInstallRoot = @"C:\Saved browser 日本語";
         var full = vm.SaveCommand.ExecuteAsync(null); await repository.Entered.Task;
         vm.CompactRows = false; var layout = vm.SaveLayoutAsync(); vm.ThemeIndex = (int)AppTheme.Light; vm.DefaultFolder = @"C:\Draft";
+        vm.BrowserInstallRoot = @"C:\Unsaved draft browser";
         repository.Release.TrySetResult(); await full; await layout;
         Assert.Equal(AppTheme.Dark, repository.Saved.Theme); Assert.Equal(@"C:\Saved", repository.Saved.DefaultFolder);
+        Assert.Equal(selectedInstallation, repository.Saved.EffectiveBrowser.SelectedInstallationId); Assert.Equal(@"C:\Saved browser 日本語", repository.Saved.EffectiveBrowser.InstallRoot);
         Assert.False(repository.Saved.EffectiveLayout.CompactRows); Assert.Equal(1, applied); Assert.Equal(1, repository.MaxConcurrent);
     }
     private sealed class ImmediateDispatcher : IUiDispatcher { public void Enqueue(Action action) => action(); }
