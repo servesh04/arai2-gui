@@ -7,6 +7,7 @@ public interface IDownloadRepository
     async Task<IReadOnlyList<DownloadEntry>> LoadCurrentAsync(CancellationToken token) => DownloadBrowsing.RetainRecent(await LoadAsync(token));
     async Task<IReadOnlyList<string>> LoadEngineIdsAsync(CancellationToken token) => (await LoadAsync(token)).Select(row => row.Attempt.EngineId).ToArray();
     async Task<DownloadEntry?> GetAsync(Guid id, CancellationToken token) => (await LoadAsync(token)).SingleOrDefault(row => row.Job.Id == id);
+    async Task<DownloadEntry?> GetAttemptAsync(string engineId, CancellationToken token) => (await LoadAsync(token)).SingleOrDefault(row => row.Attempt.EngineId == engineId);
     async Task<bool> ContainsDestinationAsync(string path, CancellationToken token) => (await LoadAsync(token)).Any(row => string.Equals(row.Job.Destination, path, StringComparison.OrdinalIgnoreCase));
     async Task<HistoryPage> LoadPageAsync(HistoryQuery query, CancellationToken token)
     {
@@ -20,6 +21,7 @@ public interface IDownloadRepository
     Task InsertOperationAsync(DownloadEntry entry, CancellationToken token) => throw new NotSupportedException();
     Task InsertRecoveryOperationAsync(DownloadEntry entry, CancellationToken token) => throw new NotSupportedException();
     Task InsertRetryIntentAsync(DownloadEntry previous, DownloadEntry retry, CancellationToken token) => throw new NotSupportedException();
+    Task InsertFreshRestartIntentAsync(DownloadEntry previous, DownloadEntry retry, CancellationToken token) => throw new NotSupportedException();
     Task<QueuePolicy> LoadQueuePolicyAsync(CancellationToken token) => Task.FromResult(new QueuePolicy());
     Task SaveQueuePolicyAsync(QueuePolicy policy, CancellationToken token) => Task.CompletedTask;
     async Task<IReadOnlyList<Guid>> SaveAndReportCompletionsAsync(IReadOnlyList<DownloadEntry> entries, CancellationToken token)
@@ -36,6 +38,8 @@ public sealed record DownloadTarget(string Directory, string FileName, bool Cont
 
 public interface IDownloadDestination
 {
+    Task ValidateProtectedAsync(string directory, CancellationToken token) => Task.CompletedTask;
+    Task<DownloadTarget> ValidateFreshRestartAsync(Uri source, string directory, string fileName, CancellationToken token) => ValidateRetryAsync(source, directory, fileName, token);
     Task<DownloadTarget> ValidateAsync(Uri source, string directory, string? fileName, CancellationToken cancellationToken);
     Task<DownloadTarget> ValidateRetryAsync(Uri source, string directory, string fileName, CancellationToken token) =>
         ValidateAsync(source, directory, fileName, token);

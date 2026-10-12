@@ -17,6 +17,40 @@ namespace AriaGui.Infrastructure.Tests;
 [Collection("Engine processes")]
 public sealed class RealDownloadTests
 {
+    [Theory]
+    [InlineData(false, 0, false)]
+    [InlineData(true, 0, false)]
+    [InlineData(false, 90, false)]
+    [InlineData(true, 90, false)]
+    [InlineData(true, 0, true)]
+    [InlineData(true, 90, true)]
+    public async Task Ordinary_long_filename_survives_private_stage_overhead(bool continuity, int depth, bool retry)
+    {
+        using var runtime = new DownloadTestRuntime();
+        await using var server = new LocalHttpServer();
+        var options = runtime.Options with { UseContinuityGateway = continuity };
+        await using var engine = new Aria2ProcessManager(options, runtime.Repository());
+        await engine.StartAsync(CancellationToken.None);
+        var store = new DownloadRuntimeStore();
+        var coordinator = runtime.Coordinator(new ManagedAria2Client(engine), store);
+        var destination = depth == 0 ? runtime.Output : Path.Combine(runtime.Output, new string('d', depth));
+        var source = retry ? new Uri(new Uri(server.Url), "partial").AbsoluteUri : server.Url;
+        await coordinator.AddAsync(source, directory: destination, fileName: new string('a', depth == 0 ? 120 : 20) + ".bin");
+        if (retry)
+        {
+            var failed = await WaitForTerminalAsync(coordinator, store);
+            Assert.Equal(DownloadStatus.Failed, failed.Progress.Status);
+            await engine.StopAsync(CancellationToken.None);
+            await engine.StartAsync(CancellationToken.None); // Reload private name/ancestor ownership before reuse.
+            server.RecoverPartial = true;
+            await coordinator.RetryAsync(failed.Job.Id);
+        }
+        var completed = await WaitForTerminalAsync(coordinator, store);
+        Assert.True(completed.Progress.Status == DownloadStatus.Completed, completed.ErrorMessage);
+        Assert.Equal(server.Payload, await File.ReadAllBytesAsync(completed.Job.Destination));
+        if (retry) Assert.Contains(server.Observations, row => row.RequestedOffset > 0 && row.Status == 206);
+    }
+
     [Fact]
     public async Task Downloaded_bytes_and_completed_history_survive_a_fresh_engine_and_repository()
     {
@@ -52,7 +86,7 @@ public sealed class RealDownloadTests
         Assert.Single(db.Attempts);
         Assert.Single(db.Files);
         Assert.Equal(OperationStatus.Confirmed, Assert.Single(db.Operations).Status);
-        Assert.Equal(3, db.Database.GetAppliedMigrations().Count());
+        Assert.Equal(4, db.Database.GetAppliedMigrations().Count());
         Assert.False(db.Database.HasPendingModelChanges());
         db.Database.OpenConnection();
         using var command = db.Database.GetDbConnection().CreateCommand();

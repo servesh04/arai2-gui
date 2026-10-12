@@ -15,8 +15,15 @@ public sealed class LocalHttpServer : IAsyncDisposable
     public byte[] Payload { get; } = Enumerable.Range(0, 256 * 1024).Select(i => (byte)(i % 251)).ToArray();
     public string Url { get; }
     public int Requests;
+    public ConcurrentQueue<(string Route, long RequestedOffset, int Status)> Observations { get; } = new();
     private readonly ConcurrentDictionary<string, int> _routeRequests = new();
     public bool RecoverPartial;
+    public bool IgnoreRange;
+    public bool ChangeEntity;
+    public bool ChangeEntityOnlyForRange;
+    public bool ChangeEntityOnInternalReconnect;
+    public bool WeakValidator;
+    public bool RedirectChanged;
     public LocalHttpServer()
     {
         _listener.Start();
@@ -51,6 +58,11 @@ public sealed class LocalHttpServer : IAsyncDisposable
                     if (line.StartsWith("Range: bytes=", StringComparison.OrdinalIgnoreCase)) long.TryParse(line[13..].Split('-')[0], out start);
                 Interlocked.Increment(ref Requests);
                 var route = request.Split(' ').ElementAtOrDefault(1) ?? "/";
+                if (route.StartsWith("/redirect", StringComparison.Ordinal))
+                {
+                    var redirect = $"HTTP/1.1 302 Found\r\nLocation: {(RedirectChanged ? "/other" : "/partial")}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(redirect), _stop.Token); await stream.FlushAsync(_stop.Token); return;
+                }
                 var count = _routeRequests.AddOrUpdate(route, 1, (_, old) => old + 1);
                 var partial = request.Contains("/partial", StringComparison.Ordinal) && !Volatile.Read(ref RecoverPartial);
                 var missing = request.Contains("/missing", StringComparison.Ordinal) || (request.Contains("/flaky", StringComparison.Ordinal) && count == 1)
@@ -58,10 +70,15 @@ public sealed class LocalHttpServer : IAsyncDisposable
                 var empty = request.Contains("/empty", StringComparison.Ordinal);
                 var chunked = request.Contains("/chunked", StringComparison.Ordinal);
                 var slow = request.Contains("/slow", StringComparison.Ordinal);
-                var body = missing || empty ? Array.Empty<byte>() : Payload;
+                var changed = Volatile.Read(ref RecoverPartial) && ChangeEntity && (!ChangeEntityOnlyForRange || start > 0);
+                var body = missing || empty ? Array.Empty<byte>() : changed ? Payload.Select(value => (byte)(value ^ 0xff)).ToArray() : Payload;
                 if (start < 0 || start >= body.Length) start = 0;
+                var requestedOffset = start;
+                if (IgnoreRange) start = 0;
                 var range = start > 0 && !missing;
+                Observations.Enqueue((route, requestedOffset, missing ? 404 : range ? 206 : 200));
                 var headers = $"HTTP/1.1 {(missing ? "404 Not Found" : range ? "206 Partial Content" : "200 OK")}\r\nContent-Type: application/octet-stream\r\n"
+                    + $"ETag: {(WeakValidator ? "W/" : "")}\"{(changed ? "changed" : "original")}\"\r\n"
                     + (range ? $"Content-Range: bytes {start}-{body.Length - 1}/{body.Length}\r\n" : "") + "Accept-Ranges: bytes\r\n"
                     + (chunked ? "Transfer-Encoding: chunked\r\n" : $"Content-Length: {body.Length - start}\r\n") + "Connection: close\r\n\r\n";
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(headers), _stop.Token);
@@ -85,7 +102,11 @@ public sealed class LocalHttpServer : IAsyncDisposable
                         await Task.Delay(150, _stop.Token);
                     }
                 }
-                else if (partial && !missing) await stream.WriteAsync(body.AsMemory(0, 32768), _stop.Token);
+                else if (partial && !missing)
+                {
+                    await stream.WriteAsync(body.AsMemory(0, 32768), _stop.Token);
+                    if (ChangeEntityOnInternalReconnect) { ChangeEntity = true; Volatile.Write(ref RecoverPartial, true); }
+                }
                 else await stream.WriteAsync(body.AsMemory((int)start), _stop.Token);
             }
             catch (Exception ex) when (ex is IOException or OperationCanceledException) { }

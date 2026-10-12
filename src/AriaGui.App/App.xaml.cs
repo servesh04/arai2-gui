@@ -64,7 +64,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             new EngineDispatchReadiness(services.GetRequiredService<EngineStateStore>())));
         registrations.AddSingleton<DownloadsViewModel>();
         registrations.AddSingleton<DownloadSummaryViewModel>();
-        registrations.AddSingleton(new Aria2ProcessOptions(AppDataPaths.EngineExecutable, runtimeDirectory));
+        registrations.AddSingleton(Aria2ProcessOptions.ForApplication(AppDataPaths.EngineExecutable, runtimeDirectory));
         registrations.AddSingleton<IManagedAria2Engine, Aria2ProcessManager>();
         registrations.AddSingleton<EngineStateStore>();
         registrations.AddSingleton<EngineLifecycleService>();
@@ -224,7 +224,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
                 catch (OperationCanceledException) { /* Durable claims are reconciled on restart; never replay. */ }
             }
             // A retry or manual health check may still be unwinding its cancellation.
-            foreach (var operation in new[] { engineViewModel?.StartCommand.ExecutionTask, engineViewModel?.CheckCommand.ExecutionTask,
+            foreach (var operation in new[] { engineViewModel?.StartCommand.ExecutionTask, engineViewModel?.CheckCommand.ExecutionTask, engineViewModel?.StopLegacyCommand.ExecutionTask,
                 _services?.GetRequiredService<PreferencesViewModel>().SaveCommand.ExecutionTask }.OfType<Task>().Concat(downloadViewModel?.PendingTasks ?? []))
             {
                 if (operation is null) continue;

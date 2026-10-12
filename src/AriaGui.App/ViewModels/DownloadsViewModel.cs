@@ -56,6 +56,8 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         _repository = repository; _fileActions = fileActions;
         BatchPauseCommand = BatchCommand(DownloadAction.Pause); BatchResumeCommand = BatchCommand(DownloadAction.Resume);
         BatchRemoveCommand = BatchCommand(DownloadAction.Remove); BatchRetryCommand = BatchCommand(DownloadAction.Retry); BatchRecoverCommand = BatchCommand(DownloadAction.Recover);
+        BatchRestartFreshCommand = new AsyncRelayCommand(token => ExecuteBatchAsync(DownloadAction.Retry, token, true),
+            () => !IsBatchRunning && _connected && _selectedIds.Any(id => ResolveBatchEntry(id) is { } entry && CanRestartFresh(entry)));
         PreviousPageCommand = new RelayCommand(() => QueueHistory(Math.Max(0, _history.Page - 1), false), () => IsHistoryView && !_browsing && _history.Page > 0);
         NextPageCommand = new RelayCommand(() => QueueHistory(_history.Page + 1, false), () => IsHistoryView && !_browsing && _history.HasNext);
         RefreshHistoryCommand = new RelayCommand(() => QueueHistory(_history.Page, false), () => IsHistoryView && !_browsing);
@@ -85,8 +87,9 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     public IAsyncRelayCommand BatchResumeCommand { get; }
     public IAsyncRelayCommand BatchRemoveCommand { get; }
     public IAsyncRelayCommand BatchRetryCommand { get; }
+    public IAsyncRelayCommand BatchRestartFreshCommand { get; }
     public IAsyncRelayCommand BatchRecoverCommand { get; }
-    private IEnumerable<IAsyncRelayCommand> BatchCommands => [BatchPauseCommand, BatchResumeCommand, BatchRemoveCommand, BatchRetryCommand, BatchRecoverCommand];
+    private IEnumerable<IAsyncRelayCommand> BatchCommands => [BatchPauseCommand, BatchResumeCommand, BatchRemoveCommand, BatchRetryCommand, BatchRecoverCommand, BatchRestartFreshCommand];
     public IReadOnlyDictionary<DownloadFilter, int> SidebarCounts => Enum.GetValues<DownloadFilter>().ToDictionary(filter => filter,
         filter => _snapshot?.Downloads.Count(row => DownloadBrowsing.Matches(row, "", filter)) ?? 0);
     public string SidebarCountScope => "Loaded live and up to 100 recent records";
@@ -103,15 +106,18 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         () => !IsBatchRunning && _selectedIds.Any(id => ResolveBatchEntry(id) is { } entry && DownloadBatch.CanExecute(entry, _connected, action)));
     private DownloadEntry? ResolveBatchEntry(Guid id) => _runtimeStore.Current.Downloads.FirstOrDefault(row => row.Job.Id == id)
         ?? _rows.GetValueOrDefault(id)?.Entry;
-    private async Task ExecuteBatchAsync(DownloadAction action, CancellationToken token)
+    private bool CanRestartFresh(DownloadEntry entry) => _coordinator.SupportsFreshRestart && entry.Progress.Status == DownloadStatus.Interrupted
+        && entry.PendingOperation?.Status != OperationStatus.Pending;
+    private async Task ExecuteBatchAsync(DownloadAction action, CancellationToken token, bool freshRestart = false)
     {
         if (IsBatchRunning) return;
         var selection = _selectedIds.ToArray(); IsBatchRunning = true;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _commandsLifetime.Token);
         try
         {
+            Func<Guid, DownloadAction, CancellationToken, Task> execute = freshRestart ? (id, _, cancellation) => _coordinator.RestartFreshAsync(id, cancellation) : ExecuteCoordinatorAsync;
             _batchResults = await DownloadBatch.ExecuteAsync(selection, action, ResolveBatchEntry,
-                () => _runtimeStore.Current.Connection == EngineConnectionState.Connected, ExecuteCoordinatorAsync, linked.Token);
+                () => _runtimeStore.Current.Connection == EngineConnectionState.Connected, execute, linked.Token, freshRestart ? CanRestartFresh : null);
             _dispatcher.Enqueue(() =>
             {
                 OnPropertyChanged(nameof(BatchResults));

@@ -214,6 +214,7 @@ public sealed partial class DownloadsPage : Page
         var actions = new StackPanel { Spacing = 8 };
         actions.Children.Add(new Button { Content = "Start engine", Command = Engine.StartCommand });
         actions.Children.Add(new Button { Content = "Check connection", Command = Engine.CheckCommand });
+        actions.Children.Add(new Button { Content = "Stop verified older engine (keep files)", Command = Engine.StopLegacyCommand });
         content.Children.Add(actions);
         await ShowDialogAsync(new ContentDialog { Title = "Download engine", Content = content, CloseButtonText = "Close" });
     }
@@ -541,7 +542,7 @@ public sealed partial class DownloadsPage : Page
             && !TransferList.SelectedItems.Contains(item)) { TransferList.SelectedItems.Clear(); TransferList.SelectedItems.Add(item); }
         var menu = new MenuFlyout();
         foreach (var (label, command) in new (string, ICommand)[] { ("Resume", ViewModel.BatchResumeCommand), ("Pause", ViewModel.BatchPauseCommand),
-            ("Retry", ViewModel.BatchRetryCommand), ("Recover", ViewModel.BatchRecoverCommand), ("Stop transfer (keep files and history)", ViewModel.BatchRemoveCommand) })
+            ("Retry", ViewModel.BatchRetryCommand), ("Recover", ViewModel.BatchRecoverCommand), ("Restart fresh (keep partial files)", ViewModel.BatchRestartFreshCommand), ("Stop transfer (keep files and history)", ViewModel.BatchRemoveCommand) })
             menu.Items.Add(new MenuFlyoutItem { Text = label, Command = command });
         foreach (var (label, tag) in new[] { ("Move earlier in queue", "MoveUp"), ("Move later in queue", "MoveDown"), ("Open file", "OpenFile"), ("Open folder", "OpenFolder") })
         {

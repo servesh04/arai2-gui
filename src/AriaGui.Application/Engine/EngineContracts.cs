@@ -16,6 +16,8 @@ public sealed class EngineException(EngineFailure failure, string message) : Exc
 
 public interface IManagedAria2Engine
 {
+    bool SupportsLegacyTransition => false;
+    Task StopLegacyDirectAsync(CancellationToken token) => throw new EngineException(EngineFailure.RequestRejected, "Older-engine transition is not available.");
     event EventHandler? UnexpectedExit;
     Task<EngineInfo> StartAsync(CancellationToken cancellationToken);
     Task<EngineInfo> CheckHealthAsync(CancellationToken cancellationToken);

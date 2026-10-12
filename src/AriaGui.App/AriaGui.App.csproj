@@ -42,10 +42,14 @@
 
   <Target Name="PinReleaseRuntime" BeforeTargets="ProcessFrameworkReferences" Condition="'$(AriaGuiRelease)' == 'true'">
     <ItemGroup>
-      <!-- Pin .NET only: a global RuntimeFrameworkVersion also overrides the Windows SDK reference. -->
+      <!-- Pin managed runtimes individually: a global RuntimeFrameworkVersion also overrides the Windows SDK reference. -->
       <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="$(AriaGuiRuntimeVersion)" />
+      <FrameworkReference Update="Microsoft.AspNetCore.App" RuntimeFrameworkVersion="$(AriaGuiRuntimeVersion)" />
     </ItemGroup>
   </Target>
+  <ItemGroup Condition="'$(AriaGuiRelease)' == 'true'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 
   <ItemGroup Condition="'$(AriaGuiRelease)' == 'true' and '$(AriaGuiReleaseNoticesDir)' != ''">
     <Content Include="$(AriaGuiReleaseNoticesDir)\**\*" Link="Notices\%(RecursiveDir)%(Filename)%(Extension)"

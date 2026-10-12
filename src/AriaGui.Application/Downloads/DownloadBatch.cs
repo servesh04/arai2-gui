@@ -23,14 +23,15 @@ public static class DownloadBatch
         };
     }
     public static async Task<IReadOnlyList<DownloadBatchResult>> ExecuteAsync(IEnumerable<Guid> selection, DownloadAction action,
-        Func<Guid, DownloadEntry?> resolve, Func<bool> connected, Func<Guid, DownloadAction, CancellationToken, Task> execute, CancellationToken token)
+        Func<Guid, DownloadEntry?> resolve, Func<bool> connected, Func<Guid, DownloadAction, CancellationToken, Task> execute, CancellationToken token,
+        Func<DownloadEntry, bool>? eligibility = null)
     {
         var results = new List<DownloadBatchResult>();
         foreach (var id in selection.Distinct().ToArray())
         {
             if (token.IsCancellationRequested) { results.Add(new(id, BatchOutcome.Canceled, "Canceled before submission.")); continue; }
             var entry = resolve(id);
-            if (entry is null || !CanExecute(entry, connected(), action)) { results.Add(new(id, BatchOutcome.Skipped, "No longer eligible or engine disconnected.")); continue; }
+            if (entry is null || !connected() || !(eligibility?.Invoke(entry) ?? CanExecute(entry, true, action))) { results.Add(new(id, BatchOutcome.Skipped, "No longer eligible or engine disconnected.")); continue; }
             try
             {
                 await execute(id, action, token);

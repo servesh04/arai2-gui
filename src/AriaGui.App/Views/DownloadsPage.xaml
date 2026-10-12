@@ -43,6 +43,7 @@
                 <DropDownButton Content="More" Padding="10,5" MinHeight="30" FontSize="12">
                     <DropDownButton.Flyout><MenuFlyout x:Name="MoreMenu"><MenuFlyoutItem x:Name="OverflowRetry" Text="Retry" Command="{x:Bind ViewModel.BatchRetryCommand}" Visibility="Collapsed" />
                         <MenuFlyoutItem Text="Recover" Command="{x:Bind ViewModel.BatchRecoverCommand}" />
+                        <MenuFlyoutItem Text="Restart fresh (keep partial files)" Command="{x:Bind ViewModel.BatchRestartFreshCommand}" />
                         <MenuFlyoutItem Text="Move earlier in queue" Click="SingleActionClick" Tag="MoveUp" /><MenuFlyoutItem Text="Move later in queue" Click="SingleActionClick" Tag="MoveDown" />
                         <MenuFlyoutSeparator /><MenuFlyoutItem Text="Stop transfer (keep files and history)" Command="{x:Bind ViewModel.BatchRemoveCommand}" />
                         <MenuFlyoutItem Text="Open file" Click="SingleActionClick" Tag="OpenFile" /><MenuFlyoutItem Text="Open folder" Click="SingleActionClick" Tag="OpenFolder" />

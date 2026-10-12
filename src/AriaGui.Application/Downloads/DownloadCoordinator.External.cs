@@ -22,7 +22,9 @@ public sealed partial class DownloadCoordinator
     internal async Task<DownloadEntry> PrepareExternalAsync(Uri source, string folder, string? name, CancellationToken token)
     {
         await InitializeAsync(token).ConfigureAwait(false);
+        if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(folder, token).ConfigureAwait(false);
         var target = await destination.ValidateAsync(source, folder, name, token).ConfigureAwait(false);
+        if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(target.Directory, token).ConfigureAwait(false);
         return BuildIntent(source, target, clock.GetUtcNow()) with { ExactSourceUrl = source.OriginalString };
     }
     private static bool IsDispatchableExternalIntent(DownloadEntry entry) => entry.Progress.Status == DownloadStatus.Queued

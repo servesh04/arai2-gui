@@ -13,6 +13,7 @@ namespace AriaGui.Infrastructure.Aria2;
 public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret, TimeSpan requestTimeout)
 {
     private long _requestId;
+    internal string OwnershipFailure { get; private set; } = "none";
     private static readonly string[] ProgressKeys = ["gid", "status", "totalLength", "completedLength", "downloadSpeed", "errorCode"];
 
     public async Task<EngineInfo> GetInfoAsync(CancellationToken cancellationToken = default)
@@ -28,6 +29,39 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
         CallAsync<string>("aria2.saveSession", cancellationToken);
     public Task<string> ShutdownAsync(CancellationToken cancellationToken = default) =>
         CallAsync<string>("aria2.shutdown", cancellationToken);
+    internal async Task<bool> MatchesTransferOwnershipAsync(string gid, string source, string path, CancellationToken token)
+    {
+        var uris = await CallAsync<JsonElement[]>("aria2.getUris", token, [gid]).ConfigureAwait(false);
+        var files = await CallAsync<JsonElement[]>("aria2.getFiles", token, [gid]).ConfigureAwait(false);
+        OwnershipFailure = "uri-count-" + uris.Length;
+        if (uris.Length is < 1 or > 16) return false;
+        OwnershipFailure = "uri-value";
+        if (uris.Any(value => value.ValueKind != JsonValueKind.Object || !value.TryGetProperty("uri", out var uri) || uri.ValueKind != JsonValueKind.String || uri.GetString() != source)) return false;
+        OwnershipFailure = "file-count";
+        if (files.Length != 1) return false;
+        OwnershipFailure = "file-path";
+        if (files[0].ValueKind != JsonValueKind.Object || !files[0].TryGetProperty("path", out var file) || file.ValueKind != JsonValueKind.String || file.GetString() is not string observed || !Path.IsPathFullyQualified(observed)
+            || !string.Equals(Path.GetFullPath(observed), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)) return false;
+        OwnershipFailure = "none"; return true;
+    }
+    internal async Task<bool> MatchesStoppedOwnershipAsync(string gid, string source, string path, CancellationToken token)
+    {
+        // getUris is unavailable for pinned aria2 stopped results. tellStatus includes
+        // authenticated terminal state and the same files/URI structures.
+        var result = await CallAsync<JsonElement>("aria2.tellStatus", token, [gid, new[] { "gid", "status", "files" }]);
+        OwnershipFailure = "stopped-identity";
+        if (result.ValueKind != JsonValueKind.Object || !result.TryGetProperty("gid", out var id) || id.ValueKind != JsonValueKind.String || id.GetString() != gid
+            || !result.TryGetProperty("status", out var status) || status.ValueKind != JsonValueKind.String || status.GetString() is not ("complete" or "error" or "removed")
+            || !result.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array || files.GetArrayLength() != 1) return false;
+        var file = files[0]; OwnershipFailure = "stopped-file";
+        if (file.ValueKind != JsonValueKind.Object || !file.TryGetProperty("path", out var observed) || observed.ValueKind != JsonValueKind.String
+            || observed.GetString() is not string value || !Path.IsPathFullyQualified(value) || !string.Equals(Path.GetFullPath(value), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)
+            || !file.TryGetProperty("uris", out var uris) || uris.ValueKind != JsonValueKind.Array || uris.GetArrayLength() is < 1 or > 16) return false;
+        OwnershipFailure = "stopped-uri";
+        foreach (var uri in uris.EnumerateArray())
+            if (uri.ValueKind != JsonValueKind.Object || !uri.TryGetProperty("uri", out var address) || address.ValueKind != JsonValueKind.String || address.GetString() != source) return false;
+        OwnershipFailure = "none"; return true;
+    }
 
     public async Task<EngineDownload> AddAsync(EngineDownloadRequest request, CancellationToken token)
     {
@@ -112,7 +146,7 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
         return new(transfer.Gid, new(status, received, total, speed), error);
     }
 
-    public async Task<IReadOnlyList<string>> GetWaitingAsync(CancellationToken token)
+    public async Task<IReadOnlyList<string>> GetWaitingAsync(CancellationToken token, int maxCount = int.MaxValue)
     {
         // Page engine inventory, but expose only owned IDs in the manager.
         var result = new List<string>();
@@ -120,17 +154,20 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
         {
             var page = await CallAsync<WaitingResponse[]>("aria2.tellWaiting", token, [offset, 256, new[] { "gid" }]).ConfigureAwait(false);
             result.AddRange(page.Select(row => row.Gid));
+            if (result.Count > maxCount) throw InvalidResponse();
             if (page.Length < 256) return result;
         }
     }
-    public async Task<IReadOnlyList<string>> GetInventoryAsync(CancellationToken token)
+    public async Task<IReadOnlyList<string>> GetInventoryAsync(CancellationToken token, int maxCount = int.MaxValue)
     {
         var active = await CallAsync<WaitingResponse[]>("aria2.tellActive", token, [new[] { "gid" }]).ConfigureAwait(false);
-        var result = active.Select(row => row.Gid).Concat(await GetWaitingAsync(token).ConfigureAwait(false)).ToList();
+        var result = active.Select(row => row.Gid).Concat(await GetWaitingAsync(token, maxCount).ConfigureAwait(false)).ToList();
+        if (result.Count > maxCount) throw InvalidResponse();
         for (var offset = 0; ; offset += 256)
         {
             var page = await CallAsync<WaitingResponse[]>("aria2.tellStopped", token, [offset, 256, new[] { "gid" }]).ConfigureAwait(false);
             result.AddRange(page.Select(row => row.Gid));
+            if (result.Count > maxCount) throw InvalidResponse();
             if (page.Length < 256) return result.Distinct(StringComparer.Ordinal).ToArray();
         }
     }

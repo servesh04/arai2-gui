@@ -42,7 +42,9 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             || string.IsNullOrWhiteSpace(source.Host)) throw new ArgumentException("Enter a complete HTTP or HTTPS URL.");
         if (!string.IsNullOrEmpty(source.UserInfo)) throw new ArgumentException("Use a URL without embedded credentials.");
         await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(directory, cancellationToken).ConfigureAwait(false);
         var target = await destination.ValidateAsync(source, directory, fileName, cancellationToken).ConfigureAwait(false);
+        if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(target.Directory, cancellationToken).ConfigureAwait(false);
         var entry = BuildIntent(source, target, clock.GetUtcNow());
         var jobId = entry.Job.Id;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -73,7 +75,11 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
         {
             // Network waits do not hold the state-update gate. Polling can continue.
             var result = await engine.AddAsync(new(entry.Attempt.EngineId, entry.Job.Source, unknownSize,
-                Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, ExactSourceUrl: entry.ExactSourceUrl), cancellationToken).ConfigureAwait(false);
+                Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, ExactSourceUrl: entry.ExactSourceUrl,
+                ContinuityJobId: entry.Job.Id, ContinuityAttemptId: entry.Attempt.Id,
+                // ExactSourceUrl is assigned by external intake and restored from its durable ledger.
+                // Request JSON cannot select the manual-origin policy.
+                RequirePublicOrigin: entry.ExactSourceUrl is not null), cancellationToken).ConfigureAwait(false);
             await CommitAsync(ApplyObservation(entry, result), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -323,7 +329,10 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
         }
     }
 
-    public async Task RetryAsync(Guid jobId, CancellationToken token = default)
+    public bool SupportsFreshRestart => engine.SupportsFreshRestart;
+    public Task RestartFreshAsync(Guid jobId, CancellationToken token = default) => RetryCoreAsync(jobId, true, token);
+    public Task RetryAsync(Guid jobId, CancellationToken token = default) => RetryCoreAsync(jobId, false, token);
+    private async Task RetryCoreAsync(Guid jobId, bool freshRestart, CancellationToken token)
     {
         await InitializeAsync(token).ConfigureAwait(false);
         var jobGate = _jobGates.GetOrAdd(jobId, _ => new(1, 1));
@@ -336,13 +345,25 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
         {
             var previous = await GetEntryAsync(jobId, token).ConfigureAwait(false);
             if (previous.Attempt.Id != requestedAttempt) return; // Coalesce a double-click already handled by another retry.
-            if (previous.PendingOperation is not null || previous.Progress.Status is not (DownloadStatus.Failed or DownloadStatus.Removed))
+            if (freshRestart ? !engine.SupportsFreshRestart || previous.Progress.Status != DownloadStatus.Interrupted || previous.PendingOperation?.Status == OperationStatus.Pending
+                : previous.PendingOperation is not null || previous.Progress.Status is not (DownloadStatus.Failed or DownloadStatus.Removed))
                 throw new DownloadRequestException("Retry is available only for reconciled failed or removed attempts.");
             // Check the old GID first: retry must never compete with an old active writer.
-            var evidence = await engine.ObserveAsync([previous.Attempt.EngineId], token).ConfigureAwait(false);
-            if (evidence.Downloads.Any(item => !IsTerminal(item.Progress.Status)))
-                throw new DownloadRequestException("The previous attempt is still running or paused. Reconcile it before retrying.");
-            var target = await destination.ValidateRetryAsync(previous.Job.Source, Path.GetDirectoryName(previous.Job.Destination)!, previous.File.FileName, token).ConfigureAwait(false);
+            if (freshRestart)
+            {
+                if (!await engine.CanRestartFreshAsync(previous.Attempt.EngineId, token).ConfigureAwait(false))
+                    throw new DownloadRequestException("This attempt cannot restart from scratch yet. Recover it or reconcile its running transfer first.");
+            }
+            else
+            {
+                var evidence = await engine.ObserveAsync([previous.Attempt.EngineId], token).ConfigureAwait(false);
+                if (evidence.Downloads.Any(item => !IsTerminal(item.Progress.Status)))
+                    throw new DownloadRequestException("The previous attempt is still running or paused. Reconcile it before retrying.");
+            }
+            var target = freshRestart
+                ? await destination.ValidateFreshRestartAsync(previous.Job.Source, Path.GetDirectoryName(previous.Job.Destination)!, previous.File.FileName, token).ConfigureAwait(false)
+                : await destination.ValidateRetryAsync(previous.Job.Source, Path.GetDirectoryName(previous.Job.Destination)!, previous.File.FileName, token).ConfigureAwait(false);
+            if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(target.Directory, token).ConfigureAwait(false);
             var now = clock.GetUtcNow();
             if (now <= previous.Attempt.StartedAt) now = previous.Attempt.StartedAt.AddTicks(1);
             var attempt = new TransferAttempt(Guid.NewGuid(), jobId, NewGid(), now, previous.Attempt.Id);
@@ -355,7 +376,8 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             {
                 if (store.Current.Downloads.SingleOrDefault(row => row.Job.Id == jobId) is { } current && current.Attempt.Id != previous.Attempt.Id)
                     throw new DownloadRequestException("The attempt changed. Refresh before retrying.");
-                await repository.InsertRetryIntentAsync(previous, retry, token).ConfigureAwait(false);
+                if (freshRestart) await repository.InsertFreshRestartIntentAsync(previous, retry, token).ConfigureAwait(false);
+                else await repository.InsertRetryIntentAsync(previous, retry, token).ConfigureAwait(false);
                 _inFlight.Add(jobId); _epoch++;
                 store.Publish(store.Current.Downloads.Where(item => item.Job.Id != jobId).Append(retry), store.Current.Connection);
             }
@@ -363,7 +385,9 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             try
             {
                 var result = await engine.AddAsync(new(attempt.EngineId, previous.Job.Source, Directory: target.Directory,
-                    FileName: target.FileName, ContinueExisting: target.ContinueExisting, ExactSourceUrl: retry.ExactSourceUrl), token).ConfigureAwait(false);
+                    FileName: target.FileName, ContinueExisting: target.ContinueExisting, ExactSourceUrl: retry.ExactSourceUrl,
+                    ContinuityJobId: retry.Job.Id, ContinuityAttemptId: retry.Attempt.Id,
+                    RequirePublicOrigin: retry.ExactSourceUrl is not null, LegacyParentEngineId: previous.Attempt.EngineId, FreshRestart: freshRestart), token).ConfigureAwait(false);
                 await CommitAsync(ApplyObservation(retry, result), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)

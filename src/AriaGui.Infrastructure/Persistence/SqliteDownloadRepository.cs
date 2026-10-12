@@ -140,6 +140,28 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         return true;
     }, token);
 
+    public Task InsertFreshRestartIntentAsync(DownloadEntry previous, DownloadEntry retry, CancellationToken token) => OnDatabaseThreadAsync(db =>
+    {
+        var old = db.Attempts.Single(row => row.Id == previous.Attempt.Id);
+        if (old.Status != DownloadStatus.Interrupted || retry.Attempt.ParentAttemptId != old.Id
+            || db.Attempts.Any(row => row.JobId == old.JobId && row.StartedAtUtcTicks > old.StartedAtUtcTicks)
+            || db.Operations.Any(row => row.JobId == old.JobId && (row.Status == OperationStatus.Pending
+                || row.Status == OperationStatus.Uncertain && row.AttemptId != old.Id)))
+            throw new DownloadRequestException("The interrupted attempt must be checked before restarting.");
+        // The coordinator and engine independently prove no old live writer.
+        // Supersession and the new intent commit together; retain old attempt history.
+        foreach (var operation in db.Operations.Where(row => row.AttemptId == old.Id && row.Status == OperationStatus.Uncertain))
+            operation.Status = OperationStatus.Failed;
+        var intent = retry.PendingOperation!;
+        db.Attempts.Add(new() { Id = retry.Attempt.Id, JobId = retry.Job.Id, EngineId = retry.Attempt.EngineId,
+            StartedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, ParentAttemptId = old.Id,
+            Status = DownloadStatus.Queued, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks });
+        db.Files.Add(new() { Id = retry.File.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id, FileName = retry.File.FileName });
+        db.Operations.Add(new() { Id = intent.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id,
+            Action = DownloadAction.Retry, Status = OperationStatus.Pending, RequestedAtUtcTicks = intent.RequestedAt.UtcTicks });
+        db.SaveChanges(); return true;
+    }, token);
+
     public Task<QueuePolicy> LoadQueuePolicyAsync(CancellationToken token) => OnDatabaseThreadAsync(db =>
     {
         var row = db.QueuePolicies.AsNoTracking().SingleOrDefault(row => row.Id == 1);

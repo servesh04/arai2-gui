@@ -6,6 +6,23 @@ namespace AriaGui.Application.Tests;
 
 public sealed class EngineLifecycleTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_transition_runs_only_as_explicit_action_and_failure_never_auto_retries(bool fail)
+    {
+        var engine = new StubEngine { FailStartup = true, StartupFailure = EngineFailure.AlreadyRunning, SupportsLegacyTransition = true, FailLegacyStop = fail };
+        var store = new EngineStateStore(); using var service = new EngineLifecycleService(engine, store);
+        using var viewModel = new EngineViewModel(service, store, new ImmediateDispatcher());
+        Assert.False(viewModel.StopLegacyCommand.CanExecute(null));
+        await service.StartAsync(); Assert.True(viewModel.StopLegacyCommand.CanExecute(null));
+        await service.MonitorOnceAsync(); Assert.Equal(0, engine.LegacyStops); Assert.Equal(1, engine.Starts);
+        await viewModel.StopLegacyCommand.ExecuteAsync(null); Assert.Equal(1, engine.LegacyStops);
+        Assert.Equal(fail ? EngineStatus.Failed : EngineStatus.Stopped, store.Current.Status);
+        if (fail) Assert.Equal(EngineFailure.AlreadyRunning, store.Current.Failure);
+        await service.MonitorOnceAsync(); Assert.Equal(1, engine.Starts); Assert.Equal(1, engine.LegacyStops);
+        Assert.Equal(fail, viewModel.StopLegacyCommand.CanExecute(null));
+    }
     [Fact]
     public async Task Startup_publishes_starting_before_ready_and_stop_finishes_stopped()
     {
@@ -82,6 +99,16 @@ public sealed class EngineLifecycleTests
 
     private sealed class StubEngine : IManagedAria2Engine
     {
+        public bool SupportsLegacyTransition { get; set; }
+        public EngineFailure StartupFailure { get; set; } = EngineFailure.MissingBinary;
+        public bool FailLegacyStop { get; set; }
+        public int Starts, LegacyStops;
+        public Task StopLegacyDirectAsync(CancellationToken token)
+        {
+            LegacyStops++;
+            if (FailLegacyStop) throw new EngineException(EngineFailure.RpcUnavailable, "Stop unavailable");
+            return Task.CompletedTask;
+        }
         public event EventHandler? UnexpectedExit;
         public bool FailStartup { get; set; }
         public bool CrashDuringStart { get; init; }
@@ -89,8 +116,9 @@ public sealed class EngineLifecycleTests
         public void Crash() => UnexpectedExit?.Invoke(this, EventArgs.Empty);
         public async Task<EngineInfo> StartAsync(CancellationToken cancellationToken)
         {
+            Starts++;
             if (WaitForCancellation) await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            if (FailStartup) throw new EngineException(EngineFailure.MissingBinary, "The bundled engine is missing.");
+            if (FailStartup) throw new EngineException(StartupFailure, "Engine startup refused.");
             if (CrashDuringStart) Crash();
             return new("1.37.0", "test-session");
         }

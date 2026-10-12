@@ -126,7 +126,7 @@ public sealed class ExternalIntakeTests
         const string source = "https://example.invalid/file?sig=%41%7e%2f%2Fb%2Bc&z=2&a=1";
         var receipt = await service.Intake.AcceptAsync(fixture.Request() with { SourceUrl = source + "#ignored" }); await service.Intake.DrainAsync();
         using (var db = fixture.Db()) Assert.Equal(source, db.Jobs.Single().Source);
-        var submitted = Assert.Single(fixture.Engine.Requests); Assert.Equal(source, submitted.ExactSourceUrl);
+        var submitted = Assert.Single(fixture.Engine.Requests); Assert.Equal(source, submitted.ExactSourceUrl); Assert.True(submitted.RequirePublicOrigin);
         Assert.NotEqual(source, submitted.Source.AbsoluteUri); // This case proves why the original Uri path was insufficient.
         var loaded = await fixture.Service().Repository.GetAsync(receipt.JobId!.Value, default); Assert.Equal(source, loaded!.ExactSourceUrl);
     }

@@ -21,6 +21,29 @@ public sealed class EngineLifecycleService : IDisposable
     }
 
     public Task StartAsync(CancellationToken cancellationToken = default) => StartCoreAsync(true, cancellationToken);
+    public bool SupportsLegacyTransition => _engine.SupportsLegacyTransition;
+    public async Task StopLegacyDirectAsync(CancellationToken token = default)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (!SupportsLegacyTransition || _store.Current.Status != EngineStatus.Failed || _store.Current.Failure != EngineFailure.AlreadyRunning) return;
+            _store.Publish(EngineStatus.Stopping, "Verifying and gracefully stopping the older engine…");
+            try
+            {
+                await _engine.StopLegacyDirectAsync(token).ConfigureAwait(false);
+                _store.Publish(EngineStatus.Stopped, "Older engine stopped; files and session retained. Start the engine, then use Restart fresh for interrupted legacy transfers.");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                _store.Publish(EngineStatus.Failed, "Older-engine stop cancelled; no termination was forced. Check its state before retrying.", failure: EngineFailure.AlreadyRunning);
+                throw;
+            }
+            catch (EngineException ex) { _store.Publish(EngineStatus.Failed, ex.Message, failure: EngineFailure.AlreadyRunning); }
+            catch (Exception) { _store.Publish(EngineStatus.Failed, "Older-engine stop could not finish. Its process and files were preserved.", failure: EngineFailure.AlreadyRunning); }
+        }
+        finally { _gate.Release(); }
+    }
 
     private async Task StartCoreAsync(bool manual, CancellationToken cancellationToken)
     {

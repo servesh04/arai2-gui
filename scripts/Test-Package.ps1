@@ -49,6 +49,16 @@ try {
         if (!$entries.ContainsKey('Notices/Microsoft.NETCore.App.Runtime.win-x64-' + $runtimeNotices[0].version + '/' + $name)) { throw "Embedded runtime notice missing: $name" }
     }
     $runtime = (Read-PackageText 'AriaGui.App.runtimeconfig.json' | ConvertFrom-Json).runtimeOptions
+    $gatewayNotices = @($inventory.packages | Where-Object id -eq 'Microsoft.AspNetCore.App.Runtime.win-x64')
+    if ($gatewayNotices.Count -ne 1) { throw 'Embedded gateway runtime notice record missing.' }
+    foreach ($name in @('LICENSE.TXT','THIRD-PARTY-NOTICES.TXT')) {
+        if (!$entries.ContainsKey('Notices/Microsoft.AspNetCore.App.Runtime.win-x64-' + $gatewayNotices[0].version + '/' + $name)) { throw "Embedded gateway runtime notice missing: $name" }
+    }
+    foreach ($name in @('Microsoft.AspNetCore.Server.Kestrel.Core.dll','Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.dll','Microsoft.AspNetCore.Http.dll')) {
+        if (!$entries.ContainsKey($name) -or $entries[$name].Length -eq 0) { throw "Missing/empty gateway release dependency: $name" }
+    }
+    $gatewayFramework = @($runtime.includedFrameworks | Where-Object name -eq 'Microsoft.AspNetCore.App')
+    if ($gatewayFramework.Count -ne 1 -or $gatewayFramework[0].version -ne $gatewayNotices[0].version) { throw 'Gateway runtime is not self-contained or its notice version differs.' }
     if ($runtime.framework -or $runtime.frameworks -or !@($runtime.includedFrameworks).Where({ $_.name -eq 'Microsoft.NETCore.App' }).Count) { throw '.NET runtime is not self-contained.' }
     if (@($runtime.includedFrameworks | Where-Object name -eq 'Microsoft.NETCore.App')[0].version -ne $runtimeNotices[0].version) { throw 'Runtime and corresponding notice versions differ.' }
     if ((Get-PackageHash 'Engine/aria2c.exe') -ne $provenance.executableSha256) { throw 'Packaged engine hash differs from the pinned binary.' }
@@ -113,6 +123,7 @@ try {
         minimumWindowsBuild = $family.MinVersion; entries = $entries.Count
         selfContainedDotNet = $true; selfContainedWindowsAppSdk = $true; frameworkDependencies = @()
         dotNetRuntime = @($runtime.includedFrameworks | Where-Object name -eq 'Microsoft.NETCore.App')[0].version
+        gatewayRuntime = $gatewayFramework[0].version
         engineVersion = $provenance.version; engineSha256 = $provenance.executableSha256
         bundledNotices = @($provenance.notices); signaturePresent = $signed; signatureStatus = $signatureStatus
         windowsAuthenticodeStatus = $signature.Status.ToString(); nativeTrustResult = $nativeTrust; blockMapVerified = $true

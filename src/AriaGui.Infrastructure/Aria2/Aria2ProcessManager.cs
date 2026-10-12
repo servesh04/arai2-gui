@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using AriaGui.Core.Downloads;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -7,10 +8,11 @@ using System.Text;
 using System.Text.Json;
 using AriaGui.Application.Engine;
 using AriaGui.Application.Downloads;
+using AriaGui.Infrastructure.Downloads;
 
 namespace AriaGui.Infrastructure.Aria2;
 
-public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
+public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
 {
     private readonly Aria2ProcessOptions _options;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -31,6 +33,9 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
     private readonly Dictionary<string, EngineDownload> _observations = new(StringComparer.Ordinal);
     private DateTimeOffset _nextReconcile;
     private int _unknownCount, _concurrency = 3;
+    private ContinuityLoopbackGateway? _continuityGateway;
+    private ContinuityTransferLedger? _continuityTransfers;
+    public bool SupportsFreshRestart => _options.UseContinuityGateway;
 
     public event EventHandler? UnexpectedExit;
     public int? OwnedProcessId => _process is { HasExited: false } process ? process.Id : null;
@@ -68,6 +73,15 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
             {
                 await VerifyBinaryAsync(cancellationToken).ConfigureAwait(false);
                 var history = await LoadHistoryAsync(cancellationToken).ConfigureAwait(false);
+                if (_options.UseContinuityGateway)
+                {
+                    _continuityGateway = _options.ContinuityTestOrigins is null
+                        ? new(_options.RuntimeDirectory, () => OwnedProcessId, enableExperimental: true)
+                        : new(_options.RuntimeDirectory, () => OwnedProcessId, _options.ContinuityTestOrigins, true);
+                    await _continuityGateway.StartAsync(cancellationToken).ConfigureAwait(false);
+                    _continuityTransfers = new(_options.RuntimeDirectory, _continuityGateway);
+                    await _continuityTransfers.LoadAsync(cancellationToken).ConfigureAwait(false);
+                }
                 _observations.Clear(); _nextReconcile = default; _unknownCount = 0;
                 _knownIds = _repository is null ? [] : (await _repository.LoadEngineIdsAsync(cancellationToken).ConfigureAwait(false)).ToHashSet(StringComparer.Ordinal);
                 if (await TryAdoptAsync(history, cancellationToken).ConfigureAwait(false) is { } adopted) return adopted;
@@ -78,6 +92,8 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
                 _sessionFile = Path.Combine(_options.RuntimeDirectory, "sessions", $"session-{Guid.NewGuid():N}.txt");
                 var plan = _repository is null ? new SessionRecoveryPlan([], null, "Ready · local connection verified")
                     : await SessionRecoveryPlanner.PrepareAsync(_options.RuntimeDirectory, history, cancellationToken).ConfigureAwait(false);
+                if (_continuityTransfers is not null)
+                    plan = await _continuityTransfers.PrepareRestoreAsync(_options.RuntimeDirectory, history, cancellationToken).ConfigureAwait(false);
                 var policy = _repository is null ? new QueuePolicy() : await _repository.LoadQueuePolicyAsync(cancellationToken).ConfigureAwait(false);
                 var config = string.Join('\n', new[]
                 {
@@ -181,13 +197,48 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
         finally { _gate.Release(); }
     }
 
+    public async Task<bool> CanRestartFreshAsync(string engineId, CancellationToken token)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (_continuityTransfers is null || _continuityTransfers.Owns(engineId)) return false;
+            var observed = await ConnectedClient().FindAsync(engineId, token).ConfigureAwait(false);
+            return observed is null || DownloadBrowsing.IsTerminal(observed.Progress.Status);
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task<EngineDownload> AddDownloadAsync(EngineDownloadRequest request, CancellationToken token)
     {
         await _gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
             var rpc = ConnectedClient();
+            if (request.FreshRestart && (_continuityTransfers is null || request.LegacyParentEngineId is null || _continuityTransfers.Owns(request.LegacyParentEngineId)))
+                throw new EngineException(EngineFailure.RequestRejected, "Use Recover for a protected attempt; a legacy fresh restart requires a protected engine session.");
+            if (_continuityTransfers is not null)
+            {
+                var legacyFresh = false;
+                if (request.LegacyParentEngineId is { } parentGid && !_continuityTransfers.Owns(parentGid))
+                {
+                    var current = _repository is null || request.ContinuityJobId is not Guid job ? null : await _repository.GetAsync(job, token).ConfigureAwait(false);
+                    var parent = _repository is null ? null : await _repository.GetAttemptAsync(parentGid, token).ConfigureAwait(false);
+                    var observed = await rpc.FindAsync(parentGid, token).ConfigureAwait(false);
+                    legacyFresh = current is not null && parent is not null && current.Attempt.Id == request.ContinuityAttemptId
+                        && current.Attempt.EngineId == request.EngineId && current.Attempt.ParentAttemptId == parent.Attempt.Id
+                        && parent.Job.Id == current.Job.Id && (parent.Progress.Status is DownloadStatus.Failed or DownloadStatus.Removed || request.FreshRestart && parent.Progress.Status == DownloadStatus.Interrupted)
+                        && current.PendingOperation is { Action: DownloadAction.Retry, Status: OperationStatus.Pending }
+                        && current.Job.Destination == Path.GetFullPath(Path.Combine(request.Directory, request.FileName))
+                        && (current.ExactSourceUrl ?? current.Job.Source.AbsoluteUri) == (request.ExactSourceUrl ?? request.Source.AbsoluteUri)
+                        && (observed is null || DownloadBrowsing.IsTerminal(observed.Progress.Status));
+                    if (!legacyFresh) throw new EngineException(EngineFailure.RequestRejected, "Legacy restart lacks reconciled durable retry provenance.");
+                    request = request with { RequirePublicOrigin = current!.ExactSourceUrl is not null };
+                }
+                request = await _continuityTransfers.PrepareAsync(request, token, legacyFresh).ConfigureAwait(false);
+            }
             var download = await rpc.AddAsync(request, token).ConfigureAwait(false);
+            if (_continuityTransfers is not null) download = await ObserveContinuityAsync(download, token).ConfigureAwait(false);
             _knownIds.Add(request.EngineId);
             // A checkpoint failure leaves the durable intent uncertain; the known GID is reconciled.
             await rpc.SaveSessionAsync(token).ConfigureAwait(false);
@@ -204,7 +255,8 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
             var rpc = ConnectedClient();
             var result = new List<EngineDownload>();
             foreach (var gid in gids)
-                if (await rpc.FindAsync(gid, token).ConfigureAwait(false) is { } download) result.Add(download);
+                if (await rpc.FindAsync(gid, token).ConfigureAwait(false) is { } download)
+                    result.Add(_continuityTransfers is null ? download : await ObserveContinuityAsync(download, token).ConfigureAwait(false));
             return result;
         }
         finally { _gate.Release(); }
@@ -244,7 +296,10 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
                 foreach (var row in active.Where(row => requested.Contains(row.EngineId))) _observations[row.EngineId] = row;
                 foreach (var gid in _observations.Keys.Where(gid => !requested.Contains(gid)).ToArray()) _observations.Remove(gid);
             }
-            return new(_info!.SessionId, gids.Where(_observations.ContainsKey).Select(gid => _observations[gid]).ToArray(), _concurrency, _restoredIds, _unknownCount);
+            var rows = new List<EngineDownload>();
+            foreach (var gid in gids.Where(_observations.ContainsKey))
+                rows.Add(_continuityTransfers is null ? _observations[gid] : await ObserveContinuityAsync(_observations[gid], token).ConfigureAwait(false));
+            return new(_info!.SessionId, rows, _concurrency, _restoredIds, _unknownCount);
         }
         finally { _gate.Release(); }
     }
@@ -256,10 +311,13 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
         {
             var rpc = ConnectedClient();
             var info = await CheckHealthCoreAsync(token).ConfigureAwait(false);
+            if (_continuityTransfers is not null && action == AriaGui.Core.Downloads.DownloadAction.Resume && !_continuityTransfers.CanResume(gid))
+                throw new EngineException(EngineFailure.RequestRejected, "Legacy or published transfer cannot resume without active continuity ownership.");
             await rpc.ExecuteAsync(gid, action, position, token).ConfigureAwait(false);
             _nextReconcile = default;
             await rpc.SaveSessionAsync(token).ConfigureAwait(false);
             var download = await rpc.FindAsync(gid, token).ConfigureAwait(false);
+            if (download is not null && _continuityTransfers is not null) download = await ObserveContinuityAsync(download, token).ConfigureAwait(false);
             if (download is not null)
             {
                 var index = (await rpc.GetWaitingAsync(token).ConfigureAwait(false)).ToList().IndexOf(gid);
@@ -326,6 +384,8 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
         _process = null;
         _rpc = null;
         _info = null;
+        if (_continuityGateway is not null) { await _continuityGateway.DisposeAsync().ConfigureAwait(false); _continuityGateway = null; }
+        _continuityTransfers?.Dispose(); _continuityTransfers = null;
         if (_wroteOwnership)
         {
             try { File.Delete(OwnershipPath); }
@@ -396,12 +456,16 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
     {
         var owner = new EngineOwnership(_process!.Id, _process.StartTime.ToUniversalTime(),
             Path.GetFullPath(_options.ExecutablePath), _options.RpcPort, info?.SessionId, _sessionFile, Environment.ProcessId,
-            Process.GetCurrentProcess().StartTime.ToUniversalTime());
+            Process.GetCurrentProcess().StartTime.ToUniversalTime(), _options.UseContinuityGateway);
         // A cancelled write must not leave a half-written ownership record for the next launch.
-        var temporaryPath = OwnershipPath + ".tmp";
+        var temporaryPath = OwnershipPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            await File.WriteAllTextAsync(temporaryPath, JsonSerializer.Serialize(owner), cancellationToken).ConfigureAwait(false);
+            await using (var file = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+            {
+                await JsonSerializer.SerializeAsync(file, owner, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await file.FlushAsync(cancellationToken).ConfigureAwait(false); file.Flush(true);
+            }
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporaryPath, OwnershipPath, overwrite: true);
             _wroteOwnership = true;
@@ -451,6 +515,9 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
         try
         {
             if (existing.HasExited || existing.StartTime.ToUniversalTime() != owner.StartedAtUtc) { existing.Dispose(); return null; }
+            if (owner.Guarded != _options.UseContinuityGateway) throw AdoptionRefused(!owner.Guarded && _options.UseContinuityGateway
+                ? "An older direct-download engine is still running. Stop it normally before protected startup; its partial files and process were preserved."
+                : "Surviving engine transport ownership does not match. Its files and process were preserved.");
             if (_repository is null || !string.Equals(Path.GetFullPath(owner.ExecutablePath), Path.GetFullPath(_options.ExecutablePath), StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(existing.MainModule?.FileName, Path.GetFullPath(_options.ExecutablePath), StringComparison.OrdinalIgnoreCase)
                 || owner.RpcPort != _options.RpcPort || string.IsNullOrWhiteSpace(owner.SessionId)
@@ -474,6 +541,8 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
             var info = await rpc.GetInfoAsync(token).ConfigureAwait(false);
             if (info.SessionId != owner.SessionId || info.Version != Aria2ProcessOptions.BundledVersion)
                 throw AdoptionRefused("The surviving engine's authenticated session does not match its ownership record.");
+            if (_continuityTransfers is not null && !await _continuityTransfers.VerifySurvivorAsync(rpc, history, token, _repository).ConfigureAwait(false))
+                throw AdoptionRefused($"Surviving guarded transfer ownership could not be verified ({rpc.OwnershipFailure}). Its files and process were preserved.");
             // Adopt only after every identity/authentication check succeeds.
             _log.Secret = secret; _process = existing; _rpc = rpc; _sessionFile = owner.SessionFile;
             _wroteConfig = true; _wroteOwnership = true;
@@ -524,6 +593,10 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
             await CheckHealthCoreAsync(token).ConfigureAwait(false);
             if (await rpc.FindAsync(entry.Attempt.EngineId, token).ConfigureAwait(false) is { } present)
             {
+                if (_continuityTransfers is not null && !_continuityTransfers.Owns(entry.Attempt.EngineId))
+                    throw new EngineException(EngineFailure.RequestRejected, "Legacy recovery cannot bypass continuity ownership.");
+                if (_continuityTransfers is not null && !_continuityTransfers.CanResume(entry.Attempt.EngineId) && present.Progress.Status != DownloadStatus.Completed)
+                    throw new EngineException(EngineFailure.RequestRejected, "Published transfer cannot become active during recovery.");
                 var status = present.Progress.Status;
                 if (entry.DesiredRemoved && status is AriaGui.Core.Downloads.DownloadStatus.Downloading or AriaGui.Core.Downloads.DownloadStatus.Queued or AriaGui.Core.Downloads.DownloadStatus.Paused)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Remove, null, token).ConfigureAwait(false);
@@ -534,21 +607,40 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
                 if (entry.PendingOperation?.QueuePosition is int position && status == AriaGui.Core.Downloads.DownloadStatus.Queued)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Move, position, token).ConfigureAwait(false);
                 await rpc.SaveSessionAsync(token).ConfigureAwait(false);
-                return await rpc.FindAsync(entry.Attempt.EngineId, token).ConfigureAwait(false) ?? throw new EngineException(EngineFailure.TransferNotFound, "Transfer disappeared during recovery; no duplicate Add was sent.");
+                var recovered = await rpc.FindAsync(entry.Attempt.EngineId, token).ConfigureAwait(false) ?? throw new EngineException(EngineFailure.TransferNotFound, "Transfer disappeared during recovery; no duplicate Add was sent.");
+                return _continuityTransfers is null ? recovered : await ObserveContinuityAsync(recovered, token).ConfigureAwait(false);
             }
             if (entry.DesiredRemoved)
                 return new(entry.Attempt.EngineId, new(AriaGui.Core.Downloads.DownloadStatus.Removed, entry.Progress.DownloadedBytes, entry.Progress.TotalBytes, 0));
             var target = await new AriaGui.Infrastructure.Downloads.FileDownloadDestination().ValidateRetryAsync(entry.Job.Source,
                 Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, token).ConfigureAwait(false);
-            var result = await rpc.AddAsync(new(entry.Attempt.EngineId, entry.Job.Source, Directory: target.Directory, FileName: target.FileName,
-                ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused, ExactSourceUrl: entry.ExactSourceUrl), token).ConfigureAwait(false);
+            var recoveryRequest = new EngineDownloadRequest(entry.Attempt.EngineId, entry.Job.Source, Directory: target.Directory, FileName: target.FileName,
+                ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused, ExactSourceUrl: entry.ExactSourceUrl,
+                ContinuityJobId: entry.Job.Id, ContinuityAttemptId: entry.Attempt.Id,
+                RequirePublicOrigin: entry.ExactSourceUrl is not null);
+            if (_continuityTransfers is not null) recoveryRequest = await _continuityTransfers.PrepareAsync(recoveryRequest, token).ConfigureAwait(false);
+            var result = await rpc.AddAsync(recoveryRequest, token).ConfigureAwait(false);
             _knownIds.Add(entry.Attempt.EngineId);
             await rpc.SaveSessionAsync(token).ConfigureAwait(false);
-            return result;
+            return _continuityTransfers is null ? result : await ObserveContinuityAsync(result, token).ConfigureAwait(false);
         }
         finally { _gate.Release(); }
     }
 
+    private async Task<EngineDownload> ObserveContinuityAsync(EngineDownload download, CancellationToken token)
+    {
+        try { return await _continuityTransfers!.ObserveAsync(download, token).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Keep the durable journal and retained/staged files for explicit recovery.
+            // A destination collision must never become a false Completed observation.
+            return download with
+            {
+                Progress = new(AriaGui.Core.Downloads.DownloadStatus.Failed, download.Progress.DownloadedBytes, download.Progress.TotalBytes, 0),
+                ErrorMessage = "Protected file publication is unavailable; retained files were preserved."
+            };
+        }
+    }
     public async ValueTask DisposeAsync()
     {
         await StopAsync(CancellationToken.None).ConfigureAwait(false);
@@ -558,5 +650,5 @@ public sealed class Aria2ProcessManager : IManagedAria2Engine, IAsyncDisposable
     }
 
     private sealed record EngineOwnership(int ProcessId, DateTime StartedAtUtc, string ExecutablePath,
-        int RpcPort, string? SessionId, string? SessionFile, int AppProcessId, DateTime? AppStartedAtUtc = null);
+        int RpcPort, string? SessionId, string? SessionFile, int AppProcessId, DateTime? AppStartedAtUtc = null, bool Guarded = false);
 }

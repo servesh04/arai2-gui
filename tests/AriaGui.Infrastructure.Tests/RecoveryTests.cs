@@ -16,31 +16,200 @@ namespace AriaGui.Infrastructure.Tests;
 [Collection("Engine processes")]
 public sealed class RecoveryTests
 {
-    [Fact]
-    public async Task GUI_crash_adopts_the_verified_survivor_without_resubmitting_or_losing_pause()
+    [Theory]
+    [InlineData("paused", false)]
+    [InlineData("active", false)]
+    [InlineData("paused", true)]
+    public async Task Explicit_legacy_stop_is_graceful_then_guarded_fresh_restart_preserves_retained_pair(string mode, bool changedInstallPath)
     {
         using var runtime = new Runtime(); await using var server = new LocalHttpServer();
-        var oldPid = await runtime.StartHost(server.Url, "paused");
+        var oldPid = await runtime.StartHost(server.Url, mode); await runtime.KillHost();
+        var before = Assert.Single(await runtime.Repository().LoadAsync(default));
+        var options = runtime.Options with { UseContinuityGateway = true };
+        if (changedInstallPath)
+        {
+            var folder = Path.Combine(runtime.Root, "new package 安全"); Directory.CreateDirectory(folder);
+            var binary = Path.Combine(folder, "aria2c.exe"); File.Copy(options.ExecutablePath, binary);
+            options = options with { ExecutablePath = binary };
+        }
+        await using var manager = new Aria2ProcessManager(options, runtime.Repository());
+        await Assert.ThrowsAsync<EngineException>(() => manager.StartAsync(default));
+        Assert.True(runtime.EngineAlive());
+        await manager.StopLegacyDirectAsync(default);
+        Assert.False(runtime.EngineAlive()); Assert.Null(manager.OwnedProcessId);
+        var retained = await File.ReadAllBytesAsync(before.Job.Destination);
+        var control = await File.ReadAllBytesAsync(before.Job.Destination + ".aria2");
+        Assert.True(retained.Length > 0); await Task.Delay(200);
+        Assert.Equal(retained, await File.ReadAllBytesAsync(before.Job.Destination));
+        Assert.Equal(control, await File.ReadAllBytesAsync(before.Job.Destination + ".aria2"));
+        var requests = server.Requests;
+        await manager.StartAsync(default); Assert.NotEqual(oldPid, manager.OwnedProcessId); Assert.Equal(requests, server.Requests);
+        var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(manager, store); await coordinator.RefreshAsync();
+        Assert.Equal(DownloadStatus.Interrupted, Assert.Single(store.Current.Downloads).Progress.Status);
+        server.ChangeEntity = true; Volatile.Write(ref server.RecoverPartial, true);
+        await coordinator.RestartFreshAsync(before.Job.Id);
+        await WaitAsync(coordinator, () => store.Current.Downloads[0].Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed);
+        var completed = Assert.Single(store.Current.Downloads); Assert.Equal(DownloadStatus.Completed, completed.Progress.Status);
+        Assert.Equal(before.Attempt.Id, completed.Attempt.ParentAttemptId);
+        Assert.Equal(server.Payload.Select(value => (byte)(value ^ 0xff)), await File.ReadAllBytesAsync(before.Job.Destination));
+        var stage = Path.Combine(runtime.Output, ".aria-gui-continuity-" + before.Job.Id.ToString("N"));
+        Assert.Equal(retained, await File.ReadAllBytesAsync(Path.Combine(stage, "retained-" + completed.Attempt.Id.ToString("N") + ".payload")));
+        Assert.Equal(control, await File.ReadAllBytesAsync(Path.Combine(stage, "retained-" + completed.Attempt.Id.ToString("N") + ".control")));
+    }
+    [Theory]
+    [InlineData("session")]
+    [InlineData("executable")]
+    [InlineData("secret")]
+    [InlineData("source")]
+    [InlineData("inventory")]
+    [InlineData("app-live")]
+    [InlineData("acl")]
+    public async Task Explicit_legacy_stop_refuses_unverified_process_or_inventory_without_mutation(string mutation)
+    {
+        using var runtime = new Runtime(); await using var server = new LocalHttpServer();
+        await runtime.StartHost(server.Url, "paused");
+        if (mutation != "app-live") await runtime.KillHost();
+        var before = Assert.Single(await runtime.Repository().LoadAsync(default));
+        var ownerPath = Path.Combine(runtime.Root, "engine.owner.json"); var owner = JsonNode.Parse(await File.ReadAllTextAsync(ownerPath))!;
+        if (mutation == "session") owner["SessionId"] = "wrong-session";
+        if (mutation == "executable") owner["ExecutablePath"] = Path.Combine(runtime.Root, "unrelated.exe");
+        await File.WriteAllTextAsync(ownerPath, owner.ToJsonString());
+        var configPath = Path.Combine(runtime.Root, "aria2.conf"); var config = await File.ReadAllLinesAsync(configPath);
+        if (mutation == "secret") await File.WriteAllLinesAsync(configPath, config.Select(line => line.StartsWith("rpc-secret=", StringComparison.Ordinal) ? "rpc-secret=" + new string('0', 64) : line));
+        if (mutation == "acl")
+        {
+            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+            var file = new FileInfo(configPath); var security = file.GetAccessControl();
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.WorldSid, null),
+                System.Security.AccessControl.FileSystemRights.Read, System.Security.AccessControl.AccessControlType.Allow));
+            file.SetAccessControl(security);
+        }
+        if (mutation == "source") { using var db = runtime.Db(); db.Jobs.Single().Source = server.Url + "other"; db.SaveChanges(); }
+        if (mutation == "inventory")
+        {
+            using var http = new HttpClient(new SocketsHttpHandler { UseProxy = false });
+            var secret = config.Single(line => line.StartsWith("rpc-secret=", StringComparison.Ordinal))[11..];
+            var rpc = new Aria2RpcClient(http, new($"http://127.0.0.1:{runtime.Options.RpcPort}/jsonrpc"), secret, TimeSpan.FromSeconds(2));
+            await rpc.AddAsync(new("aaaaaaaaaaaaaaaa", new(server.Url), Directory: runtime.Output, FileName: "unowned.bin", StartPaused: true), default);
+        }
+        var bytes = await File.ReadAllBytesAsync(before.Job.Destination); var control = await File.ReadAllBytesAsync(before.Job.Destination + ".aria2");
+        var savedOwner = await File.ReadAllBytesAsync(ownerPath); var savedConfig = await File.ReadAllBytesAsync(configPath); var requests = server.Requests;
+        await using var manager = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true }, runtime.Repository());
+        await Assert.ThrowsAsync<EngineException>(() => manager.StopLegacyDirectAsync(default));
+        Assert.True(runtime.EngineAlive()); Assert.Null(manager.OwnedProcessId); Assert.Equal(requests, server.Requests);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(before.Job.Destination)); Assert.Equal(control, await File.ReadAllBytesAsync(before.Job.Destination + ".aria2"));
+        Assert.Equal(savedOwner, await File.ReadAllBytesAsync(ownerPath)); Assert.Equal(savedConfig, await File.ReadAllBytesAsync(configPath));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Guarded_adoption_reconciles_historical_stopped_attempt_and_rejects_missing_database_proof(bool removeProof)
+    {
+        using var runtime = new Runtime(); await using var server = new LocalHttpServer();
+        var pid = await runtime.StartHost(server.Url, "guarded-retried-paused");
+        var latest = Assert.Single(await runtime.Repository().LoadAsync(default));
+        string historical;
+        using (var db = runtime.Db()) historical = db.Attempts.Single(row => row.Id != latest.Attempt.Id).EngineId;
+        var old = await runtime.Repository().GetAttemptAsync(historical, default);
+        Assert.NotNull(old); Assert.Equal(DownloadStatus.Removed, old.Progress.Status);
+        await runtime.KillHost(); var requests = server.Requests;
+        if (removeProof)
+        {
+            using var db = runtime.Db(); var row = db.Attempts.Single(row => row.EngineId == historical);
+            foreach (var child in db.Attempts.Where(attempt => attempt.ParentAttemptId == row.Id)) child.ParentAttemptId = null;
+            db.Files.RemoveRange(db.Files.Where(file => file.AttemptId == row.Id)); db.Operations.RemoveRange(db.Operations.Where(op => op.AttemptId == row.Id));
+            db.Attempts.Remove(row); db.SaveChanges();
+        }
+        await using var manager = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true, ContinuityTestOrigins = source => new ControlledLoopbackOrigin(source) }, runtime.Repository());
+        if (removeProof)
+        {
+            var failure = await Assert.ThrowsAsync<EngineException>(() => manager.StartAsync(default));
+            Assert.Equal(EngineFailure.AlreadyRunning, failure.Failure); Assert.True(runtime.EngineAlive()); Assert.Equal(requests, server.Requests);
+        }
+        else
+        {
+            await manager.StartAsync(default); Assert.Equal(pid, manager.OwnedProcessId); Assert.Equal(requests, server.Requests);
+            var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(manager, store); await coordinator.RefreshAsync();
+            Assert.Equal(DownloadStatus.Paused, store.Current.Downloads[0].Progress.Status);
+            await coordinator.ResumeAsync(latest.Job.Id);
+            await WaitAsync(coordinator, () => store.Current.Downloads[0].Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed);
+            Assert.Equal(DownloadStatus.Completed, store.Current.Downloads[0].Progress.Status);
+            Assert.Equal(server.Payload, await File.ReadAllBytesAsync(latest.Job.Destination));
+            Assert.Contains(server.Observations, row => row.RequestedOffset > 0 && row.Status == 206);
+            using var db = runtime.Db(); Assert.Equal(2, db.Attempts.Count());
+        }
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GUI_crash_adopts_the_verified_survivor_without_resubmitting_or_losing_pause(bool guarded)
+    {
+        using var runtime = new Runtime(); await using var server = new LocalHttpServer();
+        var oldPid = await runtime.StartHost(server.Url, guarded ? "guarded-paused" : "paused");
         var before = Assert.Single(await runtime.Repository().LoadAsync(default));
         var requests = server.Requests;
         await runtime.KillHost();
         Assert.True(runtime.EngineAlive());
-        await using var manager = runtime.Manager(); var info = await manager.StartAsync(default);
+        await using var manager = guarded
+            ? new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true, ContinuityTestOrigins = source => new ControlledLoopbackOrigin(source) }, runtime.Repository()) : runtime.Manager();
+        var info = await manager.StartAsync(default);
         Assert.Equal(oldPid, manager.OwnedProcessId); Assert.Contains("surviving", info.RecoveryMessage);
         var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(manager, store); await coordinator.RefreshAsync();
         var after = Assert.Single(store.Current.Downloads);
         Assert.Equal(before.Attempt, after.Attempt); Assert.Equal(DownloadStatus.Paused, after.Progress.Status); Assert.True(after.DesiredPaused);
         Assert.Equal(requests, server.Requests); using var db = runtime.Db(); Assert.Single(db.Attempts);
+        if (guarded)
+        {
+            await coordinator.ResumeAsync(after.Job.Id);
+            await WaitAsync(coordinator, () => store.Current.Downloads[0].Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed);
+            Assert.Equal(DownloadStatus.Completed, store.Current.Downloads[0].Progress.Status);
+            Assert.Contains(server.Observations, row => row.RequestedOffset > 0 && row.Status == 206);
+            Assert.Equal(server.Payload, await File.ReadAllBytesAsync(before.Job.Destination));
+        }
     }
-
-    [Fact]
-    public async Task Engine_and_GUI_crash_restore_the_checkpoint_with_the_same_gid_and_paused_intent()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Active_guarded_adoption_race_never_bypasses_changed_entity_validation(bool changed)
     {
         using var runtime = new Runtime(); await using var server = new LocalHttpServer();
-        await runtime.StartHost(server.Url, "paused");
+        var pid = await runtime.StartHost(server.Url, "guarded-active");
+        var before = Assert.Single(await runtime.Repository().LoadAsync(default));
+        server.ChangeEntity = changed; Volatile.Write(ref server.RecoverPartial, true); await runtime.KillHost();
+        await using var manager = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true, ContinuityTestOrigins = source => new ControlledLoopbackOrigin(source) }, runtime.Repository());
+        await manager.StartAsync(default); Assert.Equal(pid, manager.OwnedProcessId);
+        var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(manager, store);
+        await WaitAsync(coordinator, () => store.Current.Downloads.Count == 1 && store.Current.Downloads[0].Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed);
+        if (changed)
+        {
+            Assert.Equal(DownloadStatus.Failed, store.Current.Downloads[0].Progress.Status);
+            var bytes = await File.ReadAllBytesAsync(before.Job.Destination); var control = await File.ReadAllBytesAsync(before.Job.Destination + ".aria2");
+            Assert.Equal(server.Payload.Take(bytes.Length), bytes);
+            await coordinator.RetryAsync(before.Job.Id);
+            await WaitAsync(coordinator, () => store.Current.Downloads[0].Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed);
+            Assert.Equal(DownloadStatus.Failed, store.Current.Downloads[0].Progress.Status);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(before.Job.Destination)); Assert.Equal(control, await File.ReadAllBytesAsync(before.Job.Destination + ".aria2"));
+        }
+        else
+        {
+            if (store.Current.Downloads[0].Progress.Status == DownloadStatus.Failed)
+            { await coordinator.RetryAsync(before.Job.Id); await WaitAsync(coordinator, () => store.Current.Downloads[0].Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed); }
+            Assert.Equal(DownloadStatus.Completed, store.Current.Downloads[0].Progress.Status); Assert.Equal(server.Payload, await File.ReadAllBytesAsync(before.Job.Destination));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Engine_and_GUI_crash_restore_the_checkpoint_with_the_same_gid_and_paused_intent(bool guarded)
+    {
+        using var runtime = new Runtime(); await using var server = new LocalHttpServer();
+        await runtime.StartHost(server.Url, guarded ? "guarded-paused" : "paused");
         var before = Assert.Single(await runtime.Repository().LoadAsync(default));
         await runtime.KillEngine(); await runtime.KillHost();
-        await using var manager = runtime.Manager(); var info = await manager.StartAsync(default);
+        await using var manager = guarded
+            ? new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true, ContinuityTestOrigins = source => new ControlledLoopbackOrigin(source) }, runtime.Repository()) : runtime.Manager();
+        var info = await manager.StartAsync(default);
         Assert.Contains("Restored 1", info.RecoveryMessage);
         var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(manager, store); await coordinator.RefreshAsync();
         var after = Assert.Single(store.Current.Downloads);
@@ -48,6 +217,7 @@ public sealed class RecoveryTests
         Assert.True(File.Exists(before.Job.Destination + ".aria2"));
         await coordinator.ResumeAsync(after.Job.Id); await WaitAsync(coordinator, () => store.Current.Downloads[0].Progress.Status == DownloadStatus.Completed);
         Assert.Equal(server.Payload, await File.ReadAllBytesAsync(before.Job.Destination));
+        if (guarded) Assert.Contains(server.Observations, row => row.RequestedOffset > 0 && row.Status == 206);
         using var db = runtime.Db(); Assert.Single(db.Attempts);
     }
 
@@ -83,6 +253,7 @@ public sealed class RecoveryTests
     [InlineData("session")]
     [InlineData("executable")]
     [InlineData("secret")]
+    [InlineData("continuity")]
     public async Task Failed_adoption_proof_preserves_metadata_and_does_not_stop_the_process(string mismatch)
     {
         using var runtime = new Runtime(); await using var server = new LocalHttpServer();
@@ -99,9 +270,38 @@ public sealed class RecoveryTests
             await File.WriteAllLinesAsync(config, lines.Select(line => line.StartsWith("rpc-secret=", StringComparison.Ordinal) ? "rpc-secret=" + new string('0', 64) : line));
         }
         var saved = await File.ReadAllTextAsync(path);
-        await using var manager = runtime.Manager(); await Assert.ThrowsAsync<EngineException>(() => manager.StartAsync(default));
+        await using var manager = mismatch == "continuity"
+            ? new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true }, runtime.Repository()) : runtime.Manager();
+        await Assert.ThrowsAsync<EngineException>(() => manager.StartAsync(default));
         Assert.Null(manager.OwnedProcessId); Assert.True(runtime.EngineAlive());
         Assert.Equal(saved, await File.ReadAllTextAsync(path)); Assert.True(File.Exists(Path.Combine(runtime.Root, "aria2.conf")));
+    }
+
+    [Theory]
+    [InlineData("marker")]
+    [InlineData("capability")]
+    [InlineData("source")]
+    [InlineData("work")]
+    public async Task Guarded_adoption_refuses_tampered_transport_route_or_storage_without_stopping_engine(string mutation)
+    {
+        using var runtime = new Runtime(); await using var server = new LocalHttpServer();
+        await runtime.StartHost(server.Url, "guarded-paused"); await runtime.KillHost();
+        var entry = Assert.Single(await runtime.Repository().LoadAsync(default));
+        var ownerPath = Path.Combine(runtime.Root, "engine.owner.json");
+        var path = mutation == "marker" ? ownerPath : mutation == "work"
+            ? Path.Combine(runtime.Root, "continuity", "transfers", entry.Attempt.EngineId + ".json")
+            : Path.Combine(runtime.Root, "continuity", "route-" + entry.Attempt.Id.ToString("N") + ".json");
+        var value = JsonNode.Parse(await File.ReadAllTextAsync(path))!;
+        if (mutation == "marker") value["Guarded"] = false;
+        else if (mutation == "work") value["Work"] = value["Work"]!.GetValue<string>() + "-other";
+        else if (mutation == "source") value["Source"] = new Uri(new Uri(server.Url), "different").AbsoluteUri;
+        else value["Capability"] = new string('0', 64);
+        await File.WriteAllTextAsync(path, value.ToJsonString());
+        var owner = await File.ReadAllTextAsync(ownerPath); var requests = server.Requests;
+        await using var manager = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true, ContinuityTestOrigins = source => new ControlledLoopbackOrigin(source) }, runtime.Repository());
+        await Assert.ThrowsAsync<EngineException>(() => manager.StartAsync(default));
+        Assert.Null(manager.OwnedProcessId); Assert.True(runtime.EngineAlive()); Assert.Equal(requests, server.Requests);
+        Assert.Equal(owner, await File.ReadAllTextAsync(ownerPath));
     }
 
     [Fact]
@@ -289,7 +489,13 @@ public sealed class RecoveryTests
             KillEngine().GetAwaiter().GetResult();
             var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.RecoveryTests")) + Path.DirectorySeparatorChar;
             if (!Path.GetFullPath(Root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unsafe cleanup path.");
-            if (Directory.Exists(Root)) Directory.Delete(Root, true);
+            // Graceful/refused transitions can finish before terminated fixture
+            // kernel handles disappear. Retry only sharing violations, bounded1s.
+            for (var attempt = 0; Directory.Exists(Root); attempt++)
+            {
+                try { Directory.Delete(Root, true); break; }
+                catch (IOException ex) when ((ex.HResult & 0xffff) is 32 or 33 && attempt < 10) { Thread.Sleep(100); }
+            }
         }
     }
 }

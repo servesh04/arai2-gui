@@ -21,6 +21,8 @@ public sealed partial class SqliteDownloadRepository
     }, token);
     public Task<DownloadEntry?> GetAsync(Guid id, CancellationToken token) => OnDatabaseThreadAsync(db =>
         ReadEntries(db, Latest(db).Where(row => row.JobId == id).ToArray()).SingleOrDefault(), token);
+    public Task<DownloadEntry?> GetAttemptAsync(string engineId, CancellationToken token) => OnDatabaseThreadAsync(db =>
+        ReadEntries(db, db.Attempts.AsNoTracking().Where(row => row.EngineId == engineId).ToArray()).SingleOrDefault(), token);
     public Task<bool> ContainsDestinationAsync(string path, CancellationToken token) => OnDatabaseThreadAsync(db =>
         db.Jobs.Any(row => row.DestinationKey == path.ToUpperInvariant()), token);
     public Task<IReadOnlyList<string>> LoadEngineIdsAsync(CancellationToken token) => OnDatabaseThreadAsync<IReadOnlyList<string>>(db =>

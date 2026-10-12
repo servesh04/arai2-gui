@@ -11,12 +11,12 @@ try {
     $runRoot = Join-Path $projectRoot ('artifacts/packages/' + $version + '/' + [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
     $buildRoot = Join-Path $runRoot 'build'
-    & dotnet restore src/AriaGui.App/AriaGui.App.csproj -p:Platform=x64 -p:AriaGuiRelease=true --locked-mode
+    & dotnet restore src/AriaGui.App/AriaGui.App.csproj -p:Platform=x64 -p:AriaGuiRelease=true --locked-mode -m:1 -nr:false
     if ($LASTEXITCODE -ne 0) { throw 'Release dependency restore failed.' }
     $notices = Join-Path $runRoot 'notices'
     & (Join-Path $PSScriptRoot 'Export-DependencyNotices.ps1') -OutputDirectory $notices
     $buildArgs = @('publish','src/AriaGui.App/AriaGui.App.csproj','--no-restore','-c','Release','-p:Platform=x64',
-        '-p:AriaGuiRelease=true', ('-p:AriaGuiReleaseNoticesDir=' + $notices), ('-p:AppxPackageDir=' + $buildRoot + [IO.Path]::DirectorySeparatorChar))
+        '-p:AriaGuiRelease=true','-m:1','-nr:false', ('-p:AriaGuiReleaseNoticesDir=' + $notices), ('-p:AppxPackageDir=' + $buildRoot + [IO.Path]::DirectorySeparatorChar))
     & dotnet @buildArgs
     if ($LASTEXITCODE -ne 0) { throw 'Release package build failed.' }
     $packages = @(Get-ChildItem -LiteralPath $buildRoot -Recurse -File -Filter '*.msix')

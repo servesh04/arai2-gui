@@ -49,6 +49,7 @@ foreach ($library in $assets.libraries.PSObject.Properties | Sort-Object Name) {
 [xml]$project = Get-Content -LiteralPath (Join-Path $projectRoot 'src/AriaGui.App/AriaGui.App.csproj') -Raw
 $runtimeVersion = @($project.Project.PropertyGroup | Where-Object { $_.Condition -like '*AriaGuiRelease*' -and $_.AriaGuiRuntimeVersion })[0].AriaGuiRuntimeVersion
 Copy-DependencyNotices 'Microsoft.NETCore.App.Runtime.win-x64' $runtimeVersion 'Embedded .NET runtime'
+Copy-DependencyNotices 'Microsoft.AspNetCore.App.Runtime.win-x64' $runtimeVersion 'Embedded authenticated gateway runtime'
 [ordered]@{ generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); packages = @($inventory)
     reviewStatus = 'Inventory and declared notice files; full runtime/native redistribution review pending'
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'dependency-inventory.json') -Encoding utf8

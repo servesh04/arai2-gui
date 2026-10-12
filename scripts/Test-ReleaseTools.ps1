@@ -31,6 +31,8 @@ function Edit-Package([string]$name, [string]$entryName, [string]$content, [swit
 try {
     $null = & (Join-Path $PSScriptRoot 'Test-Package.ps1') -PackagePath $inputPackage
     $checks.Add('Original package content accepted')
+    $altered = Edit-Package 'missing-gateway-runtime' 'Microsoft.AspNetCore.Server.Kestrel.Core.dll' '' -Delete
+    Expect-Rejection { & (Join-Path $PSScriptRoot 'Test-Package.ps1') -PackagePath $altered } 'Missing/empty gateway release dependency' 'Missing gateway runtime rejected'
     Expect-Rejection { & (Join-Path $PSScriptRoot 'Test-Package.ps1') -PackagePath $inputPackage -RequireSignature } 'signature is required' 'Unsigned package rejected when signature required'
     $altered = Edit-Package 'engine' 'Engine/aria2c.exe' 'tampered'
     Expect-Rejection { & (Join-Path $PSScriptRoot 'Test-Package.ps1') -PackagePath $altered } 'engine hash differs' 'Changed engine rejected'

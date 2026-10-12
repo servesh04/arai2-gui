@@ -8,6 +8,52 @@ namespace AriaGui.Infrastructure.Tests;
 
 public sealed class RpcTests
 {
+    [Theory]
+    [InlineData("valid", true)]
+    [InlineData("active", false)]
+    [InlineData("foreign-uri", false)]
+    [InlineData("wrong-file", false)]
+    [InlineData("missing-uri", false)]
+    public async Task Stopped_ownership_requires_terminal_status_exact_uri_and_file(string mutation, bool accepted)
+    {
+        const string gid = "0123456789abcdef"; const string source = "http://127.0.0.1:18000/v1/owned/capability";
+        var path = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.RpcOwnership", "payload.bin"));
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token)); var root = document.RootElement;
+            Assert.Equal("aria2.tellStatus", root.GetProperty("method").GetString()); Assert.Equal("token:owned-secret", root.GetProperty("params")[0].GetString());
+            var result = new { gid, status = mutation == "active" ? "active" : "removed", files = new[]
+            { new { path = mutation == "wrong-file" ? path + ".other" : path, uris = mutation == "missing-uri" ? Array.Empty<object>()
+                : new object[] { new { uri = mutation == "foreign-uri" ? "https://example.invalid/direct" : source } } } } };
+            return Json(new { jsonrpc = "2.0", id = root.GetProperty("id").GetString(), result });
+        }));
+        Assert.Equal(accepted, await new Aria2RpcClient(http, new("http://127.0.0.1:16800/jsonrpc"), "owned-secret", TimeSpan.FromSeconds(1))
+            .MatchesStoppedOwnershipAsync(gid, source, path, default));
+    }
+    [Theory]
+    [InlineData("duplicates", true)]
+    [InlineData("foreign-uri", false)]
+    [InlineData("wrong-file", false)]
+    [InlineData("malformed-uri", false)]
+    [InlineData("empty", false)]
+    [InlineData("too-many", false)]
+    public async Task Guarded_ownership_requires_every_uri_and_exact_staged_file(string mutation, bool accepted)
+    {
+        const string source = "http://127.0.0.1:18000/v1/transfer/owned/capability";
+        var path = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.RpcOwnership", "payload.bin"));
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token)); var root = document.RootElement;
+            Assert.Equal("token:owned-secret", root.GetProperty("params")[0].GetString());
+            object[] uris = mutation == "empty" ? [] : mutation == "malformed-uri" ? [new { uri = 1 }]
+                : Enumerable.Range(0, mutation == "too-many" ? 17 : 2).Select(index => (object)new { uri = mutation == "foreign-uri" && index == 1 ? "https://example.invalid/direct" : source }).ToArray();
+            object result = root.GetProperty("method").GetString() == "aria2.getUris" ? uris
+                : new[] { new { path = mutation == "wrong-file" ? path + ".other" : path } };
+            return Json(new { jsonrpc = "2.0", id = root.GetProperty("id").GetString(), result });
+        }));
+        var rpc = new Aria2RpcClient(http, new("http://127.0.0.1:16800/jsonrpc"), "owned-secret", TimeSpan.FromSeconds(1));
+        Assert.Equal(accepted, await rpc.MatchesTransferOwnershipAsync("0123456789abcdef", source, path, default));
+    }
     [Fact]
     public async Task Exact_signed_source_is_serialized_without_Uri_normalization()
     {

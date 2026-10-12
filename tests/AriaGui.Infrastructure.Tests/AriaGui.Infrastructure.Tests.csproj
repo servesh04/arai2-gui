@@ -11,11 +11,19 @@
     <Using Include="Xunit" />
   </ItemGroup>
   <Target Name="CopyEngineFixture" AfterTargets="Build">
-    <ItemGroup><FixtureFiles Include="../AriaGui.EngineFixture/bin/$(Configuration)/net10.0/**/*" /></ItemGroup>
+    <MSBuild Projects="../AriaGui.EngineFixture/AriaGui.EngineFixture.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);Platform=$(Platform)" BuildInParallel="false">
+      <Output TaskParameter="TargetOutputs" ItemName="FixtureAssembly" />
+    </MSBuild>
+    <PropertyGroup><FixtureOutputDirectory>@(FixtureAssembly->'%(RootDir)%(Directory)')</FixtureOutputDirectory></PropertyGroup>
+    <ItemGroup><FixtureFiles Include="$(FixtureOutputDirectory)**/*" /></ItemGroup>
     <Copy SourceFiles="@(FixtureFiles)" DestinationFiles="@(FixtureFiles->'$(OutDir)Fixtures/%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>
   <Target Name="CopyNativeHostFixture" AfterTargets="Build">
-    <ItemGroup><NativeHostFiles Include="../../src/AriaGui.NativeHost/bin/$(Configuration)/net10.0/**/*" /></ItemGroup>
+    <MSBuild Projects="../../src/AriaGui.NativeHost/AriaGui.NativeHost.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration);Platform=$(Platform)" BuildInParallel="false">
+      <Output TaskParameter="TargetOutputs" ItemName="NativeHostAssembly" />
+    </MSBuild>
+    <PropertyGroup><NativeHostOutputDirectory>@(NativeHostAssembly->'%(RootDir)%(Directory)')</NativeHostOutputDirectory></PropertyGroup>
+    <ItemGroup><NativeHostFiles Include="$(NativeHostOutputDirectory)**/*" /></ItemGroup>
     <Copy SourceFiles="@(NativeHostFiles)" DestinationFiles="@(NativeHostFiles->'$(OutDir)NativeHostFixture/%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>
 </Project>

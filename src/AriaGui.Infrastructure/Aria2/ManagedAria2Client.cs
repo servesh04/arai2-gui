@@ -4,6 +4,8 @@ namespace AriaGui.Infrastructure.Aria2;
 
 public sealed class ManagedAria2Client(Aria2ProcessManager manager) : IAria2Client
 {
+    public bool SupportsFreshRestart => manager.SupportsFreshRestart;
+    public Task<bool> CanRestartFreshAsync(string engineId, CancellationToken token) => manager.CanRestartFreshAsync(engineId, token);
     public Task<EngineDownload> AddAsync(EngineDownloadRequest request, CancellationToken token) => manager.AddDownloadAsync(request, token);
     public Task<IReadOnlyList<EngineDownload>> GetDownloadsAsync(IReadOnlyList<string> gids, CancellationToken token) => manager.GetDownloadsAsync(gids, token);
     public Task<EngineObservation> ObserveAsync(IReadOnlyList<string> gids, CancellationToken token) => manager.ObserveDownloadsAsync(gids, token);
