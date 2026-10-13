@@ -8,6 +8,12 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 3 && args[0] == "credential-probe")
+            {
+                var evidence = await CredentialSpike.ProbeAsync(args[1], args[2]);
+                Console.WriteLine(JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }));
+                return 0; // A successfully measured blocker is evidence, not a passed feature gate.
+            }
             if (args.Length == 3 && args[0] == "browser-probe")
             {
                 var evidence = await BrowserSpike.ProbeAsync(args[1], args[2]);

@@ -1,6 +1,6 @@
 # Browser download handoff: architecture and design review
 
-Status: proposed architecture, not implemented. Reviewed against this repository and official documentation on 2026-10-11. Read with [implementation plan](BROWSER_HANDOFF_IMPLEMENTATION_PLAN.md) and [protocol and acceptance specification](BROWSER_HANDOFF_PROTOCOL_AND_TESTS.md). The intended implementer is GPT-6.1 Sol; the review and planning request does not authorize silently treating proposed classes as existing code.
+Status: original architecture reviewed 2026-10-11; this document contains historical source observations from that date. The explicit browser handoff and Package 8 domain reservation foundation have since been implemented, but automatic takeover is disabled and has not passed browser acceptance. Phase B's direct aria2 credential/header approach is blocked by measured session persistence and redirect forwarding. Phase C is deferred. Read the current [Phase A/B review](BROWSER_HANDOFF_PHASE_AB_REVIEW.md), [Sol handoff](BROWSER_HANDOFF_PHASE_AB_SOL_HANDOFF.md), [implementation plan](BROWSER_HANDOFF_IMPLEMENTATION_PLAN.md) and [protocol](BROWSER_HANDOFF_PROTOCOL_AND_TESTS.md) before coding; current source takes precedence over historical observations below.
 
 ## 1. Recommended outcome
 
@@ -140,6 +140,10 @@ Browser cancellation and SQLite commit cannot be one transaction. If cancellatio
 Therefore product wording is **best-effort takeover**, not guaranteed fail-open. Before cancellation, failures leave/resume the browser and abort an uncommitted reservation. After confirmed cancellation, the app owns recovery of the committed intent; if commit acknowledgment is lost, query the same request ID. Never automatically restart the original browser download on an unknown commit result. A bounded recovery UI shows what is known and offers deliberate action. Preserve canceled browser history by default; never erase history as transaction cleanup.
 
 ## 9. Installation and compatibility decisions
+
+The later [A1 reducer/adapter evidence](BROWSER_HANDOFF_A1_EVIDENCE.md) adds browser-free controlled-source and restart fixtures outside the packaged extension source. It does not establish real browser replayability/context proof, activate cancellation or advertise a takeover capability; A1's browser gate and A2 acceptance remain open.
+
+The subsequent [controlled Chrome/Edge probe](BROWSER_HANDOFF_A1_REAL_BROWSER_EVIDENCE.md) demonstrates their native API observations in isolated synthetic profiles. Firefox tooling/effective-source proof and real production eligibility/recovery acceptance remain unresolved; this does not activate automatic takeover.
 
 The browser extension and native host are separate installed products. Install the host and GUI at stable paths under a per-user product directory; create browser-specific native manifest files with exact allowlists. Chrome/Edge store IDs and development IDs differ. Firefox gets an explicit stable add-on ID. No wildcard allowlist. Development registration uses a separate host name/channel and cannot silently overwrite production registration.
 

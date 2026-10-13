@@ -6,6 +6,7 @@ using AriaGui.Infrastructure.Persistence;
 
 // Isolated owner process used by recovery tests. The parent kills this host, not a user app.
 if (args.Length > 0 && args[0].StartsWith("--bridge-", StringComparison.Ordinal)) return await BrowserBridgeFixture.RunAsync(args);
+if (args.Length == 3 && args[0] == "--takeover-crash") return await PreparedTakeoverCrashFixture.RunAsync(args[1], args[2]);
 if (args.Length == 2 && args[0] == "--gateway-runtime-probe")
 {
     var runtime = Path.GetFullPath(args[1]); var allowed = Path.GetFullPath(AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;

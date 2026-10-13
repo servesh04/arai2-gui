@@ -1,6 +1,6 @@
 # Browser handoff protocol, state machines and acceptance matrix
 
-Status: proposed v1 contract and later-phase design constraints, 2026-10-11. Companion to [architecture](BROWSER_HANDOFF_ARCHITECTURE.md) and [implementation plan](BROWSER_HANDOFF_IMPLEMENTATION_PLAN.md). Numeric limits below are product choices, not browser limits. They may be revised before implementation with tests and both endpoints changed together.
+Status: v1 contract reference and later-phase design constraints first written 2026-10-11. Package 8 has a disabled domain reservation implementation, not an accepted browser takeover protocol. Phase B direct-header feasibility is blocked; Phase C is deferred. Apply the current [Phase A/B review](BROWSER_HANDOFF_PHASE_AB_REVIEW.md) and [Sol handoff](BROWSER_HANDOFF_PHASE_AB_SOL_HANDOFF.md) before turning later-phase sketches below into wire actions. Numeric limits below are product choices, not browser limits; change both endpoints and tests together.
 
 ## 1. Transport rules
 
@@ -151,15 +151,19 @@ On worker restart, read unresolved nonsecret IDs and query the app. Do not store
 
 Do not include these actions in v1 advertised capabilities. They are a specification direction for a separately reviewed phase.
 
-1. Establish eligible replayable public GET and policy consent; maintain browser item ID + start time + profile identity to distinguish events and suppress self-generated fallback loops.
-2. Optionally pause the browser, handling errors and immediate completion. Pausing itself requires recovery tracking; an unpause failure is not hidden.
+1. Establish eligible replayable public GET through a trusted controlled-source contract and policy consent; bind grant issuer/policy revision, exact source/context, expiry and browser item ID + start time + profile identity. A URL allowlist or `onCreated` alone does not establish method/replayability.
+2. Persist a minimal pending recovery record before any first browser side effect, including pause. Optionally pause the browser, handling errors and immediate completion. An unpause failure is not hidden. Do not persist raw source URLs or headers in extension storage.
 3. `prepareTakeover` validates/reserves an app destination and persists a prepared request with expiry, but issues **no network request** to the origin and no active aria2 job. A HEAD/range probe can consume one-time resources and is not a universal validation.
 4. Re-read browser item. If complete, unsafe, missing, changed incompatibly or no longer eligible, `abortPrepared` and leave browser result alone.
-5. Request browser cancellation, then inspect resulting state. A fulfilled cancel call alone is insufficient. If completion won, abort. If cancellation cannot be confirmed, abort and resume where possible.
+5. Persist cancellation-requested state, request browser cancellation, then re-read fresh item state/error and unchanged identity. Each browser adapter must map its specific canceled outcome; a fulfilled call, missing item or unrelated interruption is insufficient. If completion won, abort. Ambiguous outcomes remain unresolved or abort where safe; never silently restart a browser transfer whose cancellation/commit outcome is unknown.
 6. After confirmed cancellation, send `commitPrepared` with the same request ID. Commit atomically produces accepted job intent and makes the app responsible for recovery. If acknowledgment is lost, query that ID. Never allocate another job.
 7. If canceled but commit cannot be confirmed, keep a durable pending recovery record and visible status; recover by status query and idempotent commit. If the reservation expired uncommitted, offer a deliberate browser restart or new app transfer and explain that browser bytes may be lost.
 
 Prepared expiry is 60 seconds by app clock; commit/abort/expiry race under a transaction. Commit wins once durable; abort never removes accepted work. A prepared entry performs no aria2 network action and expires without creating a queued job. If the extension knows the browser was canceled but cannot reach the app before expiry, loss-free recovery is not guaranteed. This is the explicit residual risk that gates release.
+
+The disabled domain implementation uses UTC deadlines, not a physical sixty-second erasure promise. Clock rollback can lengthen real elapsed lifetime. Startup, ten-second periodic maintenance and wake cleanup each process at most 64 expired rows; a commit independently checks its own deadline. Clearing live intent does not erase SQLite/WAL/backup bytes. A0 quotas and retention evidence are in [the review corrections report](BROWSER_HANDOFF_A0_B0_EVIDENCE.md).
+
+Future takeover wire results must separate durable state from query/error outcomes; do not serialize the internal domain enum wholesale. A retained committed request whose history was deleted reports committed responsibility with an expired tombstone receipt and no live job ID. It never reauthorizes an Add. Recovery must rehydrate source/name from the same unchanged browser item or an explicitly reviewed identity-bound app reference. Missing/changed source evidence ends in truthful cannot-confirm guidance, not a fresh request key.
 
 After app acceptance, do not auto-remove the job merely because the browser still looks interrupted. Do not erase browser history. Never delete browser partial files from the host. A new aria2 transfer starts at zero; only its own data/control file can later resume under the app's recovery policy.
 
@@ -238,5 +242,9 @@ N03 is a real acceptance requirement, not a claim the current engine automatical
 For N01/N02 interpretation, HTTP byte-range support is a server protocol capability, not a browser-extension feature. The aria2 configuration and control-file recovery determine its behavior; inspect requests and final hashes with the fixture rather than assuming a successful UI progress bar proves resume. [aria2 options and recovery](https://aria2.github.io/manual/en/html/aria2c.html)
 
 ## 8. Release evidence
+
+Later [A1 fixture evidence](BROWSER_HANDOFF_A1_EVIDENCE.md) covers browser-independent state/recovery and injected Chrome/Edge/Firefox snapshot mappings. These modules are not packaged, and no real browser test was run. A01–A04 remain unaccepted; new transport/permissions and automatic takeover remain gated.
+
+A subsequent [narrow real-browser probe](BROWSER_HANDOFF_A1_REAL_BROWSER_EVIDENCE.md) passes controlled Chrome/Edge API observations and records Firefox's failed temporary-addon installation through available automation. It is separate from the fixture milestone and does not pass A01–A04 or enable a new transport capability.
 
 Each supported browser needs a recorded version, extension build/hash, host/app build/hash, selected installation channel, OS architecture and pass/fail for the matrix subset it claims. A Node unit suite is not evidence that real browser native messaging installation works. A developer-machine success is not clean-machine installation acceptance. Record deferred capabilities explicitly in the release note; never mark cookie or automatic-capture rows passed because the feature is disabled.

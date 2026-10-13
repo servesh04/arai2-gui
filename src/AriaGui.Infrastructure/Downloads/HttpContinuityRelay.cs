@@ -24,7 +24,7 @@ public sealed record ContinuityResourceLimits
 }
 
 // Implementations must enforce destination policy on the actual connection and each redirect.
-// Public composition pins DNS-approved connections, validates TLS and refuses redirects.
+// Public composition pins DNS-approved connections and validates TLS at each bounded redirect hop.
 public interface IContinuityOriginTransport
 {
     Task<HttpResponseMessage> OpenAsync(long offset, string? ifMatch, CancellationToken token);
@@ -105,6 +105,8 @@ public sealed class HttpContinuityRelay
     private readonly bool _requiresRetainedRepresentation;
     private readonly ContinuityResourceLimits _limits;
     private readonly SemaphoreSlim _gate = new(1);
+    // The argument validates initial source shape only. Transport owns source/redirect binding;
+    // persisted representation checks below bind the eventual effective resource.
     public HttpContinuityRelay(string exactEffectiveResource, HttpRepresentationStore store, IContinuityOriginTransport transport,
         bool requiresRetainedRepresentation, bool enableExperimental = false, ContinuityResourceLimits? limits = null)
     {

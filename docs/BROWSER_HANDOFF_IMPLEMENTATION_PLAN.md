@@ -1,6 +1,6 @@
 # Browser handoff implementation plan for GPT-6.1 Sol
 
-Status: planning only, 2026-10-11. No runtime feature was implemented by this review. Normative design choices are in [architecture](BROWSER_HANDOFF_ARCHITECTURE.md); proposed wire/state semantics and acceptance IDs are in [protocol and tests](BROWSER_HANDOFF_PROTOCOL_AND_TESTS.md). Re-read the current repository before coding because other work can change these source paths and contracts.
+Status: original plan dated 2026-10-11, updated with phase status 2026-10-13. Packages 0–8 have produced code and evidence, but Package 8 is only a disabled domain reservation foundation; browser automatic takeover remains unaccepted. Phase B has a completed negative feasibility spike: direct aria2 credential/header options fail persistence and redirect-scope gates, so credential forwarding remains disabled. Phase C is deferred. Use the [Phase A/B review](BROWSER_HANDOFF_PHASE_AB_REVIEW.md) and [Sol implementation handoff](BROWSER_HANDOFF_PHASE_AB_SOL_HANDOFF.md) for current gates, alongside the [architecture](BROWSER_HANDOFF_ARCHITECTURE.md) and [protocol](BROWSER_HANDOFF_PROTOCOL_AND_TESTS.md). Re-read current source before coding.
 
 ## 1. Scope and working rules
 
@@ -146,6 +146,12 @@ Release gate: all v1 C/D/W/E/P/I requirements pass; N limitations are explicit a
 
 ## 10. Later phase A — best-effort automatic takeover
 
+Later A1 status (2026-10-13): [disabled reducer and adapter fixtures](BROWSER_HANDOFF_A1_EVIDENCE.md) now exercise context-bound synthetic grants, URL-free pending records and same-key recovery outside the packaged extension. A1 remains blocked on actual controlled-browser eligibility/context proof; no live cancellation, downloads permission or A2 transport capability is enabled.
+
+Subsequent [narrow browser proof](BROWSER_HANDOFF_A1_REAL_BROWSER_EVIDENCE.md) establishes controlled Chrome/Edge download API feasibility in throwaway profiles. Firefox's available automation could not install the temporary probe; production issuer/profile/consent/restart proof and A01–A04 remain open. No production cancellation or permission changed; A2 activation stays gated.
+
+Current status: Package 8 implemented the default-off SQLite prepare/commit/abort/status domain foundation only. Complete the A0–A2 gates in the [Sol handoff](BROWSER_HANDOFF_PHASE_AB_SOL_HANDOFF.md), including bounded expiry/retention, trusted browser eligibility and recovery, real adapter behavior and A01–A04 in throwaway browser profiles, before activation. Domain cancellation facts supplied by a caller are not browser API proof.
+
 Begin only after v1 is stable and its residual risks are accepted. Add optional downloads permission and explicit opt-in UX. Establish replayability eligibility; `onCreated` URL alone does not expose method/body/auth and is insufficient. Start with controlled/allowlisted sources and user-visible experimental status. Do not infer that every `.zip` URL is safe to replay.
 
 Implement prepared reservation/commit/abort/status under the app ledger as specified in the protocol document. Before commit there must be no origin request or active aria2 transfer. Handle browser completion, pause failure, cancellation ambiguity, changed URL/name, extension-origin downloads and worker restart. Persist only the minimum browser item identity/state needed for recovery.
@@ -156,6 +162,8 @@ Exit gate is a separate release decision: recorded loss/duplication residuals, t
 
 ## 11. Later phase B — credentials and richer HTTP context
 
+Current status: the [Phase B synthetic spike](BROWSER_HANDOFF_PHASE_B_EVIDENCE.md) rejects direct credential/header options on the shared persistent aria2 engine: markers survive session lifecycle and reach cross-origin/downgrade redirects. Do not add production credential fields or browser permissions on that path. A volatile gateway-based transport is a separate optional feasibility experiment with the B1 gates in the [Sol handoff](BROWSER_HANDOFF_PHASE_AB_SOL_HANDOFF.md), not a proven credential feature.
+
 Run S01/S02 before adding permissions or DTO fields. Inspect the exact bundled engine's session serialization and redirect header forwarding with synthetic credentials. Use all normal/suspend/recovery/forced-crash paths because periodic `save-session` operates independently of UI choices. App-only encryption does not protect secrets serialized by aria2.
 
 Only after a feasible no-unapproved-persistence and redirect-scope strategy exists, introduce typed request context with cookie store/partition evidence, allowlisted user-agent/referrer handling where necessary, explicit origin grants and credential expiry. Header validation is repeated in app infrastructure. Recovery must surface expired/lost credentials rather than retrying unauthenticated indefinitely.
@@ -163,6 +171,8 @@ Only after a feasible no-unapproved-persistence and redirect-scope strategy exis
 Keep POST bodies, browser response streams, client certificates, integrated authentication and private/container mixing unsupported unless separately designed. Add synthetic tests for secure/path/domain matching, multiple same-name cookies, partition mismatch, redirect origin changes and downgrade. Do not send whole cookie stores or expose an arbitrary header editor by default.
 
 ## 12. Later phase C — protocol activation and AppInstance migration
+
+Current status: deferred. `ariagui://open` can be evaluated independently after A is accepted or explicitly deferred and B's direct-header approach is recorded as blocked. Do not bundle AppInstance migration or URL-add activation into the first C slice; preserve the current GUI and engine ownership rules until an equivalent replacement passes lifecycle tests.
 
 Implement only if users need OS/web links independent of the extension. First support `ariagui://open`. URL add requests must open a confirmation, reject secrets/options/path parameters and be bounded/rate-limited. They are untrusted input.
 

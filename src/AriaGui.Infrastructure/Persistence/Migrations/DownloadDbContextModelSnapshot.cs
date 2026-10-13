@@ -122,6 +122,12 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.HasIndex("JobId")
                         .IsUnique();
 
+                    b.HasIndex("InstallationId", "TakeoverPhase");
+
+                    b.HasIndex("TakeoverPhase", "PreparedExpiresAtUtcTicks");
+
+                    b.HasIndex("CallerKey", "TakeoverPhase", "InstallationId");
+
                     b.ToTable("ExternalRequests");
                 });
 

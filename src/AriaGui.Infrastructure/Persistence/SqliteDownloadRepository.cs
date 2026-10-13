@@ -18,6 +18,8 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         UserRuntimeDirectory.EnsurePrivate(Path.GetDirectoryName(Path.GetFullPath(databasePath))!);
         DatabaseSchemaUpgrade.Apply(db, databasePath);
         db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+        using var transaction = db.Database.BeginTransaction();
+        ExpirePrepared(db); transaction.Commit(); // Bounded startup cleanup, independent of new intake.
         return true;
     }, token);
 

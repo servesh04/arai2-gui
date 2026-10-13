@@ -21,6 +21,9 @@ public sealed class DownloadDbContext(DbContextOptions<DownloadDbContext> option
         model.Entity<PreparedDestinationRow>().HasOne<ExternalRequestRow>().WithMany()
             .HasForeignKey(row => new { row.CallerKey, row.InstallationId, row.RequestId }).OnDelete(DeleteBehavior.Cascade);
         model.Entity<ExternalRequestRow>().HasIndex(row => row.JobId).IsUnique();
+        model.Entity<ExternalRequestRow>().HasIndex(row => new { row.TakeoverPhase, row.PreparedExpiresAtUtcTicks });
+        model.Entity<ExternalRequestRow>().HasIndex(row => new { row.CallerKey, row.TakeoverPhase, row.InstallationId });
+        model.Entity<ExternalRequestRow>().HasIndex(row => new { row.InstallationId, row.TakeoverPhase });
         model.Entity<ExternalRequestRow>().HasOne<JobRow>().WithMany().HasForeignKey(row => row.JobId).OnDelete(DeleteBehavior.Restrict);
         model.Entity<JobRow>().HasIndex(row => row.DestinationKey).IsUnique();
         model.Entity<AttemptRow>().HasIndex(row => row.EngineId).IsUnique();

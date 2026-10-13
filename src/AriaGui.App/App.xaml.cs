@@ -20,6 +20,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     private ServiceProvider? _services;
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _updates;
+    private Task? _reservationCleanup;
     private Task? _engineLoop;
     private Task? _preferencesLoad;
     private SingleInstanceLease? _instance;
@@ -98,6 +99,8 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         catch (Exception) { _window.SetDesktopStatus("Tray unavailable. Close will keep this window visible; use Exit to stop."); }
         _window.Activate();
         _updates = RunDownloadsAsync(_services.GetRequiredService<DownloadCoordinator>(), _services.GetRequiredService<ExternalDownloadIntakeService>(), _lifetime.Token);
+        _reservationCleanup = RunReservationCleanupAsync(_services.GetRequiredService<DownloadCoordinator>(),
+            (IPreparedTakeoverRepository)_services.GetRequiredService<IDownloadRepository>(), _lifetime.Token);
         var lifecycle = _services.GetRequiredService<EngineLifecycleService>();
         if (storageFailure is not null) lifecycle.ReportStartupFailure(storageFailure);
         else _engineLoop = RunEngineAsync(lifecycle, _lifetime.Token);
@@ -135,6 +138,19 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (DownloadStorageException ex) { await coordinator.ReportFailureAsync(ex.Message); }
         catch (Exception) { await coordinator.ReportFailureAsync("History could not be initialized. Keep the app database for diagnosis."); }
+    }
+
+    private static async Task RunReservationCleanupAsync(DownloadCoordinator coordinator, IPreparedTakeoverRepository repository, CancellationToken lifetime)
+    {
+        try
+        {
+            await coordinator.InitializeAsync(lifetime);
+            await new PreparedTakeoverMaintenance(repository, TimeProvider.System).RunAsync(lifetime,
+                () => coordinator.ReportFailureAsync("Prepared reservation cleanup is pending; the private history store will be retried."));
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (DownloadStorageException) { /* Existing startup history failure is reported by RunDownloadsAsync. */ }
+        catch (Exception) { await coordinator.ReportFailureAsync("Prepared reservation maintenance is unavailable; keep the private history store for diagnosis."); }
     }
 
     private static async Task RunEngineAsync(EngineLifecycleService lifecycle, CancellationToken cancellationToken)
@@ -178,6 +194,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         if (_closing || _services is null) return;
         try
         {
+            await ((IPreparedTakeoverRepository)_services.GetRequiredService<IDownloadRepository>()).CleanupPreparedTakeoversAsync(_lifetime.Token);
             await _services.GetRequiredService<EngineLifecycleService>().OnResumeAsync(_lifetime.Token);
             await _services.GetRequiredService<DownloadCoordinator>().RefreshAsync(_lifetime.Token);
         }
@@ -215,6 +232,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
                 await _browserBridge.DisposeAsync();
             }
             if (_updates is not null) await _updates;
+            if (_reservationCleanup is not null) await _reservationCleanup;
             if (_engineLoop is not null) await _engineLoop;
             if (_preferencesLoad is not null) await _preferencesLoad;
             if (_services is not null)
