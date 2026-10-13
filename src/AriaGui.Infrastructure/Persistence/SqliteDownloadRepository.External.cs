@@ -21,11 +21,18 @@ public sealed partial class SqliteDownloadRepository
 
     public Task<ExternalInsertResult> InsertExternalAsync(ExternalRequestRecord record, DownloadEntry? entry, CancellationToken token) => OnDatabaseThreadAsync(db =>
     {
-        // SaveChanges has its own all-or-nothing transaction. No ledger can acknowledge orphan job rows.
-        if (Find(db, record.Key) is { } existing) return new ExternalInsertResult(Read(existing), false);
+        using var transaction = db.Database.BeginTransaction();
+        ExpirePrepared(db);
+        // Reservation checks and ledger/job rows share this write transaction.
+        if (Find(db, record.Key) is { } existing) { transaction.Commit(); return new ExternalInsertResult(Read(existing), false); }
         if ((record.Code == ResultCode.Accepted) != (entry is not null) || record.JobId != entry?.Job.Id)
             throw new InvalidOperationException("External intent and receipt must match.");
-        if (entry is not null) AddIntentRows(db, entry);
+        if (entry is not null)
+        {
+            if (db.PreparedDestinations.Any(row => row.DestinationKey == entry.Job.Destination.ToUpperInvariant()))
+                throw new DownloadRequestException("Destination is reserved.", RejectionReason.DestinationConflict);
+            AddIntentRows(db, entry);
+        }
         db.ExternalRequests.Add(new() { CallerKey = record.Key.CallerKey, InstallationId = record.Key.InstallationId,
             RequestId = record.Key.RequestId, PayloadDigest = record.PayloadDigest, CreatedAtUtcTicks = record.CreatedAt.UtcTicks,
             UpdatedAtUtcTicks = record.UpdatedAt.UtcTicks, Code = record.Code, JobId = record.JobId, Reason = record.Reason });
@@ -33,11 +40,13 @@ public sealed partial class SqliteDownloadRepository
         {
             externalHooks?.BeforeCommit?.Invoke(); token.ThrowIfCancellationRequested();
             db.SaveChanges();
+            transaction.Commit();
             externalHooks?.AfterCommit?.Invoke();
             return new ExternalInsertResult(record, true);
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqliteException { SqliteErrorCode: 19 })
         {
+            transaction.Rollback();
             // Independent contexts/processes converge at the composite database key.
             db.ChangeTracker.Clear();
             if (Find(db, record.Key) is { } winner) return new ExternalInsertResult(Read(winner), false);

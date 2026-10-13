@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AriaGui.Infrastructure.Persistence;
 
-public sealed partial class SqliteDownloadRepository(string databasePath, ExternalIntakePersistenceHooks? externalHooks = null) : IDownloadRepository, IExternalRequestRepository
+public sealed partial class SqliteDownloadRepository(string databasePath, ExternalIntakePersistenceHooks? externalHooks = null,
+    TimeProvider? takeoverClock = null, PreparedTakeoverPersistenceHooks? takeoverHooks = null) : IDownloadRepository, IExternalRequestRepository, IPreparedTakeoverRepository
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DownloadDbContext CreateContext() => new(new DbContextOptionsBuilder<DownloadDbContext>()
@@ -46,9 +47,14 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
 
     public Task InsertIntentAsync(DownloadEntry entry, CancellationToken token) => OnDatabaseThreadAsync(db =>
     {
+        using var transaction = db.Database.BeginTransaction();
+        ExpirePrepared(db);
+        if (db.PreparedDestinations.Any(row => row.DestinationKey == entry.Job.Destination.ToUpperInvariant()))
+            throw new DownloadRequestException("This destination is reserved by a prepared browser handoff.", AriaGui.Browser.Contracts.RejectionReason.DestinationConflict);
         AddIntentRows(db, entry);
-        // SaveChanges wraps all four inserts in one SQLite transaction.
+        // Reservation admission and all four inserts commit atomically.
         db.SaveChanges();
+        transaction.Commit();
         return true;
     }, token);
 

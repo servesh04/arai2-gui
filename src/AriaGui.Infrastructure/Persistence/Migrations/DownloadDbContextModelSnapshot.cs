@@ -96,7 +96,19 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("PreparedExpiresAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PreparedIntentHash")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PreparedIntentJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("Reason")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TakeoverPhase")
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("TombstonedAtUtcTicks")
@@ -207,6 +219,28 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.ToTable("Operations");
                 });
 
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.PreparedDestinationRow", b =>
+                {
+                    b.Property<string>("DestinationKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CallerKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("InstallationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("DestinationKey");
+
+                    b.HasIndex("CallerKey", "InstallationId", "RequestId");
+
+                    b.ToTable("PreparedDestinations");
+                });
+
             modelBuilder.Entity("AriaGui.Infrastructure.Persistence.QueuePolicyRow", b =>
                 {
                     b.Property<int>("Id")
@@ -278,6 +312,15 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.HasOne("AriaGui.Infrastructure.Persistence.JobRow", null)
                         .WithMany()
                         .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.PreparedDestinationRow", b =>
+                {
+                    b.HasOne("AriaGui.Infrastructure.Persistence.ExternalRequestRow", null)
+                        .WithMany()
+                        .HasForeignKey("CallerKey", "InstallationId", "RequestId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

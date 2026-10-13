@@ -1,6 +1,6 @@
 namespace AriaGui.Application.Downloads;
 
-public sealed record BrowserIntegrationPreferences(bool Enabled = false, Guid? SelectedInstallationId = null, string InstallRoot = "")
+public sealed record BrowserIntegrationPreferences(bool Enabled = false, Guid? SelectedInstallationId = null, string InstallRoot = "", bool AutomaticTakeoverEnabled = false)
 {
     public void Validate()
     {

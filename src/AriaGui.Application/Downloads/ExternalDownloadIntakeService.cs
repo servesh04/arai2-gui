@@ -127,9 +127,9 @@ public sealed class ExternalDownloadIntakeService(DownloadCoordinator coordinato
         Task[] tasks; lock (_dispatchLock) tasks = _dispatch.Values.ToArray();
         await Task.WhenAll(tasks).WaitAsync(token).ConfigureAwait(false);
     }
-    private static bool ValidKey(ExternalRequestKey key) => key.CallerKey is { Length: > 0 and <= 200 }
+    internal static bool ValidKey(ExternalRequestKey key) => key.CallerKey is { Length: > 0 and <= 200 }
         && !key.CallerKey.Any(char.IsControl) && key.InstallationId != Guid.Empty && key.RequestId != Guid.Empty;
-    private static ContractParseResult<RequestEnvelope> Normalize(ExternalDownloadRequest request)
+    internal static ContractParseResult<RequestEnvelope> Normalize(ExternalDownloadRequest request)
     {
         if (request.SourceUrl is null || request.SourceUrl.Length > ProtocolLimits.MaximumUrlBytes || request.SuggestedFileName?.Length > 240)
             return new(null, RejectionReason.InvalidRequest, null);
