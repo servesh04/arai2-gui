@@ -11,11 +11,16 @@ public sealed class DownloadDbContext(DbContextOptions<DownloadDbContext> option
     public DbSet<FileRow> Files => Set<FileRow>();
     public DbSet<OperationRow> Operations => Set<OperationRow>();
     public DbSet<QueuePolicyRow> QueuePolicies => Set<QueuePolicyRow>();
+    public DbSet<BandwidthPolicyRow> BandwidthPolicies => Set<BandwidthPolicyRow>();
+    public DbSet<JobBandwidthPolicyRow> JobBandwidthPolicies => Set<JobBandwidthPolicyRow>();
     public DbSet<ExternalRequestRow> ExternalRequests => Set<ExternalRequestRow>();
     public DbSet<PreparedDestinationRow> PreparedDestinations => Set<PreparedDestinationRow>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        model.Entity<JobBandwidthPolicyRow>().HasKey(row => row.JobId);
+        model.Entity<JobBandwidthPolicyRow>().HasOne<JobRow>().WithOne().HasForeignKey<JobBandwidthPolicyRow>(row => row.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
         model.Entity<ExternalRequestRow>().HasKey(row => new { row.CallerKey, row.InstallationId, row.RequestId });
         model.Entity<PreparedDestinationRow>().HasKey(row => row.DestinationKey);
         model.Entity<PreparedDestinationRow>().HasOne<ExternalRequestRow>().WithMany()
@@ -61,6 +66,7 @@ public sealed class AttemptRow
     public string? ErrorMessage { get; set; }
     public bool DesiredPaused { get; set; }
     public bool DesiredRemoved { get; set; }
+    public bool PolicyHeld { get; set; }
 }
 public sealed class FileRow
 {
@@ -86,6 +92,33 @@ public sealed class QueuePolicyRow
     public int Limit { get; set; }
     public int? RequestedLimit { get; set; }
     public Guid? OperationId { get; set; }
+    public OperationStatus? RequestStatus { get; set; }
+}
+
+public sealed class BandwidthPolicyRow
+{
+    public int Id { get; set; }
+    public long RequestedRevision { get; set; }
+    public long ConfirmedRevision { get; set; }
+    public string RequestedName { get; set; } = "Unlimited";
+    public long? RequestedDownloadBytesPerSecond { get; set; }
+    public long? RequestedUploadBytesPerSecond { get; set; }
+    public string ConfirmedName { get; set; } = "Unlimited";
+    public long? ConfirmedDownloadBytesPerSecond { get; set; }
+    public long? ConfirmedUploadBytesPerSecond { get; set; }
+    public string? ConfirmedGeneration { get; set; }
+    public OperationStatus? RequestStatus { get; set; }
+    public string? ScheduleJson { get; set; }
+}
+
+public sealed class JobBandwidthPolicyRow
+{
+    public Guid JobId { get; set; }
+    public long RequestedRevision { get; set; }
+    public long ConfirmedRevision { get; set; }
+    public long? RequestedDownloadBytesPerSecond { get; set; }
+    public long? ConfirmedDownloadBytesPerSecond { get; set; }
+    public string? ConfirmedGeneration { get; set; }
     public OperationStatus? RequestStatus { get; set; }
 }
 

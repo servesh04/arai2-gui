@@ -14,6 +14,11 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _jobGates = new();
     private readonly SemaphoreSlim _policyGate = new(1, 1);
     private QueuePolicy _policy = new();
+    private BandwidthPolicy _bandwidth = BandwidthPolicy.Default;
+    private readonly SemaphoreSlim _bandwidthGate = new(1, 1);
+    private readonly Dictionary<Guid, JobBandwidthPolicy> _jobBandwidth = [];
+    private BandwidthSchedule _schedule = BandwidthSchedule.Disabled;
+    private readonly SemaphoreSlim _scheduleGate = new(1, 1);
     private long _epoch, _issuedPoll, _appliedPoll;
     private string? _generation, _configuredGeneration;
     private bool _initialized;
@@ -28,7 +33,18 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             await repository.InitializeAsync(token).ConfigureAwait(false);
             var history = await repository.LoadCurrentAsync(token).ConfigureAwait(false);
             _policy = await repository.LoadQueuePolicyAsync(token).ConfigureAwait(false);
-            store.Publish(history, EngineConnectionState.Starting, policy: _policy);
+            _bandwidth = await repository.LoadBandwidthPolicyAsync(token).ConfigureAwait(false);
+            _bandwidth.Validate();
+            _schedule = await repository.LoadBandwidthScheduleAsync(token).ConfigureAwait(false);
+            _schedule.Validate();
+            foreach (var entry in history.Where(row => !IsTerminal(row.Progress.Status)))
+            {
+                var rate = await repository.LoadJobBandwidthPolicyAsync(entry.Job.Id, token).ConfigureAwait(false);
+                rate.Validate();
+                if (rate.RequestedRevision > 0) _jobBandwidth[entry.Job.Id] = rate;
+            }
+            store.Publish(history, EngineConnectionState.Starting, policy: _policy, bandwidthPolicy: _bandwidth,
+                jobBandwidthPolicies: new Dictionary<Guid, JobBandwidthPolicy>(_jobBandwidth), schedule: _schedule);
             _initialized = true;
         }
         finally { _gate.Release(); }
@@ -46,6 +62,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
         var target = await destination.ValidateAsync(source, directory, fileName, cancellationToken).ConfigureAwait(false);
         if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(target.Directory, cancellationToken).ConfigureAwait(false);
         var entry = BuildIntent(source, target, clock.GetUtcNow());
+        if (_schedule.Enabled) entry = entry with { PolicyHeld = true };
         var jobId = entry.Job.Id;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -79,7 +96,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                 ContinuityJobId: entry.Job.Id, ContinuityAttemptId: entry.Attempt.Id,
                 // ExactSourceUrl is assigned by external intake and restored from its durable ledger.
                 // Request JSON cannot select the manual-origin policy.
-                RequirePublicOrigin: entry.ExactSourceUrl is not null), cancellationToken).ConfigureAwait(false);
+                RequirePublicOrigin: entry.ExactSourceUrl is not null, StartPaused: entry.PolicyHeld), cancellationToken).ConfigureAwait(false);
             await CommitAsync(ApplyObservation(entry, result), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -123,14 +140,33 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await EvaluateScheduleAsync(cancellationToken).ConfigureAwait(false);
         long epoch;
         DownloadEntry[] requestedEntries;
+        (Guid JobId, string Gid)[] rateJobs;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try { epoch = _epoch; requestedEntries = store.Current.Downloads.Where(NeedsObservation).ToArray(); }
+        try
+        {
+            epoch = _epoch; requestedEntries = store.Current.Downloads.Where(NeedsObservation).ToArray();
+            rateJobs = requestedEntries.Where(row => _jobBandwidth.ContainsKey(row.Job.Id) && !IsTerminal(row.Progress.Status))
+                .Select(row => (row.Job.Id, row.Attempt.EngineId)).ToArray();
+        }
         finally { _gate.Release(); }
         var sequence = Interlocked.Increment(ref _issuedPoll);
         var requested = requestedEntries.Select(item => item.Attempt.EngineId).ToHashSet(StringComparer.Ordinal);
         var batch = await engine.ObserveAsync(requested.ToArray(), cancellationToken).ConfigureAwait(false);
+        BandwidthObservation? bandwidthObservation = null;
+        if (_bandwidth.RequestedRevision > 0)
+        {
+            try { bandwidthObservation = await engine.ObserveBandwidthAsync(cancellationToken).ConfigureAwait(false); }
+            catch (EngineException) { /* Keep durable intent for the next authenticated observation. */ }
+        }
+        var jobRateObservations = new List<(Guid JobId, JobBandwidthObservation Rate)>();
+        foreach (var (jobId, gid) in rateJobs)
+        {
+            try { jobRateObservations.Add((jobId, await engine.ObserveJobBandwidthAsync(jobId, gid, cancellationToken).ConfigureAwait(false))); }
+            catch (EngineException) { /* Ownership or RPC changes leave the policy unconfirmed. */ }
+        }
         var observed = batch.Downloads
             .ToDictionary(item => item.EngineId, StringComparer.Ordinal);
         int? configureLimit = null;
@@ -152,6 +188,50 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             {
                 _policy = new(batch.MaxConcurrentDownloads);
                 await repository.SaveQueuePolicyAsync(_policy, cancellationToken).ConfigureAwait(false);
+            }
+            if (bandwidthObservation is { } rates && rates.Generation == batch.Generation)
+            {
+                var desired = _bandwidth.RequestStatus == OperationStatus.Failed ? _bandwidth.Confirmed : _bandwidth.Requested;
+                if (rates.Download == desired.Download && rates.Upload == desired.Upload)
+                {
+                    var confirmed = _bandwidth.RequestStatus == OperationStatus.Failed ? _bandwidth.ConfirmedRevision : _bandwidth.RequestedRevision;
+                    if (_bandwidth.ConfirmedRevision != confirmed || _bandwidth.ConfirmedGeneration != rates.Generation || _bandwidth.RequestStatus is OperationStatus.Pending or OperationStatus.Uncertain)
+                    {
+                        _bandwidth = _bandwidth with { Confirmed = desired, ConfirmedRevision = confirmed,
+                            ConfirmedGeneration = rates.Generation, RequestStatus = _bandwidth.RequestStatus == OperationStatus.Failed ? OperationStatus.Failed : null };
+                        await repository.SaveBandwidthPolicyAsync(_bandwidth, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                else if (_bandwidth.RequestStatus != OperationStatus.Failed && _bandwidth.RequestStatus != OperationStatus.Uncertain)
+                {
+                    _bandwidth = _bandwidth with { RequestStatus = OperationStatus.Uncertain };
+                    await repository.SaveBandwidthPolicyAsync(_bandwidth, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            foreach (var (jobId, rate) in jobRateObservations)
+            {
+                if (rate.Generation != batch.Generation || !_jobBandwidth.TryGetValue(jobId, out var policy)
+                    || !store.Current.Downloads.Any(row => row.Job.Id == jobId && row.Attempt.EngineId == rate.EngineId)) continue;
+                var desired = policy.RequestStatus == OperationStatus.Failed ? policy.Confirmed : policy.Requested;
+                if (rate.Download == desired)
+                {
+                    var revision = policy.RequestStatus == OperationStatus.Failed ? policy.ConfirmedRevision : policy.RequestedRevision;
+                    if (policy.ConfirmedRevision != revision || policy.ConfirmedGeneration != rate.Generation ||
+                        policy.RequestStatus is OperationStatus.Pending or OperationStatus.Uncertain)
+                    {
+                        policy = policy with { Confirmed = desired, ConfirmedRevision = revision,
+                            ConfirmedGeneration = rate.Generation,
+                            RequestStatus = policy.RequestStatus == OperationStatus.Failed ? OperationStatus.Failed : null };
+                        await repository.SaveJobBandwidthPolicyAsync(policy, cancellationToken).ConfigureAwait(false);
+                        _jobBandwidth[jobId] = policy;
+                    }
+                }
+                else if (policy.RequestStatus is not (OperationStatus.Failed or OperationStatus.Uncertain))
+                {
+                    policy = policy with { RequestStatus = OperationStatus.Uncertain };
+                    await repository.SaveJobBandwidthPolicyAsync(policy, cancellationToken).ConfigureAwait(false);
+                    _jobBandwidth[jobId] = policy;
+                }
             }
             var save = new List<DownloadEntry>();
             var neverSent = repository is IExternalRequestRepository external
@@ -191,10 +271,12 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             var notice = updated.LastOrDefault(item => completed.Contains(item.Attempt.Id));
             store.Publish(updated, EngineConnectionState.Connected, batch.UnknownTransferCount > 0 ? $"{batch.UnknownTransferCount} unrecognized engine transfers need review; they were not changed." : null,
                 policy: _policy, observedConcurrency: batch.MaxConcurrentDownloads,
-                completion: notice is null ? null : new(notice.Attempt.Id, notice.Job.DisplayName));
+                completion: notice is null ? null : new(notice.Attempt.Id, notice.Job.DisplayName), bandwidthPolicy: _bandwidth,
+                jobBandwidthPolicies: new Dictionary<Guid, JobBandwidthPolicy>(_jobBandwidth), schedule: _schedule);
         }
         finally { _gate.Release(); }
         if (configureLimit is int limit) await SetConcurrencyAsync(limit, cancellationToken).ConfigureAwait(false);
+        await EvaluateScheduleAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static bool NeedsObservation(DownloadEntry entry) => entry.Progress.Status is not
@@ -245,7 +327,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
     private DownloadEntry Find(Guid jobId) => store.Current.Downloads.SingleOrDefault(item => item.Job.Id == jobId)
         ?? throw new DownloadRequestException("This download is no longer available.");
 
-    private async Task CommandAsync(Guid jobId, DownloadAction action, int? offset, CancellationToken token)
+    private async Task CommandAsync(Guid jobId, DownloadAction action, int? offset, CancellationToken token, bool policyCommand = false)
     {
         await InitializeAsync(token).ConfigureAwait(false);
         if (IsTerminal((await GetEntryAsync(jobId, token).ConfigureAwait(false)).Progress.Status)) return;
@@ -258,12 +340,27 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             try
             {
                 var current = Find(jobId);
+                if (!policyCommand && action == DownloadAction.Pause && !IsTerminal(current.Progress.Status) && current.PolicyHeld && !current.DesiredPaused)
+                {
+                    // A user pause can strengthen an in-flight policy hold without sending a second command.
+                    var manual = current with { DesiredPaused = true };
+                    await repository.SaveAsync([manual], token).ConfigureAwait(false);
+                    _epoch++; store.Publish(store.Current.Downloads.Select(row => row.Job.Id == jobId ? manual : row), store.Current.Connection);
+                    return;
+                }
                 if (current.PendingOperation is not null && !(action == DownloadAction.Recover && current.PendingOperation.Status == OperationStatus.Uncertain))
                     throw new DownloadRequestException("Wait for the previous command to be reconciled.");
                 var status = current.Progress.Status;
                 if (IsTerminal(status)) return; // A completion racing a click wins; no stale command is sent.
                 if (action == DownloadAction.Recover && status != DownloadStatus.Interrupted && current.PendingOperation?.Status != OperationStatus.Uncertain) return;
                 if (status == DownloadStatus.Interrupted && action != DownloadAction.Recover) throw new DownloadRequestException("This transfer needs recovery before it can be controlled.");
+                if (!policyCommand && action == DownloadAction.Resume && status == DownloadStatus.Paused && _schedule.Evaluate(clock.GetUtcNow()).Blocked)
+                {
+                    var held = current with { DesiredPaused = false, PolicyHeld = true };
+                    await repository.SaveAsync([held], token).ConfigureAwait(false);
+                    _epoch++; store.Publish(store.Current.Downloads.Select(row => row.Job.Id == jobId ? held : row), store.Current.Connection);
+                    return;
+                }
                 if (action == DownloadAction.Pause && status == DownloadStatus.Paused) return;
                 if (action == DownloadAction.Resume && status != DownloadStatus.Paused) return;
                 int? position = action == DownloadAction.Recover ? current.PendingOperation?.QueuePosition : null;
@@ -277,8 +374,10 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                     if (position == from) return;
                 }
                 entry = current with { PendingOperation = new(Guid.NewGuid(), jobId, action, OperationStatus.Pending, clock.GetUtcNow(), position), ErrorMessage = null,
-                    DesiredPaused = action == DownloadAction.Pause || action != DownloadAction.Resume && current.DesiredPaused,
-                    DesiredRemoved = action == DownloadAction.Remove || current.DesiredRemoved };
+                    DesiredPaused = policyCommand ? current.DesiredPaused : action == DownloadAction.Pause || action != DownloadAction.Resume && current.DesiredPaused,
+                    DesiredRemoved = action == DownloadAction.Remove || current.DesiredRemoved,
+                    PolicyHeld = action == DownloadAction.Remove ? false : action == DownloadAction.Recover && _schedule.Enabled ? true
+                        : policyCommand ? action == DownloadAction.Pause : action == DownloadAction.Resume ? false : current.PolicyHeld };
                 if (action == DownloadAction.Recover) await repository.InsertRecoveryOperationAsync(entry, token).ConfigureAwait(false);
                 else await repository.InsertOperationAsync(entry, token).ConfigureAwait(false);
                 _inFlight.Add(jobId); _epoch++;
@@ -368,7 +467,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             if (now <= previous.Attempt.StartedAt) now = previous.Attempt.StartedAt.AddTicks(1);
             var attempt = new TransferAttempt(Guid.NewGuid(), jobId, NewGid(), now, previous.Attempt.Id);
             retry = previous with { Attempt = attempt, File = new(Guid.NewGuid(), jobId, attempt.Id, target.FileName, null),
-                DesiredPaused = false, DesiredRemoved = false,
+                DesiredPaused = false, DesiredRemoved = false, PolicyHeld = _schedule.Enabled,
                 Progress = new(DownloadStatus.Queued, 0, null, 0), QueuePosition = null, ErrorMessage = null,
                 PendingOperation = new(Guid.NewGuid(), jobId, DownloadAction.Retry, OperationStatus.Pending, now) };
             await _gate.WaitAsync(token).ConfigureAwait(false);
@@ -387,7 +486,8 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                 var result = await engine.AddAsync(new(attempt.EngineId, previous.Job.Source, Directory: target.Directory,
                     FileName: target.FileName, ContinueExisting: target.ContinueExisting, ExactSourceUrl: retry.ExactSourceUrl,
                     ContinuityJobId: retry.Job.Id, ContinuityAttemptId: retry.Attempt.Id,
-                    RequirePublicOrigin: retry.ExactSourceUrl is not null, LegacyParentEngineId: previous.Attempt.EngineId, FreshRestart: freshRestart), token).ConfigureAwait(false);
+                    RequirePublicOrigin: retry.ExactSourceUrl is not null, LegacyParentEngineId: previous.Attempt.EngineId, FreshRestart: freshRestart,
+                    StartPaused: retry.PolicyHeld), token).ConfigureAwait(false);
                 await CommitAsync(ApplyObservation(retry, result), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)

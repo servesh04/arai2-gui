@@ -74,6 +74,11 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
             ["content-disposition"] = "false", ["follow-torrent"] = "false", ["follow-metalink"] = "false",
             ["check-certificate"] = "true", ["split"] = "1", ["max-connection-per-server"] = "1"
         };
+        if (request.JobDownloadLimit is { } cap)
+        {
+            cap.Validate();
+            options["max-download-limit"] = (cap.BytesPerSecond ?? 0).ToString(CultureInfo.InvariantCulture);
+        }
         var gid = await CallAsync<string>("aria2.addUri", token, [new[] { request.ExactSourceUrl ?? request.Source.AbsoluteUri }, options]).ConfigureAwait(false);
         if (gid != request.EngineId) throw InvalidResponse();
         return await FindAsync(gid, token).ConfigureAwait(false) ?? throw InvalidResponse();
@@ -185,6 +190,49 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
             [new Dictionary<string, string> { ["max-concurrent-downloads"] = limit.ToString(CultureInfo.InvariantCulture) }]).ConfigureAwait(false);
         if (result != "OK") throw InvalidResponse();
     }
+
+    public async Task<(ByteRateLimit Download, ByteRateLimit Upload)> GetBandwidthAsync(CancellationToken token)
+    {
+        var options = await CallAsync<Dictionary<string, string>>("aria2.getGlobalOption", token).ConfigureAwait(false);
+        static ByteRateLimit Parse(Dictionary<string, string> values, string key)
+        {
+            if (!values.TryGetValue(key, out var value) || !long.TryParse(value, NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var bytes) || bytes < 0) throw InvalidResponse();
+            return bytes == 0 ? ByteRateLimit.Unlimited : new(bytes);
+        }
+        return (Parse(options, "max-overall-download-limit"), Parse(options, "max-overall-upload-limit"));
+    }
+
+    public async Task SetBandwidthAsync(BandwidthProfile profile, CancellationToken token)
+    {
+        profile.Validate();
+        static string Format(ByteRateLimit cap) => (cap.BytesPerSecond ?? 0).ToString(CultureInfo.InvariantCulture);
+        var result = await CallAsync<string>("aria2.changeGlobalOption", token,
+            [new Dictionary<string, string> {
+                ["max-overall-download-limit"] = Format(profile.Download),
+                ["max-overall-upload-limit"] = Format(profile.Upload)
+            }]).ConfigureAwait(false);
+        if (result != "OK") throw InvalidResponse();
+    }
+
+    public async Task<ByteRateLimit> GetJobBandwidthAsync(string gid, CancellationToken token)
+    {
+        var options = await CallAsync<Dictionary<string, string>>("aria2.getOption", token, [gid]).ConfigureAwait(false);
+        if (!options.TryGetValue("max-download-limit", out var text) ||
+            !long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var bytes) || bytes < 0)
+            throw InvalidResponse();
+        return bytes == 0 ? ByteRateLimit.Unlimited : new(bytes);
+    }
+
+    public async Task SetJobBandwidthAsync(string gid, ByteRateLimit cap, CancellationToken token)
+    {
+        cap.Validate();
+        var result = await CallAsync<string>("aria2.changeOption", token,
+            [gid, new Dictionary<string, string> {
+                ["max-download-limit"] = (cap.BytesPerSecond ?? 0).ToString(CultureInfo.InvariantCulture)
+            }]).ConfigureAwait(false);
+        if (result != "OK") throw InvalidResponse();
+    }
     public async Task ExecuteAsync(string gid, DownloadAction action, int? position, CancellationToken token)
     {
         if (action == DownloadAction.Move)
@@ -231,7 +279,7 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
                 if (method == "aria2.tellStatus" && payload.Error.Code == 1
                     && payload.Error.Message?.Contains("is not found", StringComparison.OrdinalIgnoreCase) == true)
                     throw new EngineException(EngineFailure.TransferNotFound, "The transfer is not in this engine session.");
-                if (method is "aria2.addUri" or "aria2.pause" or "aria2.unpause" or "aria2.remove" or "aria2.changePosition" or "aria2.changeGlobalOption")
+                if (method is "aria2.addUri" or "aria2.pause" or "aria2.unpause" or "aria2.remove" or "aria2.changePosition" or "aria2.changeGlobalOption" or "aria2.changeOption")
                     throw new EngineException(EngineFailure.RequestRejected, "The engine rejected the command.");
                 throw new EngineException(EngineFailure.RpcUnavailable, "aria2 rejected a local engine request.");
             }

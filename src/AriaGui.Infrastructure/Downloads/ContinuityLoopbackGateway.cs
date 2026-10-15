@@ -18,6 +18,7 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
     private readonly string _root;
     private readonly Func<int?> _enginePid;
     private readonly Func<string, bool, IContinuityOriginTransport> _origins;
+    private readonly SharedRelayRateLimiter? _upstreamLimit;
     private readonly ConcurrentDictionary<Guid, (Route Route, HttpContinuityRelay Relay, IContinuityOriginTransport Origin)> _routes = new();
     private readonly ConcurrentDictionary<Guid, byte> _completedRoutes = new();
     private readonly SemaphoreSlim _registration = new(1);
@@ -26,14 +27,21 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
     private int _port;
     private volatile bool _admitting;
     public ContinuityLoopbackGateway(string privateRuntime, Func<int?> enginePid, bool enableExperimental = false)
-        : this(privateRuntime, enginePid, (source, requirePublic) => new PublicHttpOriginTransport(source, requirePublic), enableExperimental) { }
+        : this(privateRuntime, enginePid, (source, requirePublic) => new PublicHttpOriginTransport(source, requirePublic), enableExperimental, null) { }
     internal ContinuityLoopbackGateway(string privateRuntime, Func<int?> enginePid, Func<string, IContinuityOriginTransport> origins, bool enableExperimental)
-        : this(privateRuntime, enginePid, (source, _) => origins(source), enableExperimental) { }
-    private ContinuityLoopbackGateway(string privateRuntime, Func<int?> enginePid, Func<string, bool, IContinuityOriginTransport> origins, bool enableExperimental)
+        : this(privateRuntime, enginePid, (source, _) => origins(source), enableExperimental, null) { }
+    internal ContinuityLoopbackGateway(string privateRuntime, Func<int?> enginePid, Func<string, IContinuityOriginTransport> origins,
+        bool enableExperimental, SharedRelayRateLimiter upstreamLimit)
+        : this(privateRuntime, enginePid, (source, _) => origins(source), enableExperimental, upstreamLimit) { }
+    internal ContinuityLoopbackGateway(string privateRuntime, Func<int?> enginePid, bool enableExperimental, SharedRelayRateLimiter upstreamLimit)
+        : this(privateRuntime, enginePid, (source, requirePublic) => new PublicHttpOriginTransport(source, requirePublic), enableExperimental, upstreamLimit) { }
+    private ContinuityLoopbackGateway(string privateRuntime, Func<int?> enginePid, Func<string, bool, IContinuityOriginTransport> origins,
+        bool enableExperimental, SharedRelayRateLimiter? upstreamLimit)
     {
         if (!enableExperimental) throw new InvalidOperationException("Continuity gateway is not enabled.");
         if (!Path.IsPathFullyQualified(privateRuntime)) throw new ArgumentException();
         _root = Path.Combine(Path.GetFullPath(privateRuntime), "continuity"); _enginePid = enginePid; _origins = origins;
+        _upstreamLimit = upstreamLimit;
         UserRuntimeDirectory.EnsurePrivate(_root);
     }
     public async Task StartAsync(CancellationToken token)
@@ -74,7 +82,8 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
             || !route.Capability.All(Uri.IsHexDigit)) throw new IOException("Invalid route identity.");
         var origin = _origins(route.Source, route.RequirePublicOrigin);
         var resource = route.RequirePublicOrigin ? route.Source : new UriBuilder(route.Source) { Fragment = "" }.Uri.AbsoluteUri;
-        var relay = new HttpContinuityRelay(resource, new(_root, route.JobId, route.AttemptId), origin, route.Retained, enableExperimental: true);
+        var relay = new HttpContinuityRelay(resource, new(_root, route.JobId, route.AttemptId), origin, route.Retained,
+            enableExperimental: true, limits: null, upstreamLimit: _upstreamLimit);
         if (!_routes.TryAdd(route.AttemptId, (route, relay, origin))) { (origin as IDisposable)?.Dispose(); throw new IOException("Duplicate route identity."); }
     }
     public async Task<Uri> RegisterAsync(Guid jobId, Guid attemptId, string exactSource, bool retained, CancellationToken token, bool requirePublicOrigin = true)

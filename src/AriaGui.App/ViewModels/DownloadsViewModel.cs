@@ -1,10 +1,19 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using AriaGui.App.Services;
 using AriaGui.Application.Downloads;
 using CommunityToolkit.Mvvm.Input;
 using AriaGui.Core.Downloads;
 
 namespace AriaGui.App.ViewModels;
+
+public sealed record WeeklyRuleRow(WeeklyBandwidthInterval Interval)
+{
+    public string Summary => $"{Interval.Day} {Interval.StartMinute / 60:00}:{Interval.StartMinute % 60:00}–"
+        + $"{Interval.EndMinute % 1440 / 60:00}:{Interval.EndMinute % 60:00} "
+        + (Interval.EndMinute >= 1440 ? "(+1 day) " : "")
+        + (Interval.Action == ScheduleAction.Block ? "Block" : Interval.Profile?.Name ?? "Profile");
+}
 
 public sealed class DownloadsViewModel : RuntimeViewModel
 {
@@ -29,6 +38,22 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     private string _completionMessage = "";
     private bool _policyPending;
     private bool _policyLoaded;
+    private bool _bandwidthLoaded;
+    private int _selectedSavedProfileIndex = -1;
+    private int _selectedDefaultProfileIndex = -1;
+    private string _bandwidthProfileName = "Unlimited";
+    private double _downloadLimitKib, _uploadLimitKib;
+    private DownloadItemViewModel? _bandwidthJob;
+    private double _jobLimitKib;
+    private string _jobBandwidthMessage = "Choose a live download to set its cap.";
+    private string _bandwidthMessage = "Waiting for bandwidth policy…";
+    private string _scheduleMessage = "No weekly rule saved.";
+    private bool _scheduleEnabled, _scheduleBlocks;
+    private string _scheduleTimeZoneId = TimeZoneInfo.Local.Id;
+    private int _scheduleDay;
+    private string _scheduleStartTime = "08:00", _scheduleEndTime = "18:00";
+    private int _selectedRuleIndex = -1;
+    private double _overrideMinutes = 60;
     private bool _isAddExpanded;
     private readonly IDownloadRepository? _repository;
     private readonly IDownloadFileActions? _fileActions;
@@ -63,6 +88,18 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         RefreshHistoryCommand = new RelayCommand(() => QueueHistory(_history.Page, false), () => IsHistoryView && !_browsing);
         ApplyLimitCommand = new AsyncRelayCommand(token => HandleAsync(() => _coordinator.SetConcurrencyAsync(ValidatedLimit(), token)),
             () => _connected && !_policyPending);
+        ApplyBandwidthCommand = new AsyncRelayCommand(token => HandleAsync(() => ApplyNamedProfileAsync(token)), () => _connected);
+        ApplyScheduleCommand = new AsyncRelayCommand(token => HandleAsync(() => _coordinator.SetBandwidthScheduleAsync(EditedSchedule(), token)), () => _connected);
+        AddRuleCommand = new AsyncRelayCommand(_ => HandleAsync(() => AddOrReplaceRuleAsync(false)));
+        ReplaceRuleCommand = new AsyncRelayCommand(_ => HandleAsync(() => AddOrReplaceRuleAsync(true)), () => SelectedRuleIndex >= 0);
+        RemoveRuleCommand = new RelayCommand(RemoveSelectedRule, () => SelectedRuleIndex >= 0);
+        ApplyOverrideCommand = new AsyncRelayCommand(token => HandleAsync(() => ApplyTemporaryOverrideAsync(token)), () => _connected);
+        ClearOverrideCommand = new AsyncRelayCommand(token => HandleAsync(() => _coordinator.SetBandwidthScheduleAsync(
+            (_runtimeStore.Current.Schedule ?? BandwidthSchedule.Disabled) with { Override = null }, token)), () => _connected);
+        SaveProfileCommand = new AsyncRelayCommand(token => HandleAsync(() => SaveNamedProfileAsync(token)), () => _connected);
+        DeleteProfileCommand = new AsyncRelayCommand(token => HandleAsync(() => DeleteNamedProfileAsync(token)), () => _connected && SelectedSavedProfileIndex >= 0);
+        ApplyJobBandwidthCommand = new AsyncRelayCommand(token => HandleAsync(() => ApplySelectedJobRateAsync(token)),
+            () => _connected && SelectedBandwidthJob is { } job && !DownloadBrowsing.IsTerminal(job.RawStatus));
         AddDownloadCommand = new AsyncRelayCommand(AddDownloadAsync, () => _connected);
         BrowseCommand = new AsyncRelayCommand(async token =>
         {
@@ -130,6 +167,16 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     public IAsyncRelayCommand AddDownloadCommand { get; }
     public IAsyncRelayCommand BrowseCommand { get; }
     public IAsyncRelayCommand ApplyLimitCommand { get; }
+    public IAsyncRelayCommand ApplyBandwidthCommand { get; }
+    public IAsyncRelayCommand ApplyScheduleCommand { get; }
+    public IAsyncRelayCommand AddRuleCommand { get; }
+    public IAsyncRelayCommand ReplaceRuleCommand { get; }
+    public IRelayCommand RemoveRuleCommand { get; }
+    public IAsyncRelayCommand ApplyOverrideCommand { get; }
+    public IAsyncRelayCommand ClearOverrideCommand { get; }
+    public IAsyncRelayCommand SaveProfileCommand { get; }
+    public IAsyncRelayCommand DeleteProfileCommand { get; }
+    public IAsyncRelayCommand ApplyJobBandwidthCommand { get; }
     public IRelayCommand PreviousPageCommand { get; }
     public IRelayCommand NextPageCommand { get; }
     public IRelayCommand RefreshHistoryCommand { get; }
@@ -190,6 +237,165 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     private int ValidatedLimit() => double.IsFinite(ConcurrencyLimit) && ConcurrencyLimit is >= 1 and <= 16 && ConcurrencyLimit == Math.Truncate(ConcurrencyLimit)
         ? (int)ConcurrencyLimit : throw new ArgumentException("Choose a whole-number limit from 1 to 16.");
     public string QueueMessage { get => _queueMessage; private set => SetProperty(ref _queueMessage, value); }
+    public string BandwidthProfileName { get => _bandwidthProfileName; set => SetProperty(ref _bandwidthProfileName, value); }
+    public ObservableCollection<BandwidthProfile> SavedProfiles { get; } = [];
+    public int SelectedSavedProfileIndex
+    {
+        get => _selectedSavedProfileIndex;
+        set
+        {
+            if (!SetProperty(ref _selectedSavedProfileIndex, value)) return;
+            if (value >= 0 && value < SavedProfiles.Count)
+            {
+                var selected = SavedProfiles[value]; BandwidthProfileName = selected.Name;
+                DownloadLimitKib = selected.Download.BytesPerSecond.GetValueOrDefault() / 1024d;
+                UploadLimitKib = selected.Upload.BytesPerSecond.GetValueOrDefault() / 1024d;
+            }
+            DeleteProfileCommand.NotifyCanExecuteChanged();
+        }
+    }
+    public int SelectedDefaultProfileIndex { get => _selectedDefaultProfileIndex; set => SetProperty(ref _selectedDefaultProfileIndex, value); }
+    public double DownloadLimitKib { get => _downloadLimitKib; set => SetProperty(ref _downloadLimitKib, value); }
+    public double UploadLimitKib { get => _uploadLimitKib; set => SetProperty(ref _uploadLimitKib, value); }
+    public DownloadItemViewModel? SelectedBandwidthJob
+    {
+        get => _bandwidthJob;
+        set
+        {
+            if (!SetProperty(ref _bandwidthJob, value)) return;
+            var policy = value is null ? null : _runtimeStore.Current.JobBandwidthPolicies?.GetValueOrDefault(value.Id);
+            JobLimitKib = policy?.Requested.BytesPerSecond.GetValueOrDefault() / 1024d ?? 0;
+            UpdateJobBandwidthMessage(); ApplyJobBandwidthCommand.NotifyCanExecuteChanged();
+        }
+    }
+    public double JobLimitKib { get => _jobLimitKib; set => SetProperty(ref _jobLimitKib, value); }
+    public string JobBandwidthMessage { get => _jobBandwidthMessage; private set => SetProperty(ref _jobBandwidthMessage, value); }
+    private Task ApplySelectedJobRateAsync(CancellationToken token) => SelectedBandwidthJob is { } job
+        ? _coordinator.SetJobBandwidthAsync(job.Id, Rate(JobLimitKib, "Job download KiB/s"), token)
+        : throw new ArgumentException("Choose a live download.");
+    private void UpdateJobBandwidthMessage()
+    {
+        var job = SelectedBandwidthJob;
+        var policy = job is null ? null : _runtimeStore.Current.JobBandwidthPolicies?.GetValueOrDefault(job.Id);
+        JobBandwidthMessage = job is null ? "Choose a live download to set its cap." : policy?.RequestStatus switch
+        {
+            OperationStatus.Pending => "Applying job cap…",
+            OperationStatus.Uncertain => "Job cap is awaiting engine confirmation.",
+            OperationStatus.Failed => "Job cap was rejected; the last confirmed cap remains saved.",
+            _ => policy is null ? "No job-specific cap. 0 KiB/s means unlimited." :
+                $"Last confirmed job cap: {policy.Confirmed.BytesPerSecond.GetValueOrDefault() / 1024} KiB/s."
+        };
+    }
+    public string BandwidthMessage { get => _bandwidthMessage; private set => SetProperty(ref _bandwidthMessage, value); }
+    public string ScheduleMessage { get => _scheduleMessage; private set => SetProperty(ref _scheduleMessage, value); }
+    public bool ScheduleEnabled { get => _scheduleEnabled; set => SetProperty(ref _scheduleEnabled, value); }
+    public bool ScheduleBlocks { get => _scheduleBlocks; set => SetProperty(ref _scheduleBlocks, value); }
+    public string ScheduleTimeZoneId { get => _scheduleTimeZoneId; set => SetProperty(ref _scheduleTimeZoneId, value); }
+    public int ScheduleDay { get => _scheduleDay; set => SetProperty(ref _scheduleDay, value); }
+    public string ScheduleStartTime { get => _scheduleStartTime; set => SetProperty(ref _scheduleStartTime, value); }
+    public string ScheduleEndTime { get => _scheduleEndTime; set => SetProperty(ref _scheduleEndTime, value); }
+    public ObservableCollection<WeeklyRuleRow> WeeklyRules { get; } = [];
+    public int SelectedRuleIndex
+    {
+        get => _selectedRuleIndex;
+        set
+        {
+            if (!SetProperty(ref _selectedRuleIndex, value)) return;
+            if (value >= 0 && value < WeeklyRules.Count)
+            {
+                var interval = WeeklyRules[value].Interval;
+                ScheduleDay = (int)interval.Day;
+                ScheduleStartTime = $"{interval.StartMinute / 60:00}:{interval.StartMinute % 60:00}";
+                ScheduleEndTime = $"{interval.EndMinute % 1440 / 60:00}:{interval.EndMinute % 60:00}";
+                ScheduleBlocks = interval.Action == ScheduleAction.Block;
+                if (interval.Profile is { } profile)
+                {
+                    BandwidthProfileName = profile.Name;
+                    DownloadLimitKib = profile.Download.BytesPerSecond.GetValueOrDefault() / 1024d;
+                    UploadLimitKib = profile.Upload.BytesPerSecond.GetValueOrDefault() / 1024d;
+                }
+            }
+            ReplaceRuleCommand.NotifyCanExecuteChanged(); RemoveRuleCommand.NotifyCanExecuteChanged();
+        }
+    }
+    public double OverrideMinutes { get => _overrideMinutes; set => SetProperty(ref _overrideMinutes, value); }
+    private static int WholeNumber(double value, int min, int max, string label) => double.IsFinite(value) && value >= min && value <= max && value == Math.Truncate(value)
+        ? (int)value : throw new ArgumentException($"{label} must be a whole number from {min} to {max}.");
+    private static ByteRateLimit Rate(double kib, string label) => WholeNumber(kib, 0, 1_048_576, label) is var amount && amount > 0
+        ? new((long)amount * 1024) : ByteRateLimit.Unlimited;
+    private BandwidthProfile EditedProfile() => new(BandwidthProfileName.Trim(), Rate(DownloadLimitKib, "Download KiB/s"), Rate(UploadLimitKib, "Upload KiB/s"));
+    private Task ApplyNamedProfileAsync(CancellationToken token)
+    {
+        var profile = EditedProfile();
+        var schedule = _runtimeStore.Current.Schedule;
+        return schedule?.Enabled == true
+            ? _coordinator.SetBandwidthScheduleAsync(schedule with { DefaultProfile = profile }, token)
+            : _coordinator.SetBandwidthProfileAsync(profile, token);
+    }
+    private async Task SaveNamedProfileAsync(CancellationToken token)
+    {
+        var profile = EditedProfile(); profile.Validate();
+        var saved = (_runtimeStore.Current.Schedule?.SavedProfiles ?? []).ToList();
+        var index = SelectedSavedProfileIndex >= 0 && SelectedSavedProfileIndex < saved.Count
+            ? SelectedSavedProfileIndex : saved.FindIndex(item => string.Equals(item.Name, profile.Name, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0) saved[index] = profile; else saved.Add(profile);
+        await _coordinator.SaveBandwidthProfilesAsync(saved, token);
+    }
+    private async Task DeleteNamedProfileAsync(CancellationToken token)
+    {
+        var saved = (_runtimeStore.Current.Schedule?.SavedProfiles ?? []).ToList();
+        if (SelectedSavedProfileIndex < 0 || SelectedSavedProfileIndex >= saved.Count)
+            throw new ArgumentException("Choose a saved profile to delete.");
+        saved.RemoveAt(SelectedSavedProfileIndex);
+        await _coordinator.SaveBandwidthProfilesAsync(saved, token);
+        _dispatcher.Enqueue(() => { SelectedSavedProfileIndex = -1; SelectedDefaultProfileIndex = -1; });
+    }
+    private Task ApplyTemporaryOverrideAsync(CancellationToken token)
+    {
+        var current = _runtimeStore.Current.Schedule ?? BandwidthSchedule.Disabled;
+        var temporary = new TemporaryBandwidthOverride(ScheduleBlocks ? ScheduleAction.Block : ScheduleAction.Profile,
+            ScheduleBlocks ? null : EditedProfile(), DateTimeOffset.UtcNow.AddMinutes(WholeNumber(OverrideMinutes, 1, 1440, "Override minutes")));
+        return _coordinator.SetBandwidthScheduleAsync(current with { Enabled = true, Override = temporary }, token);
+    }
+    private BandwidthSchedule EditedSchedule()
+    {
+        var current = _runtimeStore.Current.Schedule ?? BandwidthSchedule.Disabled;
+        var defaultProfile = SelectedDefaultProfileIndex >= 0 && SelectedDefaultProfileIndex < SavedProfiles.Count
+            ? SavedProfiles[SelectedDefaultProfileIndex]
+            : current.Intervals.Count == 0 ? _runtimeStore.Current.BandwidthPolicy?.Requested ?? BandwidthProfile.Unlimited
+            : current.DefaultProfile;
+        return new BandwidthSchedule(ScheduleTimeZoneId.Trim(), defaultProfile, WeeklyRules.Select(row => row.Interval).ToArray(),
+            current.Override, ScheduleEnabled, SavedProfiles: current.SavedProfiles);
+    }
+    private WeeklyBandwidthInterval EditedInterval()
+    {
+        static int Minutes(string value, string label) => TimeOnly.TryParseExact(value, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
+            ? time.Hour * 60 + time.Minute : throw new ArgumentException($"{label} must use HH:mm (00:00–23:59).");
+        var start = Minutes(ScheduleStartTime, "Start time");
+        var end = Minutes(ScheduleEndTime, "End time");
+        if (end <= start) end += 1440;
+        var action = ScheduleBlocks ? ScheduleAction.Block : ScheduleAction.Profile;
+        var interval = new WeeklyBandwidthInterval((DayOfWeek)WholeNumber(ScheduleDay, 0, 6, "Weekday"), start, end,
+            action, ScheduleBlocks ? null : EditedProfile());
+        interval.Validate(); return interval;
+    }
+    private Task AddOrReplaceRuleAsync(bool replace)
+    {
+        var row = new WeeklyRuleRow(EditedInterval());
+        var index = SelectedRuleIndex;
+        if (replace)
+        {
+            if (index < 0 || index >= WeeklyRules.Count) throw new ArgumentException("Choose an interval to replace.");
+            WeeklyRules[index] = row;
+        }
+        else { WeeklyRules.Add(row); SelectedRuleIndex = WeeklyRules.Count - 1; }
+        return Task.CompletedTask;
+    }
+    private void RemoveSelectedRule()
+    {
+        if (SelectedRuleIndex < 0 || SelectedRuleIndex >= WeeklyRules.Count) return;
+        WeeklyRules.RemoveAt(SelectedRuleIndex); SelectedRuleIndex = -1;
+    }
     public string CompletionMessage { get => _completionMessage; private set { if (SetProperty(ref _completionMessage, value)) OnPropertyChanged(nameof(HasCompletion)); } }
     public bool HasCompletion => CompletionMessage.Length > 0;
     public string InputUrl
@@ -258,6 +464,47 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         { ConcurrencyLimit = policy.RequestedLimit ?? policy.Limit; _policyLoaded = true; }
         _policyPending = policy.RequestStatus is not null;
         ApplyLimitCommand.NotifyCanExecuteChanged();
+        var loadingBandwidthEditor = !_bandwidthLoaded;
+        if (loadingBandwidthEditor && snapshot.BandwidthPolicy is { } loaded)
+        {
+            BandwidthProfileName = loaded.Requested.Name;
+            DownloadLimitKib = loaded.Requested.Download.BytesPerSecond.GetValueOrDefault() / 1024d;
+            UploadLimitKib = loaded.Requested.Upload.BytesPerSecond.GetValueOrDefault() / 1024d;
+            if (snapshot.Schedule is { } schedule)
+            {
+                ScheduleEnabled = schedule.Enabled;
+                ScheduleTimeZoneId = schedule.TimeZoneId;
+                foreach (var interval in schedule.Intervals) WeeklyRules.Add(new(interval));
+            }
+            _bandwidthLoaded = true;
+        }
+        var bandwidth = snapshot.BandwidthPolicy;
+        BandwidthMessage = bandwidth?.RequestStatus switch
+        {
+            OperationStatus.Pending => $"Applying {bandwidth.Requested.Name}…",
+            OperationStatus.Uncertain => $"{bandwidth.Requested.Name} is awaiting engine confirmation.",
+            OperationStatus.Failed => $"{bandwidth.Requested.Name} was rejected; last confirmed profile: {bandwidth.Confirmed.Name}.",
+            _ => bandwidth is null ? "Waiting for bandwidth policy…" : $"Last confirmed profile: {bandwidth.Confirmed.Name}. 0 KiB/s means unlimited."
+        };
+        var scheduleState = snapshot.Schedule;
+        var catalog = scheduleState?.SavedProfiles ?? [];
+        if (!SavedProfiles.SequenceEqual(catalog))
+        {
+            SavedProfiles.Clear(); foreach (var profile in catalog) SavedProfiles.Add(profile);
+            if (SelectedSavedProfileIndex >= SavedProfiles.Count) SelectedSavedProfileIndex = -1;
+            if (SelectedDefaultProfileIndex >= SavedProfiles.Count) SelectedDefaultProfileIndex = -1;
+        }
+        if (loadingBandwidthEditor && scheduleState is { } initialSchedule)
+            SelectedDefaultProfileIndex = SavedProfiles.ToList().FindIndex(profile => profile == initialSchedule.DefaultProfile);
+        ScheduleMessage = scheduleState is null ? "No weekly rule saved."
+            : scheduleState.Override is { } temporary && temporary.ExpiresAt > DateTimeOffset.UtcNow
+                ? $"Temporary override until {temporary.ExpiresAt.ToLocalTime():g}; weekly rule {(scheduleState.Enabled ? "enabled" : "disabled")}."
+                : $"Weekly rule {(scheduleState.Enabled ? "enabled" : "disabled")} in {scheduleState.TimeZoneId}.";
+        ApplyBandwidthCommand.NotifyCanExecuteChanged(); ApplyScheduleCommand.NotifyCanExecuteChanged();
+        ApplyOverrideCommand.NotifyCanExecuteChanged(); ClearOverrideCommand.NotifyCanExecuteChanged();
+        SaveProfileCommand.NotifyCanExecuteChanged(); DeleteProfileCommand.NotifyCanExecuteChanged();
+        if (SelectedBandwidthJob is { } selected && !Downloads.Contains(selected)) SelectedBandwidthJob = null;
+        UpdateJobBandwidthMessage(); ApplyJobBandwidthCommand.NotifyCanExecuteChanged();
         QueueMessage = policy.RequestStatus switch
         {
             OperationStatus.Pending => $"Applying limit {policy.RequestedLimit}…",
@@ -360,14 +607,14 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         catch (ArgumentException ex) { _dispatcher.Enqueue(() => ErrorMessage = ex.Message.Split(Environment.NewLine)[0]); }
         catch (Exception) { _dispatcher.Enqueue(() => ErrorMessage = "The command was not confirmed. Check the row and engine connection; its saved intent will be reconciled."); }
     }
-    public IEnumerable<Task> PendingTasks => new[] { AddDownloadCommand, BrowseCommand, ApplyLimitCommand }
+    public IEnumerable<Task> PendingTasks => new[] { AddDownloadCommand, BrowseCommand, ApplyLimitCommand, ApplyBandwidthCommand, ApplyScheduleCommand, AddRuleCommand, ReplaceRuleCommand, ApplyOverrideCommand, ClearOverrideCommand, SaveProfileCommand, DeleteProfileCommand, ApplyJobBandwidthCommand }
         .Concat(BatchCommands).Concat(_rows.Values.SelectMany(item => item.Commands)).Select(command => command.ExecutionTask).OfType<Task>().Concat(OperationTasks()).Append(_browseTask).ToArray();
     private Task[] OperationTasks() { lock (_operationsSync) return _operations.ToArray(); }
     public void CancelOperations()
     {
         CancelBrowse();
         _commandsLifetime.Cancel();
-        foreach (var command in new[] { AddDownloadCommand, BrowseCommand, ApplyLimitCommand }.Concat(BatchCommands).Concat(_rows.Values.SelectMany(item => item.Commands)).ToArray()) command.Cancel();
+        foreach (var command in new[] { AddDownloadCommand, BrowseCommand, ApplyLimitCommand, ApplyBandwidthCommand, ApplyScheduleCommand, AddRuleCommand, ReplaceRuleCommand, ApplyOverrideCommand, ClearOverrideCommand, SaveProfileCommand, DeleteProfileCommand, ApplyJobBandwidthCommand }.Concat(BatchCommands).Concat(_rows.Values.SelectMany(item => item.Commands)).ToArray()) command.Cancel();
     }
     public override void Dispose() { if (_disposed) return; _disposed = true; CancelOperations(); base.Dispose(); _commandsLifetime.Dispose(); }
     private void CancelBrowse()

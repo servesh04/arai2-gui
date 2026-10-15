@@ -12,7 +12,7 @@ public sealed class LocalHttpServer : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly ConcurrentBag<Task> _handlers = [];
     private readonly Task _loop;
-    public byte[] Payload { get; } = Enumerable.Range(0, 256 * 1024).Select(i => (byte)(i % 251)).ToArray();
+    public byte[] Payload { get; }
     public string Url { get; }
     public int Requests;
     public ConcurrentQueue<(string Route, long RequestedOffset, int Status)> Observations { get; } = new();
@@ -24,8 +24,10 @@ public sealed class LocalHttpServer : IAsyncDisposable
     public bool ChangeEntityOnInternalReconnect;
     public bool WeakValidator;
     public bool RedirectChanged;
-    public LocalHttpServer()
+    public LocalHttpServer(int payloadBytes = 256 * 1024)
     {
+        if (payloadBytes is < 1 or > 16 * 1024 * 1024) throw new ArgumentOutOfRangeException(nameof(payloadBytes));
+        Payload = Enumerable.Range(0, payloadBytes).Select(i => (byte)(i % 251)).ToArray();
         _listener.Start();
         Url = $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/known-file.bin";
         _loop = AcceptAsync();

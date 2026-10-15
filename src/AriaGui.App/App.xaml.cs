@@ -94,6 +94,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             _tray.Unavailable += () => { _desktop.Open(); _window.SetDesktopStatus("Tray unavailable. The window stays accessible; use Exit to stop."); };
             _tray.Suspending += OnSuspending;
             _tray.Resuming += OnResuming;
+            _tray.ClockChanged += OnClockChanged;
             if (!_tray.EnsureRegistered()) _window.SetDesktopStatus("Tray unavailable. Close will keep this window visible; use Exit to stop.");
         }
         catch (Exception) { _window.SetDesktopStatus("Tray unavailable. Close will keep this window visible; use Exit to stop."); }
@@ -203,6 +204,14 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         {
             if (!_closing) await _services.GetRequiredService<DownloadCoordinator>().ReportFailureAsync("Resume reconnection is pending; the engine monitor will retry safely.");
         }
+    }
+
+    private async void OnClockChanged()
+    {
+        if (_closing || _services is null) return;
+        try { await _services.GetRequiredService<DownloadCoordinator>().NotifyClockChangedAsync(_lifetime.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception) { /* The periodic engine refresh will retry current wall-time evaluation. */ }
     }
 
     // Explicit Exit keeps the window alive until commands unwind and both stores checkpoint.

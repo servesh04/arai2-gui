@@ -162,6 +162,8 @@ internal sealed class ContinuityTransferLedger : IDisposable
         return false;
     }
     public bool Owns(string gid) => _states.ContainsKey(gid);
+    public bool Owns(string gid, Guid jobId, Guid attemptId) =>
+        _states.TryGetValue(gid, out var state) && state.Job == jobId && state.Attempt == attemptId && state.Phase != "complete-published";
     internal bool CanResume(string gid) => _states.TryGetValue(gid, out var state) && state.Phase != "complete-published";
     internal async Task<bool> VerifySurvivorAsync(Aria2RpcClient rpc, IReadOnlyList<DownloadEntry> history, CancellationToken token, IDownloadRepository? repository = null)
     {

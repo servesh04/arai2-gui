@@ -4,7 +4,8 @@ namespace AriaGui.Application.Downloads;
 
 public sealed record EngineDownloadRequest(string EngineId, Uri Source, bool SimulateUnknownSize = false,
     string Directory = "", string FileName = "", bool ContinueExisting = false, bool StartPaused = false, string? ExactSourceUrl = null,
-    Guid? ContinuityJobId = null, Guid? ContinuityAttemptId = null, bool RequirePublicOrigin = true, string? LegacyParentEngineId = null, bool FreshRestart = false);
+    Guid? ContinuityJobId = null, Guid? ContinuityAttemptId = null, bool RequirePublicOrigin = true, string? LegacyParentEngineId = null, bool FreshRestart = false,
+    ByteRateLimit? JobDownloadLimit = null);
 public sealed record EngineDownload(string EngineId, DownloadSnapshot Progress, string? ErrorMessage = null,
     int? QueuePosition = null);
 public sealed record EngineObservation(string Generation, IReadOnlyList<EngineDownload> Downloads, int MaxConcurrentDownloads,
@@ -23,5 +24,13 @@ public interface IAria2Client
     Task<EngineCommandResult> ExecuteAsync(string gid, DownloadAction action, int? position, CancellationToken token) =>
         throw new NotSupportedException("This client does not support download controls.");
     Task SetConcurrencyAsync(int limit, CancellationToken token) => throw new NotSupportedException("This client does not support queue settings.");
+    Task<BandwidthObservation> ApplyBandwidthAsync(BandwidthProfile profile, CancellationToken token) =>
+        throw new NotSupportedException("This client does not support bandwidth settings.");
+    Task<BandwidthObservation> ObserveBandwidthAsync(CancellationToken token) =>
+        throw new NotSupportedException("This client does not support bandwidth observation.");
+    Task<JobBandwidthObservation> ApplyJobBandwidthAsync(Guid jobId, string gid, ByteRateLimit cap, CancellationToken token) =>
+        throw new NotSupportedException("This client does not support job bandwidth settings.");
+    Task<JobBandwidthObservation> ObserveJobBandwidthAsync(Guid jobId, string gid, CancellationToken token) =>
+        throw new NotSupportedException("This client does not support job bandwidth observation.");
     Task<EngineDownload> RecoverAsync(DownloadEntry entry, CancellationToken token) => throw new NotSupportedException("This client does not support recovery.");
 }

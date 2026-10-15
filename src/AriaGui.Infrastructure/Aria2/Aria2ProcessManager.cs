@@ -35,6 +35,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
     private int _unknownCount, _concurrency = 3;
     private ContinuityLoopbackGateway? _continuityGateway;
     private ContinuityTransferLedger? _continuityTransfers;
+    private SharedRelayRateLimiter? _relayLimiter;
     public bool SupportsFreshRestart => _options.UseContinuityGateway;
 
     public event EventHandler? UnexpectedExit;
@@ -75,9 +76,17 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 var history = await LoadHistoryAsync(cancellationToken).ConfigureAwait(false);
                 if (_options.UseContinuityGateway)
                 {
+                    _relayLimiter = new();
+                    var savedRate = _repository is null ? BandwidthPolicy.Default : await _repository.LoadBandwidthPolicyAsync(cancellationToken).ConfigureAwait(false);
+                    savedRate.Validate();
+                    var savedSchedule = _repository is null ? BandwidthSchedule.Disabled : await _repository.LoadBandwidthScheduleAsync(cancellationToken).ConfigureAwait(false);
+                    savedSchedule.Validate();
+                    _relayLimiter.SetRate(savedSchedule.Enabled || savedSchedule.ResetDefaultOnDisable
+                        ? savedSchedule.Evaluate(DateTimeOffset.UtcNow).Profile.Download
+                        : (savedRate.RequestStatus == OperationStatus.Failed ? savedRate.Confirmed : savedRate.Requested).Download);
                     _continuityGateway = _options.ContinuityTestOrigins is null
-                        ? new(_options.RuntimeDirectory, () => OwnedProcessId, enableExperimental: true)
-                        : new(_options.RuntimeDirectory, () => OwnedProcessId, _options.ContinuityTestOrigins, true);
+                        ? new(_options.RuntimeDirectory, () => OwnedProcessId, enableExperimental: true, upstreamLimit: _relayLimiter)
+                        : new(_options.RuntimeDirectory, () => OwnedProcessId, _options.ContinuityTestOrigins, true, _relayLimiter);
                     await _continuityGateway.StartAsync(cancellationToken).ConfigureAwait(false);
                     _continuityTransfers = new(_options.RuntimeDirectory, _continuityGateway);
                     await _continuityTransfers.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -95,6 +104,14 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 if (_continuityTransfers is not null)
                     plan = await _continuityTransfers.PrepareRestoreAsync(_options.RuntimeDirectory, history, cancellationToken).ConfigureAwait(false);
                 var policy = _repository is null ? new QueuePolicy() : await _repository.LoadQueuePolicyAsync(cancellationToken).ConfigureAwait(false);
+                var bandwidth = _repository is null ? BandwidthPolicy.Default : await _repository.LoadBandwidthPolicyAsync(cancellationToken).ConfigureAwait(false);
+                bandwidth.Validate();
+                var schedule = _repository is null ? BandwidthSchedule.Disabled : await _repository.LoadBandwidthScheduleAsync(cancellationToken).ConfigureAwait(false);
+                schedule.Validate();
+                bandwidth = await StageScheduledProfileAsync(bandwidth, schedule, cancellationToken).ConfigureAwait(false);
+                var startupProfile = bandwidth.RequestStatus == AriaGui.Core.Downloads.OperationStatus.Failed ? bandwidth.Confirmed : bandwidth.Requested;
+                _relayLimiter?.SetRate(startupProfile.Download);
+                static string Rate(ByteRateLimit cap) => (cap.BytesPerSecond ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 var config = string.Join('\n', new[]
                 {
                     "enable-rpc=true", "rpc-listen-all=false", "rpc-allow-origin-all=false",
@@ -103,6 +120,8 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                     "quiet=true", "show-console-readout=false", "summary-interval=0", "enable-color=false", "file-allocation=none",
                     "auto-save-interval=5", "max-tries=3", "retry-wait=1", "connect-timeout=10", "timeout=30",
                     $"max-concurrent-downloads={policy.RequestedLimit ?? policy.Limit}",
+                    $"max-overall-download-limit={Rate(startupProfile.Download)}",
+                    $"max-overall-upload-limit={Rate(startupProfile.Upload)}",
                     $"save-session={_sessionFile}", "save-session-interval=5"
                 }) + "\n";
                 _wroteConfig = true;
@@ -144,7 +163,11 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                             // Establish a durable checkpoint with all restored entries paused first.
                             await _rpc.SaveSessionAsync(startup.Token).ConfigureAwait(false);
                             await WriteCheckpointAsync(startup.Token).ConfigureAwait(false);
-                            foreach (var entry in plan.Entries.Where(row => !row.DesiredPaused))
+                            await ApplyRestoredJobRatesAsync(_rpc, plan.Entries, startup.Token).ConfigureAwait(false);
+                            if (schedule.Enabled && _repository is not null)
+                                await _repository.SaveAsync(plan.Entries.Where(row => !DownloadBrowsing.IsTerminal(row.Progress.Status))
+                                    .Select(row => row with { PolicyHeld = true }).ToArray(), startup.Token).ConfigureAwait(false);
+                            foreach (var entry in plan.Entries.Where(row => !row.DesiredPaused && !schedule.Enabled))
                                 if (await _rpc.FindAsync(entry.Attempt.EngineId, startup.Token).ConfigureAwait(false) is { Progress.Status: AriaGui.Core.Downloads.DownloadStatus.Paused })
                                     await _rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Resume, null, startup.Token).ConfigureAwait(false);
                             await _rpc.SaveSessionAsync(startup.Token).ConfigureAwait(false);
@@ -236,6 +259,16 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                     request = request with { RequirePublicOrigin = current!.ExactSourceUrl is not null };
                 }
                 request = await _continuityTransfers.PrepareAsync(request, token, legacyFresh).ConfigureAwait(false);
+            }
+            if (_repository is not null && request.ContinuityJobId is Guid jobId)
+            {
+                var saved = await _repository.GetAsync(jobId, token).ConfigureAwait(false);
+                if (saved is null || saved.Attempt.EngineId != request.EngineId || saved.Attempt.Id != request.ContinuityAttemptId)
+                    throw new EngineException(EngineFailure.RequestRejected, "Saved job ownership changed before adding a transfer.");
+                var policy = await _repository.LoadJobBandwidthPolicyAsync(jobId, token).ConfigureAwait(false);
+                policy.Validate();
+                if (policy.RequestedRevision > 0)
+                    request = request with { JobDownloadLimit = policy.RequestStatus == OperationStatus.Failed ? policy.Confirmed : policy.Requested };
             }
             var download = await rpc.AddAsync(request, token).ConfigureAwait(false);
             if (_continuityTransfers is not null) download = await ObserveContinuityAsync(download, token).ConfigureAwait(false);
@@ -343,6 +376,112 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
         finally { _gate.Release(); }
     }
 
+    public async Task<BandwidthObservation> ApplyBandwidthAsync(BandwidthProfile profile, CancellationToken token)
+    {
+        profile.Validate();
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var rpc = ConnectedClient();
+            var info = await CheckHealthCoreAsync(token).ConfigureAwait(false);
+            _relayLimiter?.SetRate(profile.Download);
+            await rpc.SetBandwidthAsync(profile, token).ConfigureAwait(false);
+            var (download, upload) = await rpc.GetBandwidthAsync(token).ConfigureAwait(false);
+            _nextReconcile = default;
+            return new(info.SessionId, download, upload);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<BandwidthObservation> ObserveBandwidthAsync(CancellationToken token)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var rpc = ConnectedClient();
+            var info = await CheckHealthCoreAsync(token).ConfigureAwait(false);
+            var (download, upload) = await rpc.GetBandwidthAsync(token).ConfigureAwait(false);
+            return new(info.SessionId, download, upload);
+        }
+        finally { _gate.Release(); }
+    }
+
+    private async Task<DownloadEntry> RequireOwnedJobAsync(Guid jobId, string gid, Aria2RpcClient rpc, CancellationToken token)
+    {
+        var entry = _repository is null ? null : await _repository.GetAsync(jobId, token).ConfigureAwait(false);
+        if (entry is null || entry.Attempt.EngineId != gid || !_knownIds.Contains(gid)
+            || DownloadBrowsing.IsTerminal(entry.Progress.Status))
+            throw new EngineException(EngineFailure.RequestRejected, "The job is not an active owned transfer.");
+        if (_continuityTransfers is not null)
+        {
+            if (!_continuityTransfers.Owns(gid, entry.Job.Id, entry.Attempt.Id))
+                throw new EngineException(EngineFailure.RequestRejected, "The transfer lacks guarded ownership.");
+        }
+        else if (!await rpc.MatchesTransferOwnershipAsync(gid, entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri,
+                     entry.Job.Destination, token).ConfigureAwait(false))
+            throw new EngineException(EngineFailure.RequestRejected, "The transfer identity changed.");
+        return entry;
+    }
+
+    public async Task<JobBandwidthObservation> ApplyJobBandwidthAsync(Guid jobId, string gid, ByteRateLimit cap, CancellationToken token)
+    {
+        cap.Validate();
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var rpc = ConnectedClient();
+            var info = await CheckHealthCoreAsync(token).ConfigureAwait(false);
+            await RequireOwnedJobAsync(jobId, gid, rpc, token).ConfigureAwait(false);
+            await rpc.SetJobBandwidthAsync(gid, cap, token).ConfigureAwait(false);
+            var effective = await rpc.GetJobBandwidthAsync(gid, token).ConfigureAwait(false);
+            return new(info.SessionId, gid, effective);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<JobBandwidthObservation> ObserveJobBandwidthAsync(Guid jobId, string gid, CancellationToken token)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var rpc = ConnectedClient();
+            var info = await CheckHealthCoreAsync(token).ConfigureAwait(false);
+            await RequireOwnedJobAsync(jobId, gid, rpc, token).ConfigureAwait(false);
+            return new(info.SessionId, gid, await rpc.GetJobBandwidthAsync(gid, token).ConfigureAwait(false));
+        }
+        finally { _gate.Release(); }
+    }
+
+    private async Task ApplyRestoredJobRatesAsync(Aria2RpcClient rpc, IReadOnlyList<DownloadEntry> entries, CancellationToken token)
+    {
+        if (_repository is null) return;
+        foreach (var entry in entries)
+        {
+            var policy = await _repository.LoadJobBandwidthPolicyAsync(entry.Job.Id, token).ConfigureAwait(false);
+            policy.Validate();
+            if (policy.RequestedRevision == 0) continue;
+            var transfer = await rpc.FindAsync(entry.Attempt.EngineId, token).ConfigureAwait(false);
+            if (transfer is null || DownloadBrowsing.IsTerminal(transfer.Progress.Status)) continue;
+            var desired = policy.RequestStatus == OperationStatus.Failed ? policy.Confirmed : policy.Requested;
+            var observed = await rpc.GetJobBandwidthAsync(entry.Attempt.EngineId, token).ConfigureAwait(false);
+            if (observed != desired) await rpc.SetJobBandwidthAsync(entry.Attempt.EngineId, desired, token).ConfigureAwait(false);
+            if (await rpc.GetJobBandwidthAsync(entry.Attempt.EngineId, token).ConfigureAwait(false) != desired)
+                throw new EngineException(EngineFailure.InvalidResponse, "A restored job rate was not confirmed.");
+        }
+    }
+
+    private async Task<BandwidthPolicy> StageScheduledProfileAsync(BandwidthPolicy current, BandwidthSchedule schedule, CancellationToken token)
+    {
+        if ((!schedule.Enabled && !schedule.ResetDefaultOnDisable) || _repository is null) return current;
+        var desired = schedule.Evaluate(DateTimeOffset.UtcNow).Profile;
+        var effectiveIntent = current.RequestStatus == OperationStatus.Failed ? current.Confirmed : current.Requested;
+        if (desired == effectiveIntent && !(schedule.ResetDefaultOnDisable && current.RequestedRevision == 0)) return current;
+        var staged = current with { RequestedRevision = checked(current.RequestedRevision + 1),
+            Requested = desired, RequestStatus = OperationStatus.Pending };
+        await _repository.SaveBandwidthPolicyAsync(staged, token).ConfigureAwait(false);
+        return staged;
+    }
+
     private async Task StopOwnedCoreAsync(CancellationToken cancellationToken)
     {
         Volatile.Write(ref _expectedExit, 1);
@@ -385,6 +524,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
         _rpc = null;
         _info = null;
         if (_continuityGateway is not null) { await _continuityGateway.DisposeAsync().ConfigureAwait(false); _continuityGateway = null; }
+        _relayLimiter = null;
         _continuityTransfers?.Dispose(); _continuityTransfers = null;
         if (_wroteOwnership)
         {
@@ -550,6 +690,24 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             var queuePolicy = await _repository!.LoadQueuePolicyAsync(token).ConfigureAwait(false);
             if (queuePolicy.RequestedLimit is int requestedLimit && await rpc.GetConcurrencyAsync(token).ConfigureAwait(false) != requestedLimit)
                 await rpc.SetConcurrencyAsync(requestedLimit, token).ConfigureAwait(false);
+            var bandwidth = await _repository.LoadBandwidthPolicyAsync(token).ConfigureAwait(false);
+            bandwidth.Validate();
+            var schedule = await _repository.LoadBandwidthScheduleAsync(token).ConfigureAwait(false);
+            schedule.Validate();
+            bandwidth = await StageScheduledProfileAsync(bandwidth, schedule, token).ConfigureAwait(false);
+            var profile = bandwidth.RequestStatus == AriaGui.Core.Downloads.OperationStatus.Failed ? bandwidth.Confirmed : bandwidth.Requested;
+            _relayLimiter?.SetRate(profile.Download);
+            if (bandwidth.RequestedRevision > 0)
+            {
+                var (download, upload) = await rpc.GetBandwidthAsync(token).ConfigureAwait(false);
+                if (download != profile.Download || upload != profile.Upload)
+                    await rpc.SetBandwidthAsync(profile, token).ConfigureAwait(false);
+            }
+            await ApplyRestoredJobRatesAsync(rpc, history.Where(row => !DownloadBrowsing.IsTerminal(row.Progress.Status)).ToArray(), token)
+                .ConfigureAwait(false);
+            if (schedule.Enabled)
+                await _repository.SaveAsync(history.Where(row => !DownloadBrowsing.IsTerminal(row.Progress.Status))
+                    .Select(row => row with { PolicyHeld = true }).ToArray(), token).ConfigureAwait(false);
             foreach (var entry in history.Where(row => row.Progress.Status is not
                 (AriaGui.Core.Downloads.DownloadStatus.Completed or AriaGui.Core.Downloads.DownloadStatus.Failed or AriaGui.Core.Downloads.DownloadStatus.Removed)))
             {
@@ -558,9 +716,9 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 var status = observed.Progress.Status;
                 if (entry.DesiredRemoved && status is AriaGui.Core.Downloads.DownloadStatus.Downloading or AriaGui.Core.Downloads.DownloadStatus.Queued or AriaGui.Core.Downloads.DownloadStatus.Paused)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Remove, null, token).ConfigureAwait(false);
-                else if (entry.DesiredPaused && status is AriaGui.Core.Downloads.DownloadStatus.Downloading or AriaGui.Core.Downloads.DownloadStatus.Queued)
+                else if ((entry.DesiredPaused || schedule.Enabled) && status is AriaGui.Core.Downloads.DownloadStatus.Downloading or AriaGui.Core.Downloads.DownloadStatus.Queued)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Pause, null, token).ConfigureAwait(false);
-                else if (!entry.DesiredPaused && entry.PendingOperation?.Action == AriaGui.Core.Downloads.DownloadAction.Resume && status == AriaGui.Core.Downloads.DownloadStatus.Paused)
+                else if (!entry.DesiredPaused && !schedule.Enabled && entry.PendingOperation?.Action == AriaGui.Core.Downloads.DownloadAction.Resume && status == AriaGui.Core.Downloads.DownloadStatus.Paused)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Resume, null, token).ConfigureAwait(false);
             }
             _info = info with { RecoveryMessage = "Reconnected to the verified surviving engine; checking saved intents and history." };
@@ -600,9 +758,9 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 var status = present.Progress.Status;
                 if (entry.DesiredRemoved && status is AriaGui.Core.Downloads.DownloadStatus.Downloading or AriaGui.Core.Downloads.DownloadStatus.Queued or AriaGui.Core.Downloads.DownloadStatus.Paused)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Remove, null, token).ConfigureAwait(false);
-                else if (entry.DesiredPaused && status is AriaGui.Core.Downloads.DownloadStatus.Downloading or AriaGui.Core.Downloads.DownloadStatus.Queued)
+                else if ((entry.DesiredPaused || entry.PolicyHeld) && status is AriaGui.Core.Downloads.DownloadStatus.Downloading or AriaGui.Core.Downloads.DownloadStatus.Queued)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Pause, null, token).ConfigureAwait(false);
-                else if (!entry.DesiredPaused && status == AriaGui.Core.Downloads.DownloadStatus.Paused)
+                else if (!entry.DesiredPaused && !entry.PolicyHeld && status == AriaGui.Core.Downloads.DownloadStatus.Paused)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Resume, null, token).ConfigureAwait(false);
                 if (entry.PendingOperation?.QueuePosition is int position && status == AriaGui.Core.Downloads.DownloadStatus.Queued)
                     await rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Move, position, token).ConfigureAwait(false);
@@ -615,9 +773,17 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             var target = await new AriaGui.Infrastructure.Downloads.FileDownloadDestination().ValidateRetryAsync(entry.Job.Source,
                 Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, token).ConfigureAwait(false);
             var recoveryRequest = new EngineDownloadRequest(entry.Attempt.EngineId, entry.Job.Source, Directory: target.Directory, FileName: target.FileName,
-                ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused, ExactSourceUrl: entry.ExactSourceUrl,
+                ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused || entry.PolicyHeld, ExactSourceUrl: entry.ExactSourceUrl,
                 ContinuityJobId: entry.Job.Id, ContinuityAttemptId: entry.Attempt.Id,
                 RequirePublicOrigin: entry.ExactSourceUrl is not null);
+            if (_repository is not null)
+            {
+                var jobRate = await _repository.LoadJobBandwidthPolicyAsync(entry.Job.Id, token).ConfigureAwait(false);
+                jobRate.Validate();
+                if (jobRate.RequestedRevision > 0)
+                    recoveryRequest = recoveryRequest with { JobDownloadLimit = jobRate.RequestStatus == OperationStatus.Failed
+                        ? jobRate.Confirmed : jobRate.Requested };
+            }
             if (_continuityTransfers is not null) recoveryRequest = await _continuityTransfers.PrepareAsync(recoveryRequest, token).ConfigureAwait(false);
             var result = await rpc.AddAsync(recoveryRequest, token).ConfigureAwait(false);
             _knownIds.Add(entry.Attempt.EngineId);

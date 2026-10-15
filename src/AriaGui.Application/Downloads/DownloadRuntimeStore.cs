@@ -7,12 +7,13 @@ public enum EngineConnectionState { Starting, Connected, Disconnected }
 public sealed record DownloadEntry(DownloadJob Job, TransferAttempt Attempt,
     DownloadFile File, DownloadSnapshot Progress, PendingOperation? PendingOperation = null, string? ErrorMessage = null,
     int? QueuePosition = null, bool DesiredPaused = false, bool DesiredRemoved = false, DateTimeOffset? ObservedAt = null,
-    string? ExactSourceUrl = null);
+    string? ExactSourceUrl = null, bool PolicyHeld = false);
 public sealed record CompletionNotice(Guid AttemptId, string FileName);
 
 public sealed record DownloadRuntimeSnapshot(long Revision, IReadOnlyList<DownloadEntry> Downloads,
     EngineConnectionState Connection, string? ErrorMessage = null, QueuePolicy? QueuePolicy = null,
-    int? ObservedConcurrency = null, CompletionNotice? LatestCompletion = null);
+    int? ObservedConcurrency = null, CompletionNotice? LatestCompletion = null, BandwidthPolicy? BandwidthPolicy = null,
+    IReadOnlyDictionary<Guid, JobBandwidthPolicy>? JobBandwidthPolicies = null, BandwidthSchedule? Schedule = null);
 
 public sealed class DownloadRuntimeStore
 {
@@ -23,11 +24,14 @@ public sealed class DownloadRuntimeStore
 
     // Only application coordination publishes state; UI consumers can only observe it.
     internal void Publish(IEnumerable<DownloadEntry> downloads, EngineConnectionState connection, string? error = null,
-        QueuePolicy? policy = null, int? observedConcurrency = null, CompletionNotice? completion = null)
+        QueuePolicy? policy = null, int? observedConcurrency = null, CompletionNotice? completion = null,
+        BandwidthPolicy? bandwidthPolicy = null, IReadOnlyDictionary<Guid, JobBandwidthPolicy>? jobBandwidthPolicies = null,
+        BandwidthSchedule? schedule = null)
     {
         var snapshot = new DownloadRuntimeSnapshot(Current.Revision + 1,
             Array.AsReadOnly(DownloadBrowsing.RetainRecent(downloads).ToArray()), connection, error, policy ?? Current.QueuePolicy,
-            observedConcurrency ?? Current.ObservedConcurrency, completion ?? Current.LatestCompletion);
+            observedConcurrency ?? Current.ObservedConcurrency, completion ?? Current.LatestCompletion,
+            bandwidthPolicy ?? Current.BandwidthPolicy, jobBandwidthPolicies ?? Current.JobBandwidthPolicies, schedule ?? Current.Schedule);
         Volatile.Write(ref _current, snapshot);
         Changed?.Invoke(this, snapshot);
     }

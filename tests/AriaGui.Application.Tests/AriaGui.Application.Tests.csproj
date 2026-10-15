@@ -11,6 +11,7 @@
     <Compile Include="../../src/AriaGui.App/Services/IUiDispatcher.cs" Link="Services/IUiDispatcher.cs" />
     <Compile Include="../../src/AriaGui.App/Services/IDownloadFolderPicker.cs" Link="Services/IDownloadFolderPicker.cs" />
     <Compile Include="../../src/AriaGui.App/Services/IDownloadFileActions.cs" Link="Services/IDownloadFileActions.cs" />
+    <None Include="../../src/AriaGui.App/Views/PreferencesDialog.xaml" Link="PreferencesDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>

@@ -3,6 +3,7 @@ using AriaGui.Core.Downloads;
 using AriaGui.Infrastructure.Aria2;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace AriaGui.Infrastructure.Persistence;
 
@@ -43,7 +44,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
                 new(attempt.Status, attempt.DownloadedBytes, attempt.TotalBytes, 0),
                 operation is null ? null : new(operation.Id, job.Id, operation.Action, operation.Status, At(operation.RequestedAtUtcTicks), operation.QueuePosition),
                 attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),
-                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null);
+                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null, PolicyHeld: attempt.PolicyHeld);
         }).ToArray();
     }, token);
 
@@ -67,7 +68,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
             Destination = entry.Job.Destination, DestinationKey = entry.Job.Destination.ToUpperInvariant(), CreatedAtUtcTicks = entry.Job.CreatedAt.UtcTicks });
         db.Attempts.Add(new() { Id = entry.Attempt.Id, JobId = entry.Job.Id, EngineId = entry.Attempt.EngineId,
             StartedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, ParentAttemptId = entry.Attempt.ParentAttemptId,
-            Status = entry.Progress.Status, UpdatedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks });
+            Status = entry.Progress.Status, UpdatedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, PolicyHeld = entry.PolicyHeld });
         db.Files.Add(new() { Id = entry.File.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, FileName = entry.File.FileName });
         db.Operations.Add(new() { Id = operation.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, Action = operation.Action,
             Status = operation.Status, RequestedAtUtcTicks = operation.RequestedAt.UtcTicks });
@@ -95,6 +96,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
             attempt.ErrorMessage = entry.ErrorMessage;
             attempt.DesiredPaused = entry.DesiredPaused;
             attempt.DesiredRemoved = entry.DesiredRemoved;
+            attempt.PolicyHeld = entry.PolicyHeld;
             attempt.UpdatedAtUtcTicks = entry.ObservedAt?.UtcTicks ?? DateTimeOffset.UtcNow.UtcTicks;
             files[entry.File.Id].TotalBytes = entry.File.TotalBytes;
             foreach (var operation in pending[entry.Attempt.Id])
@@ -115,6 +117,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         var attempt = db.Attempts.Single(row => row.Id == entry.Attempt.Id);
         attempt.DesiredPaused = entry.DesiredPaused;
         attempt.DesiredRemoved = entry.DesiredRemoved;
+        attempt.PolicyHeld = entry.PolicyHeld;
         db.SaveChanges();
         return true;
     }, token);
@@ -140,7 +143,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         var operation = retry.PendingOperation!;
         db.Attempts.Add(new() { Id = retry.Attempt.Id, JobId = retry.Job.Id, EngineId = retry.Attempt.EngineId,
             StartedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, ParentAttemptId = previous.Attempt.Id,
-            Status = DownloadStatus.Queued, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks });
+            Status = DownloadStatus.Queued, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
         db.Files.Add(new() { Id = retry.File.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id, FileName = retry.File.FileName });
         db.Operations.Add(new() { Id = operation.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id,
             Action = DownloadAction.Retry, Status = OperationStatus.Pending, RequestedAtUtcTicks = operation.RequestedAt.UtcTicks });
@@ -163,7 +166,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         var intent = retry.PendingOperation!;
         db.Attempts.Add(new() { Id = retry.Attempt.Id, JobId = retry.Job.Id, EngineId = retry.Attempt.EngineId,
             StartedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, ParentAttemptId = old.Id,
-            Status = DownloadStatus.Queued, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks });
+            Status = DownloadStatus.Queued, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
         db.Files.Add(new() { Id = retry.File.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id, FileName = retry.File.FileName });
         db.Operations.Add(new() { Id = intent.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id,
             Action = DownloadAction.Retry, Status = OperationStatus.Pending, RequestedAtUtcTicks = intent.RequestedAt.UtcTicks });
@@ -183,6 +186,83 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         row.Limit = policy.Limit;
         row.RequestedLimit = policy.RequestedLimit;
         row.OperationId = policy.OperationId;
+        row.RequestStatus = policy.RequestStatus;
+        db.SaveChanges();
+        return true;
+    }, token);
+
+    public Task<BandwidthPolicy> LoadBandwidthPolicyAsync(CancellationToken token) => OnDatabaseThreadAsync(db =>
+    {
+        var row = db.BandwidthPolicies.AsNoTracking().SingleOrDefault(row => row.Id == 1);
+        if (row is null) return BandwidthPolicy.Default;
+        var policy = new BandwidthPolicy(row.RequestedRevision, row.ConfirmedRevision,
+            new(row.RequestedName, new(row.RequestedDownloadBytesPerSecond), new(row.RequestedUploadBytesPerSecond)),
+            new(row.ConfirmedName, new(row.ConfirmedDownloadBytesPerSecond), new(row.ConfirmedUploadBytesPerSecond)),
+            row.ConfirmedGeneration, row.RequestStatus);
+        policy.Validate();
+        return policy;
+    }, token);
+
+    public Task SaveBandwidthPolicyAsync(BandwidthPolicy policy, CancellationToken token) => OnDatabaseThreadAsync(db =>
+    {
+        policy.Validate();
+        var row = db.BandwidthPolicies.SingleOrDefault(row => row.Id == 1);
+        if (row is null) { row = new() { Id = 1 }; db.BandwidthPolicies.Add(row); }
+        row.RequestedRevision = policy.RequestedRevision;
+        row.ConfirmedRevision = policy.ConfirmedRevision;
+        row.RequestedName = policy.Requested.Name;
+        row.RequestedDownloadBytesPerSecond = policy.Requested.Download.BytesPerSecond;
+        row.RequestedUploadBytesPerSecond = policy.Requested.Upload.BytesPerSecond;
+        row.ConfirmedName = policy.Confirmed.Name;
+        row.ConfirmedDownloadBytesPerSecond = policy.Confirmed.Download.BytesPerSecond;
+        row.ConfirmedUploadBytesPerSecond = policy.Confirmed.Upload.BytesPerSecond;
+        row.ConfirmedGeneration = policy.ConfirmedGeneration;
+        row.RequestStatus = policy.RequestStatus;
+        db.SaveChanges();
+        return true;
+    }, token);
+
+    public Task<BandwidthSchedule> LoadBandwidthScheduleAsync(CancellationToken token) => OnDatabaseThreadAsync(db =>
+    {
+        var json = db.BandwidthPolicies.AsNoTracking().SingleOrDefault(row => row.Id == 1)?.ScheduleJson;
+        if (json is null) return BandwidthSchedule.Disabled;
+        var schedule = JsonSerializer.Deserialize<BandwidthSchedule>(json)
+            ?? throw new DownloadStorageException("Saved bandwidth schedule is invalid.");
+        schedule.Validate();
+        return schedule;
+    }, token);
+
+    public Task SaveBandwidthScheduleAsync(BandwidthSchedule schedule, CancellationToken token) => OnDatabaseThreadAsync(db =>
+    {
+        schedule.Validate();
+        var row = db.BandwidthPolicies.SingleOrDefault(row => row.Id == 1);
+        if (row is null) { row = new() { Id = 1 }; db.BandwidthPolicies.Add(row); }
+        row.ScheduleJson = JsonSerializer.Serialize(schedule);
+        db.SaveChanges();
+        return true;
+    }, token);
+
+    public Task<JobBandwidthPolicy> LoadJobBandwidthPolicyAsync(Guid jobId, CancellationToken token) => OnDatabaseThreadAsync(db =>
+    {
+        var row = db.JobBandwidthPolicies.AsNoTracking().SingleOrDefault(row => row.JobId == jobId);
+        if (row is null) return JobBandwidthPolicy.Default(jobId);
+        var policy = new JobBandwidthPolicy(row.JobId, row.RequestedRevision, row.ConfirmedRevision,
+            new(row.RequestedDownloadBytesPerSecond), new(row.ConfirmedDownloadBytesPerSecond),
+            row.ConfirmedGeneration, row.RequestStatus);
+        policy.Validate();
+        return policy;
+    }, token);
+
+    public Task SaveJobBandwidthPolicyAsync(JobBandwidthPolicy policy, CancellationToken token) => OnDatabaseThreadAsync(db =>
+    {
+        policy.Validate();
+        var row = db.JobBandwidthPolicies.SingleOrDefault(row => row.JobId == policy.JobId);
+        if (row is null) { row = new() { JobId = policy.JobId }; db.JobBandwidthPolicies.Add(row); }
+        row.RequestedRevision = policy.RequestedRevision;
+        row.ConfirmedRevision = policy.ConfirmedRevision;
+        row.RequestedDownloadBytesPerSecond = policy.Requested.BytesPerSecond;
+        row.ConfirmedDownloadBytesPerSecond = policy.Confirmed.BytesPerSecond;
+        row.ConfirmedGeneration = policy.ConfirmedGeneration;
         row.RequestStatus = policy.RequestStatus;
         db.SaveChanges();
         return true;

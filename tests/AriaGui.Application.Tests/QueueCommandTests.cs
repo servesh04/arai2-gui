@@ -9,6 +9,91 @@ namespace AriaGui.Application.Tests;
 public sealed class QueueCommandTests
 {
     [Fact]
+    public async Task Blocked_schedule_stages_fresh_and_retry_jobs_paused_before_add_rpc()
+    {
+        var clock = new ScheduleClock(new DateTimeOffset(2026, 10, 12, 10, 6, 0, TimeSpan.Zero));
+        var rig = new Rig(clock);
+        await rig.Coordinator.SetBandwidthScheduleAsync(new("UTC", BandwidthProfile.Unlimited,
+            [new(DayOfWeek.Monday, 605, 610, ScheduleAction.Block)], Enabled: true));
+        var fresh = await rig.Add("fresh.bin");
+        Assert.True(rig.Engine.LastAddedRequest!.StartPaused);
+        Assert.True(rig.Repository.Entries[fresh.Job.Id].PolicyHeld);
+        Assert.False(rig.Repository.Entries[fresh.Job.Id].DesiredPaused);
+        Assert.Equal(DownloadStatus.Paused, fresh.Progress.Status);
+
+        var retryRig = new Rig(clock);
+        var first = await retryRig.Add("retry.bin");
+        retryRig.Engine.Set(first.Attempt.EngineId, DownloadStatus.Failed);
+        await retryRig.Coordinator.RefreshAsync();
+        await retryRig.Coordinator.SetBandwidthScheduleAsync(new("UTC", BandwidthProfile.Unlimited,
+            [new(DayOfWeek.Monday, 605, 610, ScheduleAction.Block)], Enabled: true));
+        await retryRig.Coordinator.RetryAsync(first.Job.Id);
+        Assert.True(retryRig.Engine.LastAddedRequest!.StartPaused);
+        Assert.True(retryRig.Repository.Entries[first.Job.Id].PolicyHeld);
+        Assert.Equal(DownloadStatus.Paused, retryRig.Store.Current.Downloads.Single().Progress.Status);
+    }
+
+    [Fact]
+    public async Task Disabling_schedule_restores_default_profile_and_clears_reset_intent()
+    {
+        var clock = new ScheduleClock(new DateTimeOffset(2026, 10, 12, 10, 6, 0, TimeSpan.Zero));
+        var rig = new Rig(clock); await rig.Coordinator.RefreshAsync();
+        var defaultProfile = new BandwidthProfile("Normal", new(131072), ByteRateLimit.Unlimited);
+        var scheduled = new BandwidthProfile("Metered", new(32768), ByteRateLimit.Unlimited);
+        await rig.Coordinator.SetBandwidthScheduleAsync(new("UTC", defaultProfile,
+            [new(DayOfWeek.Monday, 605, 610, ScheduleAction.Profile, scheduled)], Enabled: true));
+        Assert.Equal(scheduled.Download, rig.Engine.DownloadCap);
+        await rig.Coordinator.SetBandwidthScheduleAsync(rig.Repository.Schedule with { Enabled = false });
+        Assert.Equal(defaultProfile.Download, rig.Engine.DownloadCap);
+        Assert.False(rig.Repository.Schedule.ResetDefaultOnDisable);
+        Assert.Equal(2, rig.Engine.BandwidthCalls);
+        await rig.Coordinator.RefreshAsync();
+        Assert.Equal(2, rig.Engine.BandwidthCalls);
+    }
+
+    [Fact]
+    public async Task Schedule_releases_only_policy_held_work_after_sleep_and_manual_pause_wins()
+    {
+        var clock = new ScheduleClock(new DateTimeOffset(2026, 10, 12, 10, 0, 0, TimeSpan.Zero));
+        var rig = new Rig(clock); var entry = await rig.Add(); await rig.Coordinator.RefreshAsync();
+        await rig.Coordinator.SetBandwidthScheduleAsync(new("UTC", BandwidthProfile.Unlimited,
+            [new(DayOfWeek.Monday, 605, 610, ScheduleAction.Block)], Enabled: true));
+        clock.Now = clock.Now.AddMinutes(6);
+        await rig.Coordinator.NotifyClockChangedAsync();
+        Assert.Equal(DownloadStatus.Paused, rig.Store.Current.Downloads.Single().Progress.Status);
+        Assert.True(rig.Repository.Entries[entry.Job.Id].PolicyHeld);
+        Assert.False(rig.Repository.Entries[entry.Job.Id].DesiredPaused);
+        await rig.Coordinator.PauseAsync(entry.Job.Id); // User intent while already policy-held.
+        Assert.True(rig.Repository.Entries[entry.Job.Id].DesiredPaused);
+        clock.Now = clock.Now.AddMinutes(20); // Sleep spans the release boundary.
+        await rig.Coordinator.NotifyWakeAsync();
+        Assert.False(rig.Repository.Entries[entry.Job.Id].PolicyHeld);
+        Assert.Equal(DownloadStatus.Paused, rig.Store.Current.Downloads.Single().Progress.Status);
+        Assert.Equal([DownloadAction.Pause], rig.Engine.Commands.Select(row => row.Action));
+        await rig.Coordinator.ResumeAsync(entry.Job.Id);
+        Assert.Equal([DownloadAction.Pause, DownloadAction.Resume], rig.Engine.Commands.Select(row => row.Action));
+    }
+
+    [Fact]
+    public async Task Schedule_release_resumes_eligible_hold_once_and_never_replays_uncertain_pause()
+    {
+        var clock = new ScheduleClock(new DateTimeOffset(2026, 10, 12, 10, 6, 0, TimeSpan.Zero));
+        var rig = new Rig(clock); var entry = await rig.Add(); await rig.Coordinator.RefreshAsync();
+        rig.Engine.LoseReply = true;
+        await rig.Coordinator.SetBandwidthScheduleAsync(new("UTC", BandwidthProfile.Unlimited,
+            [new(DayOfWeek.Monday, 605, 610, ScheduleAction.Block)], Enabled: true));
+        Assert.Single(rig.Engine.Commands);
+        await rig.Coordinator.RefreshAsync();
+        Assert.Single(rig.Engine.Commands);
+        Assert.True(rig.Repository.Entries[entry.Job.Id].PolicyHeld);
+        rig.Engine.LoseReply = false;
+        clock.Now = clock.Now.AddMinutes(5);
+        await rig.Coordinator.NotifyWakeAsync();
+        Assert.Equal([DownloadAction.Pause, DownloadAction.Resume], rig.Engine.Commands.Select(row => row.Action));
+        Assert.False(rig.Repository.Entries[entry.Job.Id].PolicyHeld);
+    }
+
+    [Fact]
     public async Task Intent_precedes_rpc_double_pause_is_coalesced_and_rapid_resume_is_serialized()
     {
         var rig = new Rig();
@@ -199,6 +284,181 @@ public sealed class QueueCommandTests
     }
 
     [Fact]
+    public async Task Bandwidth_intent_is_durable_before_rpc_and_confirmed_for_the_observed_generation()
+    {
+        var rig = new Rig();
+        var profile = new BandwidthProfile("Evening", new(262144), new(65536));
+        rig.Engine.BeforeBandwidth = applied =>
+        {
+            Assert.Equal(profile, applied);
+            Assert.Equal(1, rig.Repository.Bandwidth.RequestedRevision);
+            Assert.Equal(OperationStatus.Pending, rig.Repository.Bandwidth.RequestStatus);
+        };
+        await rig.Coordinator.SetBandwidthProfileAsync(profile);
+        Assert.Equal(profile, rig.Repository.Bandwidth.Confirmed);
+        Assert.Equal(1, rig.Repository.Bandwidth.ConfirmedRevision);
+        Assert.Equal(rig.Engine.Generation, rig.Repository.Bandwidth.ConfirmedGeneration);
+        Assert.Null(rig.Repository.Bandwidth.RequestStatus);
+    }
+
+    [Fact]
+    public async Task Lost_bandwidth_reply_remains_uncertain_until_observation_without_duplicate_mutation()
+    {
+        var rig = new Rig();
+        var profile = new BandwidthProfile("Slow", new(131072), ByteRateLimit.Unlimited);
+        rig.Engine.BeforeBandwidth = _ => throw new EngineException(EngineFailure.RpcUnavailable, "Lost reply.");
+        await Assert.ThrowsAsync<EngineException>(() => rig.Coordinator.SetBandwidthProfileAsync(profile));
+        Assert.Equal(OperationStatus.Uncertain, rig.Repository.Bandwidth.RequestStatus);
+        var reopened = rig.Create(new DownloadRuntimeStore());
+        await reopened.RefreshAsync();
+        Assert.Equal(1, rig.Engine.BandwidthCalls);
+        Assert.Equal(OperationStatus.Uncertain, rig.Repository.Bandwidth.RequestStatus);
+        rig.Engine.DownloadCap = profile.Download;
+        await reopened.RefreshAsync();
+        Assert.Null(rig.Repository.Bandwidth.RequestStatus);
+        Assert.Equal(profile, rig.Repository.Bandwidth.Confirmed);
+        Assert.Equal(1, rig.Engine.BandwidthCalls);
+    }
+
+    [Fact]
+    public async Task Invalid_bandwidth_rate_never_persists_or_calls_engine()
+    {
+        var rig = new Rig();
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => rig.Coordinator.SetBandwidthProfileAsync(
+            new("Invalid", new(0), ByteRateLimit.Unlimited)));
+        Assert.Equal(0, rig.Repository.Bandwidth.RequestedRevision);
+        Assert.Equal(0, rig.Engine.BandwidthCalls);
+    }
+
+    [Fact]
+    public async Task Rejected_bandwidth_rate_is_visible_and_next_request_can_replace_it()
+    {
+        var rig = new Rig();
+        rig.Engine.BeforeBandwidth = _ => throw new EngineException(EngineFailure.RequestRejected, "Rejected.");
+        await Assert.ThrowsAsync<EngineException>(() => rig.Coordinator.SetBandwidthProfileAsync(
+            new("Rejected", new(65536), ByteRateLimit.Unlimited)));
+        Assert.Equal(OperationStatus.Failed, rig.Repository.Bandwidth.RequestStatus);
+        Assert.Equal(0, rig.Repository.Bandwidth.ConfirmedRevision);
+        rig.Engine.BeforeBandwidth = null;
+        await rig.Coordinator.SetBandwidthProfileAsync(new("Accepted", new(131072), ByteRateLimit.Unlimited));
+        Assert.Equal(2, rig.Repository.Bandwidth.ConfirmedRevision);
+        Assert.Null(rig.Repository.Bandwidth.RequestStatus);
+    }
+
+    [Fact]
+    public async Task Bandwidth_editor_reports_rejection_without_claiming_the_profile_is_active()
+    {
+        var rig = new Rig();
+        rig.Engine.BeforeBandwidth = _ => throw new EngineException(EngineFailure.RequestRejected, "Rejected.");
+        await Assert.ThrowsAsync<EngineException>(() => rig.Coordinator.SetBandwidthProfileAsync(
+            new("Rejected", new(65536), ByteRateLimit.Unlimited)));
+        using var view = new DownloadsViewModel(rig.Coordinator, rig.Store, new ImmediateDispatcher());
+        Assert.Contains("Rejected was rejected", view.BandwidthMessage);
+        Assert.Contains("last confirmed profile: Unlimited", view.BandwidthMessage);
+        Assert.DoesNotContain("Active profile", view.BandwidthMessage);
+    }
+
+    [Fact]
+    public async Task Saved_profiles_survive_schedule_changes_without_applying_engine_options()
+    {
+        var rig = new Rig();
+        var profiles = new[] { new BandwidthProfile("Metered", new(32768), ByteRateLimit.Unlimited),
+            new BandwidthProfile("Fast", new(262144), new(65536)) };
+        await rig.Coordinator.SaveBandwidthProfilesAsync(profiles);
+        Assert.Equal(0, rig.Engine.BandwidthCalls);
+        await rig.Coordinator.SetBandwidthScheduleAsync(new("UTC", BandwidthProfile.Unlimited,
+            [new(DayOfWeek.Monday, 480, 540, ScheduleAction.Block)], Enabled: false));
+        Assert.Equal(profiles, rig.Repository.Schedule.SavedProfiles);
+        var reopenedStore = new DownloadRuntimeStore();
+        await rig.Create(reopenedStore).InitializeAsync(default);
+        Assert.Equal(profiles, reopenedStore.Current.Schedule?.SavedProfiles);
+        await Assert.ThrowsAsync<ArgumentException>(() => rig.Coordinator.SaveBandwidthProfilesAsync([profiles[0], profiles[0]]));
+        Assert.Equal(profiles, rig.Repository.Schedule.SavedProfiles);
+    }
+
+    [Fact]
+    public async Task Bandwidth_preferences_edit_multiple_intervals_and_selected_job_cap()
+    {
+        var rig = new Rig(); await rig.Add(); await rig.Coordinator.RefreshAsync();
+        using var view = new DownloadsViewModel(rig.Coordinator, rig.Store, new ImmediateDispatcher());
+        view.BandwidthProfileName = "Metered"; view.DownloadLimitKib = 32;
+        await view.SaveProfileCommand.ExecuteAsync(null);
+        Assert.Single(view.SavedProfiles);
+        view.ScheduleTimeZoneId = "UTC";
+        view.ScheduleDay = (int)DayOfWeek.Monday; view.ScheduleStartTime = "08:30"; view.ScheduleEndTime = "10:15";
+        await view.AddRuleCommand.ExecuteAsync(null);
+        view.ScheduleDay = (int)DayOfWeek.Tuesday; view.ScheduleStartTime = "22:00"; view.ScheduleEndTime = "01:00";
+        view.ScheduleBlocks = true;
+        await view.AddRuleCommand.ExecuteAsync(null);
+        view.ScheduleEnabled = true;
+        await view.ApplyScheduleCommand.ExecuteAsync(null);
+        Assert.Equal(2, rig.Repository.Schedule.Intervals.Count);
+        Assert.Equal(510, rig.Repository.Schedule.Intervals[0].StartMinute);
+        Assert.Equal(1500, rig.Repository.Schedule.Intervals[1].EndMinute);
+        Assert.Single(rig.Repository.Schedule.SavedProfiles!);
+        view.ScheduleStartTime = "23:00"; view.ScheduleEndTime = "23:30";
+        await view.AddRuleCommand.ExecuteAsync(null);
+        await view.ApplyScheduleCommand.ExecuteAsync(null);
+        Assert.Contains("overlap", view.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, rig.Repository.Schedule.Intervals.Count);
+        view.RemoveRuleCommand.Execute(null);
+        view.SelectedSavedProfileIndex = 0;
+        Assert.Equal("Metered", view.BandwidthProfileName);
+        view.SelectedBandwidthJob = view.Downloads[0]; view.JobLimitKib = 16;
+        await view.ApplyJobBandwidthCommand.ExecuteAsync(null);
+        Assert.Equal(16384, rig.Repository.JobBandwidth[view.Downloads[0].Id].Confirmed.BytesPerSecond);
+        Assert.Contains("16 KiB/s", view.JobBandwidthMessage);
+    }
+
+    [Fact]
+    public async Task Same_generation_bandwidth_drift_becomes_uncertain_without_reissuing_a_command()
+    {
+        var rig = new Rig();
+        var profile = new BandwidthProfile("Stable", new(131072), ByteRateLimit.Unlimited);
+        await rig.Coordinator.SetBandwidthProfileAsync(profile);
+        Assert.Null(rig.Repository.Bandwidth.RequestStatus);
+        rig.Engine.DownloadCap = new(262144);
+        await rig.Coordinator.RefreshAsync();
+        Assert.Equal(OperationStatus.Uncertain, rig.Repository.Bandwidth.RequestStatus);
+        Assert.Equal(profile, rig.Repository.Bandwidth.Confirmed);
+        Assert.Equal(1, rig.Engine.BandwidthCalls);
+        await rig.Coordinator.RefreshAsync();
+        Assert.Equal(1, rig.Engine.BandwidthCalls);
+    }
+
+    [Fact]
+    public async Task Job_cap_intent_is_durable_before_owned_rpc_and_uncertain_reply_is_reconciled()
+    {
+        var rig = new Rig(); var entry = await rig.Add("job-cap.bin");
+        rig.Engine.BeforeJobBandwidth = (jobId, gid, cap) =>
+        {
+            Assert.Equal(entry.Job.Id, jobId);
+            Assert.Equal(entry.Attempt.EngineId, gid);
+            Assert.Equal(65536, cap.BytesPerSecond);
+            Assert.Equal(OperationStatus.Pending, rig.Repository.JobBandwidth[jobId].RequestStatus);
+            throw new EngineException(EngineFailure.RpcUnavailable, "Lost reply.");
+        };
+        await Assert.ThrowsAsync<EngineException>(() => rig.Coordinator.SetJobBandwidthAsync(entry.Job.Id, new(65536)));
+        Assert.Equal(OperationStatus.Uncertain, rig.Repository.JobBandwidth[entry.Job.Id].RequestStatus);
+        rig.Engine.JobCaps[entry.Attempt.EngineId] = new(65536);
+        await rig.Coordinator.RefreshAsync();
+        Assert.Null(rig.Repository.JobBandwidth[entry.Job.Id].RequestStatus);
+        Assert.Equal(1, rig.Engine.JobBandwidthCalls);
+    }
+
+    [Fact]
+    public async Task Per_job_drift_does_not_reissue_or_change_other_jobs()
+    {
+        var rig = new Rig(); var first = await rig.Add("first-cap.bin"); var second = await rig.Add("second-cap.bin");
+        await rig.Coordinator.SetJobBandwidthAsync(first.Job.Id, new(131072));
+        rig.Engine.JobCaps[first.Attempt.EngineId] = new(262144);
+        await rig.Coordinator.RefreshAsync();
+        Assert.Equal(OperationStatus.Uncertain, rig.Repository.JobBandwidth[first.Job.Id].RequestStatus);
+        Assert.False(rig.Repository.JobBandwidth.ContainsKey(second.Job.Id));
+        Assert.Equal(1, rig.Engine.JobBandwidthCalls);
+    }
+
+    [Fact]
     public async Task Disconnection_disables_row_commands_without_marking_the_transfer_failed()
     {
         var rig = new Rig(); await rig.Add(); await rig.Coordinator.RefreshAsync();
@@ -210,6 +470,11 @@ public sealed class QueueCommandTests
     }
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private sealed class ScheduleClock(DateTimeOffset initial) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = initial;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
     private sealed class ImmediateDispatcher : IUiDispatcher { public void Enqueue(Action action) => action(); }
     private sealed class Rig
     {
@@ -217,8 +482,9 @@ public sealed class QueueCommandTests
         public CommandEngine Engine { get; } = new();
         public DownloadRuntimeStore Store { get; } = new();
         public DownloadCoordinator Coordinator { get; }
-        public Rig() { Coordinator = Create(Store); }
-        public DownloadCoordinator Create(DownloadRuntimeStore store) => new(Engine, store, TimeProvider.System, Repository, new TestDownloadDestination());
+        private readonly TimeProvider _clock;
+        public Rig(TimeProvider? clock = null) { _clock = clock ?? TimeProvider.System; Coordinator = Create(Store); }
+        public DownloadCoordinator Create(DownloadRuntimeStore store) => new(Engine, store, _clock, Repository, new TestDownloadDestination());
         public async Task<DownloadEntry> Add(string name = "file.bin")
         { await Coordinator.AddAsync("https://example.com/" + name); return Store.Current.Downloads.Last(); }
     }
@@ -229,14 +495,22 @@ public sealed class QueueCommandTests
         public Func<string, DownloadAction, Task>? BeforeExecute;
         public Func<Task>? BeforeAdd, DelayNextObservation;
         public Action<int>? BeforeLimit;
+        public Action<BandwidthProfile>? BeforeBandwidth;
+        public Action<Guid, string, ByteRateLimit>? BeforeJobBandwidth;
         public bool LoseReply, CompleteInstead;
         public int AddCount, LimitCalls, Limit = 3;
+        public int BandwidthCalls;
+        public int JobBandwidthCalls;
+        public ByteRateLimit DownloadCap = ByteRateLimit.Unlimited, UploadCap = ByteRateLimit.Unlimited;
+        public Dictionary<string, ByteRateLimit> JobCaps { get; } = [];
+        public EngineDownloadRequest? LastAddedRequest { get; private set; }
         public string Generation = "initial-session";
         public DownloadStatus InitialStatus = DownloadStatus.Downloading;
         public async Task<EngineDownload> AddAsync(EngineDownloadRequest request, CancellationToken token)
         {
+            LastAddedRequest = request;
             AddCount++; if (BeforeAdd is not null) await BeforeAdd();
-            var download = new EngineDownload(request.EngineId, new(InitialStatus, 10, 1000, 20));
+            var download = new EngineDownload(request.EngineId, new(request.StartPaused ? DownloadStatus.Paused : InitialStatus, 10, 1000, 20));
             Transfers.Add(request.EngineId, download); return download;
         }
         public void Set(string gid, DownloadStatus status, int? position = null) =>
@@ -270,5 +544,21 @@ public sealed class QueueCommandTests
         }
         public Task SetConcurrencyAsync(int limit, CancellationToken token)
         { LimitCalls++; BeforeLimit?.Invoke(limit); Limit = limit; return Task.CompletedTask; }
+        public Task<BandwidthObservation> ApplyBandwidthAsync(BandwidthProfile profile, CancellationToken token)
+        {
+            BandwidthCalls++; BeforeBandwidth?.Invoke(profile);
+            DownloadCap = profile.Download; UploadCap = profile.Upload;
+            return Task.FromResult(new BandwidthObservation(Generation, DownloadCap, UploadCap));
+        }
+        public Task<BandwidthObservation> ObserveBandwidthAsync(CancellationToken token) =>
+            Task.FromResult(new BandwidthObservation(Generation, DownloadCap, UploadCap));
+        public Task<JobBandwidthObservation> ApplyJobBandwidthAsync(Guid jobId, string gid, ByteRateLimit cap, CancellationToken token)
+        {
+            JobBandwidthCalls++; BeforeJobBandwidth?.Invoke(jobId, gid, cap);
+            JobCaps[gid] = cap;
+            return Task.FromResult(new JobBandwidthObservation(Generation, gid, cap));
+        }
+        public Task<JobBandwidthObservation> ObserveJobBandwidthAsync(Guid jobId, string gid, CancellationToken token) =>
+            Task.FromResult(new JobBandwidthObservation(Generation, gid, JobCaps.GetValueOrDefault(gid)));
     }
 }

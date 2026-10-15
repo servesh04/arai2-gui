@@ -25,6 +25,55 @@
             <NumberBox Header="Simultaneous downloads" Minimum="1" Maximum="16" SmallChange="1" SpinButtonPlacementMode="Compact" Value="{x:Bind ViewModel.ConcurrencyLimit, Mode=TwoWay}" AutomationProperties.Name="Concurrent download limit" />
             <Button Content="Apply queue limit" Command="{x:Bind ViewModel.ApplyLimitCommand}" />
             <TextBlock Text="{x:Bind ViewModel.QueueMessage, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" />
+            <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <TextBlock Text="Bandwidth profile" FontWeight="SemiBold" />
+            <ComboBox Header="Saved profiles" ItemsSource="{x:Bind ViewModel.SavedProfiles, Mode=OneWay}" DisplayMemberPath="Name"
+                SelectedIndex="{x:Bind ViewModel.SelectedSavedProfileIndex, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+            <TextBox Header="Profile name" Text="{x:Bind ViewModel.BandwidthProfileName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="64" />
+            <NumberBox Header="Download limit (KiB/s, 0 = unlimited)" Minimum="0" Maximum="1048576" SmallChange="1" Value="{x:Bind ViewModel.DownloadLimitKib, Mode=TwoWay}" />
+            <NumberBox Header="Upload limit (KiB/s, 0 = unlimited)" Minimum="0" Maximum="1048576" SmallChange="1" Value="{x:Bind ViewModel.UploadLimitKib, Mode=TwoWay}" />
+            <StackPanel Orientation="Vertical" Spacing="8">
+                <Button Content="Apply profile" Command="{x:Bind ViewModel.ApplyBandwidthCommand}" HorizontalAlignment="Stretch" />
+                <Button Content="Save profile" Command="{x:Bind ViewModel.SaveProfileCommand}" HorizontalAlignment="Stretch" />
+                <Button Content="Delete selected" Command="{x:Bind ViewModel.DeleteProfileCommand}" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <TextBlock Text="{x:Bind ViewModel.BandwidthMessage, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock Text="Per-download cap" FontWeight="SemiBold" />
+            <ComboBox Header="Download" ItemsSource="{x:Bind ViewModel.Downloads, Mode=OneWay}" DisplayMemberPath="FileName"
+                SelectedItem="{x:Bind ViewModel.SelectedBandwidthJob, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+            <NumberBox Header="Download limit (KiB/s, 0 = unlimited)" Minimum="0" Maximum="1048576" SmallChange="1"
+                Value="{x:Bind ViewModel.JobLimitKib, Mode=TwoWay}" />
+            <Button Content="Apply per-download cap" Command="{x:Bind ViewModel.ApplyJobBandwidthCommand}" />
+            <TextBlock Text="{x:Bind ViewModel.JobBandwidthMessage, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" />
+            <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <TextBlock Text="Weekly bandwidth rule" FontWeight="SemiBold" />
+            <TextBlock Text="Add weekly intervals using HH:mm local time. Profile rules use the edited profile above; the saved default applies outside intervals." TextWrapping="Wrap" FontSize="12" />
+            <CheckBox Content="Enable weekly rule" IsChecked="{x:Bind ViewModel.ScheduleEnabled, Mode=TwoWay}" />
+            <TextBox Header="Time zone ID" Text="{x:Bind ViewModel.ScheduleTimeZoneId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <ComboBox Header="Outside-interval default (saved profile)" ItemsSource="{x:Bind ViewModel.SavedProfiles, Mode=OneWay}"
+                DisplayMemberPath="Name" SelectedIndex="{x:Bind ViewModel.SelectedDefaultProfileIndex, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+            <ListView Header="Saved intervals" ItemsSource="{x:Bind ViewModel.WeeklyRules, Mode=OneWay}" DisplayMemberPath="Summary"
+                SelectedIndex="{x:Bind ViewModel.SelectedRuleIndex, Mode=TwoWay}" Height="140" />
+            <ComboBox Header="Weekday" SelectedIndex="{x:Bind ViewModel.ScheduleDay, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Sunday" /><ComboBoxItem Content="Monday" /><ComboBoxItem Content="Tuesday" /><ComboBoxItem Content="Wednesday" />
+                <ComboBoxItem Content="Thursday" /><ComboBoxItem Content="Friday" /><ComboBoxItem Content="Saturday" />
+            </ComboBox>
+            <TextBox Header="Start (HH:mm)" Text="{x:Bind ViewModel.ScheduleStartTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="5" />
+            <TextBox Header="End (HH:mm, may cross midnight)" Text="{x:Bind ViewModel.ScheduleEndTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="5" />
+            <CheckBox Content="Block downloads during interval (otherwise apply profile)" IsChecked="{x:Bind ViewModel.ScheduleBlocks, Mode=TwoWay}" />
+            <StackPanel Orientation="Vertical" Spacing="8">
+                <Button Content="Add interval" Command="{x:Bind ViewModel.AddRuleCommand}" HorizontalAlignment="Stretch" />
+                <Button Content="Replace selected" Command="{x:Bind ViewModel.ReplaceRuleCommand}" HorizontalAlignment="Stretch" />
+                <Button Content="Remove selected" Command="{x:Bind ViewModel.RemoveRuleCommand}" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <Button Content="Save weekly rule" Command="{x:Bind ViewModel.ApplyScheduleCommand}" />
+            <TextBlock Text="{x:Bind ViewModel.ScheduleMessage, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock Text="Temporary override uses the action above and expires automatically." TextWrapping="Wrap" FontSize="12" />
+            <NumberBox Header="Override minutes (1–1440)" Minimum="1" Maximum="1440" SmallChange="1" Value="{x:Bind ViewModel.OverrideMinutes, Mode=TwoWay}" />
+            <StackPanel Orientation="Vertical" Spacing="8">
+                <Button Content="Start override" Command="{x:Bind ViewModel.ApplyOverrideCommand}" HorizontalAlignment="Stretch" />
+                <Button Content="Clear override" Command="{x:Bind ViewModel.ClearOverrideCommand}" HorizontalAlignment="Stretch" />
+            </StackPanel>
             <InfoBar IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}" IsClosable="False" Severity="Error" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
         </StackPanel>
     </ScrollViewer>

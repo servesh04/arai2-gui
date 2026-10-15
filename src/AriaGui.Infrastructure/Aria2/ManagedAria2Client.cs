@@ -12,5 +12,11 @@ public sealed class ManagedAria2Client(Aria2ProcessManager manager) : IAria2Clie
     public Task<EngineCommandResult> ExecuteAsync(string gid, AriaGui.Core.Downloads.DownloadAction action, int? position, CancellationToken token) =>
         manager.ExecuteDownloadAsync(gid, action, position, token);
     public Task SetConcurrencyAsync(int limit, CancellationToken token) => manager.SetConcurrencyAsync(limit, token);
+    public Task<BandwidthObservation> ApplyBandwidthAsync(BandwidthProfile profile, CancellationToken token) => manager.ApplyBandwidthAsync(profile, token);
+    public Task<BandwidthObservation> ObserveBandwidthAsync(CancellationToken token) => manager.ObserveBandwidthAsync(token);
+    public Task<JobBandwidthObservation> ApplyJobBandwidthAsync(Guid jobId, string gid, ByteRateLimit cap, CancellationToken token) =>
+        manager.ApplyJobBandwidthAsync(jobId, gid, cap, token);
+    public Task<JobBandwidthObservation> ObserveJobBandwidthAsync(Guid jobId, string gid, CancellationToken token) =>
+        manager.ObserveJobBandwidthAsync(jobId, gid, token);
     public Task<EngineDownload> RecoverAsync(DownloadEntry entry, CancellationToken token) => manager.RecoverDownloadAsync(entry, token);
 }

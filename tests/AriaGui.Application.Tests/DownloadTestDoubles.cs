@@ -11,6 +11,9 @@ internal sealed class MemoryDownloadRepository : IDownloadRepository
     public List<DownloadEntry> Intents { get; } = [];
     public List<DownloadEntry> Attempts { get; } = [];
     public QueuePolicy Policy { get; private set; } = new();
+    public BandwidthPolicy Bandwidth { get; private set; } = BandwidthPolicy.Default;
+    public Dictionary<Guid, JobBandwidthPolicy> JobBandwidth { get; } = [];
+    public BandwidthSchedule Schedule { get; private set; } = BandwidthSchedule.Disabled;
     public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
     public Task<IReadOnlyList<DownloadEntry>> LoadAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<DownloadEntry>>(Entries.Values.ToArray());
     public Task InsertIntentAsync(DownloadEntry entry, CancellationToken token)
@@ -46,6 +49,15 @@ internal sealed class MemoryDownloadRepository : IDownloadRepository
     }
     public Task<QueuePolicy> LoadQueuePolicyAsync(CancellationToken token) => Task.FromResult(Policy);
     public Task SaveQueuePolicyAsync(QueuePolicy policy, CancellationToken token) { Policy = policy; return Task.CompletedTask; }
+    public Task<BandwidthPolicy> LoadBandwidthPolicyAsync(CancellationToken token) => Task.FromResult(Bandwidth);
+    public Task SaveBandwidthPolicyAsync(BandwidthPolicy policy, CancellationToken token) { Bandwidth = policy; return Task.CompletedTask; }
+    public Task<JobBandwidthPolicy> LoadJobBandwidthPolicyAsync(Guid jobId, CancellationToken token) =>
+        Task.FromResult(JobBandwidth.GetValueOrDefault(jobId) ?? JobBandwidthPolicy.Default(jobId));
+    public Task SaveJobBandwidthPolicyAsync(JobBandwidthPolicy policy, CancellationToken token)
+    { JobBandwidth[policy.JobId] = policy; return Task.CompletedTask; }
+    public Task<BandwidthSchedule> LoadBandwidthScheduleAsync(CancellationToken token) => Task.FromResult(Schedule);
+    public Task SaveBandwidthScheduleAsync(BandwidthSchedule schedule, CancellationToken token)
+    { Schedule = schedule; return Task.CompletedTask; }
 }
 internal sealed class TestDownloadDestination : IDownloadDestination
 {

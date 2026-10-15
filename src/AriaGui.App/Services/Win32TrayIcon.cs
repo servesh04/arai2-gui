@@ -14,7 +14,7 @@ public sealed class Win32TrayIcon : IDisposable
     private readonly uint _openMessage = RegisterWindowMessage(OpenMessageName);
     private readonly nint _icon;
     private bool _added, _disposed;
-    public event Action? OpenRequested, ExitRequested, Unavailable, Suspending, Resuming;
+    public event Action? OpenRequested, ExitRequested, Unavailable, Suspending, Resuming, ClockChanged;
     private static string OpenMessageName => "AriaGUI.Open." + System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
 
     public Win32TrayIcon(nint window, DispatcherQueue dispatcher, string iconPath)
@@ -54,6 +54,8 @@ public sealed class Win32TrayIcon : IDisposable
                 if (wParam == 4) Queue(() => Suspending?.Invoke());
                 else if (wParam is 7 or 18) Queue(() => Resuming?.Invoke());
             }
+            else if (message is 0x001e or 0x001a) // WM_TIMECHANGE / WM_SETTINGCHANGE (including timezone).
+                Queue(() => ClockChanged?.Invoke());
             else if (message == Callback)
             {
                 var notification = (uint)((long)lParam & 0xffff);

@@ -24,6 +24,16 @@ public interface IDownloadRepository
     Task InsertFreshRestartIntentAsync(DownloadEntry previous, DownloadEntry retry, CancellationToken token) => throw new NotSupportedException();
     Task<QueuePolicy> LoadQueuePolicyAsync(CancellationToken token) => Task.FromResult(new QueuePolicy());
     Task SaveQueuePolicyAsync(QueuePolicy policy, CancellationToken token) => Task.CompletedTask;
+    Task<BandwidthPolicy> LoadBandwidthPolicyAsync(CancellationToken token) => Task.FromResult(BandwidthPolicy.Default);
+    Task SaveBandwidthPolicyAsync(BandwidthPolicy policy, CancellationToken token) =>
+        throw new NotSupportedException("This repository does not support durable bandwidth policy.");
+    Task<JobBandwidthPolicy> LoadJobBandwidthPolicyAsync(Guid jobId, CancellationToken token) =>
+        Task.FromResult(JobBandwidthPolicy.Default(jobId));
+    Task SaveJobBandwidthPolicyAsync(JobBandwidthPolicy policy, CancellationToken token) =>
+        throw new NotSupportedException("This repository does not support durable job bandwidth policy.");
+    Task<BandwidthSchedule> LoadBandwidthScheduleAsync(CancellationToken token) => Task.FromResult(BandwidthSchedule.Disabled);
+    Task SaveBandwidthScheduleAsync(BandwidthSchedule schedule, CancellationToken token) =>
+        throw new NotSupportedException("This repository does not support durable bandwidth schedules.");
     async Task<IReadOnlyList<Guid>> SaveAndReportCompletionsAsync(IReadOnlyList<DownloadEntry> entries, CancellationToken token)
     { await SaveAsync(entries, token); return Array.Empty<Guid>(); }
 }

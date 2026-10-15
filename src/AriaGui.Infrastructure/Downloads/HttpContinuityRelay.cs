@@ -104,16 +104,22 @@ public sealed class HttpContinuityRelay
     private readonly IContinuityOriginTransport _transport;
     private readonly bool _requiresRetainedRepresentation;
     private readonly ContinuityResourceLimits _limits;
+    private readonly SharedRelayRateLimiter? _upstreamLimit;
     private readonly SemaphoreSlim _gate = new(1);
     // The argument validates initial source shape only. Transport owns source/redirect binding;
     // persisted representation checks below bind the eventual effective resource.
     public HttpContinuityRelay(string exactEffectiveResource, HttpRepresentationStore store, IContinuityOriginTransport transport,
         bool requiresRetainedRepresentation, bool enableExperimental = false, ContinuityResourceLimits? limits = null)
+        : this(exactEffectiveResource, store, transport, requiresRetainedRepresentation, enableExperimental, limits, null) { }
+
+    internal HttpContinuityRelay(string exactEffectiveResource, HttpRepresentationStore store, IContinuityOriginTransport transport,
+        bool requiresRetainedRepresentation, bool enableExperimental, ContinuityResourceLimits? limits, SharedRelayRateLimiter? upstreamLimit)
     {
         if (!enableExperimental) throw new InvalidOperationException("Continuity relay is not enabled.");
         if (exactEffectiveResource.Length > 16384 || !Uri.TryCreate(exactEffectiveResource, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment)) throw new ArgumentException();
         _store = store; _transport = transport; _requiresRetainedRepresentation = requiresRetainedRepresentation;
         _limits = limits ?? new(); _limits.Validate();
+        _upstreamLimit = upstreamLimit;
     }
     public async Task<bool> RelayAsync(long offset, Func<ContinuityResponse, CancellationToken, Task> sendHeaders,
         Stream bodyDestination, CancellationToken token)
@@ -169,7 +175,12 @@ public sealed class HttpContinuityRelay
             while (remaining > 0)
             {
                 idle.CancelAfter(_limits.IdleTimeout);
-                var read = await body.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), idle.Token);
+                var maximum = (int)Math.Min(buffer.Length, remaining);
+                var reserved = _upstreamLimit is null ? maximum : await _upstreamLimit.ReserveAsync(maximum, idle.Token);
+                int read;
+                try { read = await body.ReadAsync(buffer.AsMemory(0, reserved), idle.Token); }
+                catch { _upstreamLimit?.Refund(reserved); throw; }
+                _upstreamLimit?.Refund(reserved - read);
                 if (read == 0) { if (content.ContentLength is null) break; throw new IOException("Origin body ended early."); }
                 hash.AppendData(buffer, 0, read); transferred += read;
                 if (transferred > _limits.MaximumBytes) throw new IOException("Origin body exceeds resource limit.");

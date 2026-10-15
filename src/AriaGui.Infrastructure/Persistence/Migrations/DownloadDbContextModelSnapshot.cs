@@ -45,6 +45,9 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("ParentAttemptId")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("PolicyHeld")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("StartedAtUtcTicks")
                         .HasColumnType("INTEGER");
 
@@ -67,6 +70,52 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.HasIndex("ParentAttemptId");
 
                     b.ToTable("Attempts");
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.BandwidthPolicyRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ConfirmedDownloadBytesPerSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConfirmedGeneration")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConfirmedName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ConfirmedRevision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ConfirmedUploadBytesPerSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RequestStatus")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RequestedDownloadBytesPerSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RequestedName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RequestedRevision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RequestedUploadBytesPerSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ScheduleJson")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("BandwidthPolicies");
                 });
 
             modelBuilder.Entity("AriaGui.Infrastructure.Persistence.ExternalRequestRow", b =>
@@ -157,6 +206,34 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.HasIndex("JobId");
 
                     b.ToTable("Files");
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.JobBandwidthPolicyRow", b =>
+                {
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ConfirmedDownloadBytesPerSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConfirmedGeneration")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ConfirmedRevision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("RequestStatus")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RequestedDownloadBytesPerSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RequestedRevision")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("JobId");
+
+                    b.ToTable("JobBandwidthPolicies");
                 });
 
             modelBuilder.Entity("AriaGui.Infrastructure.Persistence.JobRow", b =>
@@ -303,6 +380,15 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.HasOne("AriaGui.Infrastructure.Persistence.JobRow", null)
                         .WithMany()
                         .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.JobBandwidthPolicyRow", b =>
+                {
+                    b.HasOne("AriaGui.Infrastructure.Persistence.JobRow", null)
+                        .WithOne()
+                        .HasForeignKey("AriaGui.Infrastructure.Persistence.JobBandwidthPolicyRow", "JobId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
