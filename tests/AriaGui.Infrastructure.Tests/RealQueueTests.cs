@@ -148,15 +148,13 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
         {
             old.GetService<IMigrator>().Migrate("20261004141858_InitialDownloads");
             var jobId = Guid.NewGuid(); var attemptId = Guid.NewGuid(); var time = DateTimeOffset.UtcNow.UtcTicks;
-            old.Jobs.Add(new() { Id = jobId, DisplayName = "history.bin", Source = "https://example.com/history.bin", Destination = @"C:\Downloads\history.bin", DestinationKey = @"C:\DOWNLOADS\HISTORY.BIN", CreatedAtUtcTicks = time });
-            old.SaveChanges();
+            old.Database.ExecuteSqlInterpolated($"INSERT INTO Jobs (Id, DisplayName, Source, Destination, DestinationKey, CreatedAtUtcTicks) VALUES ({jobId}, {"history.bin"}, {"https://example.com/history.bin"}, {@"C:\Downloads\history.bin"}, {@"C:\DOWNLOADS\HISTORY.BIN"}, {time})");
             old.Database.ExecuteSqlInterpolated($"INSERT INTO Attempts (Id, JobId, EngineId, StartedAtUtcTicks, ParentAttemptId, Status, DownloadedBytes, TotalBytes, UpdatedAtUtcTicks, ErrorMessage) VALUES ({attemptId}, {jobId}, {"0123456789abcdef"}, {time}, NULL, {3}, {0}, NULL, {time}, NULL)");
-            old.Files.Add(new() { Id = Guid.NewGuid(), JobId = jobId, AttemptId = attemptId, FileName = "history.bin" });
-            old.SaveChanges();
+            old.Database.ExecuteSqlInterpolated($"INSERT INTO Files (Id, JobId, AttemptId, FileName) VALUES ({Guid.NewGuid()}, {jobId}, {attemptId}, {"history.bin"})");
         }
         await runtime.Repository().InitializeAsync(default);
         var saved = Assert.Single(await runtime.Repository().LoadAsync(default)); Assert.Equal(DownloadStatus.Completed, saved.Progress.Status);
-        using var upgraded = runtime.Db(); Assert.Equal(9, upgraded.Database.GetAppliedMigrations().Count());
+        using var upgraded = runtime.Db(); Assert.Equal(10, upgraded.Database.GetAppliedMigrations().Count());
         Assert.False(upgraded.Database.HasPendingModelChanges());
     }
 
@@ -175,18 +173,13 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
         using (var old = runtime.Db())
         {
             old.GetService<IMigrator>().Migrate("20261004151151_QueueCommands");
-            old.Jobs.Add(new() { Id = jobId, DisplayName = "intent.bin", Source = "https://example.com/intent.bin",
-                Destination = @"C:\Downloads\intent.bin", DestinationKey = @"C:\DOWNLOADS\INTENT.BIN", CreatedAtUtcTicks = time });
-            old.SaveChanges();
+            old.Database.ExecuteSqlInterpolated($"INSERT INTO Jobs (Id, DisplayName, Source, Destination, DestinationKey, CreatedAtUtcTicks) VALUES ({jobId}, {"intent.bin"}, {"https://example.com/intent.bin"}, {@"C:\Downloads\intent.bin"}, {@"C:\DOWNLOADS\INTENT.BIN"}, {time})");
             old.Database.ExecuteSqlInterpolated($"INSERT INTO Attempts (Id, JobId, EngineId, StartedAtUtcTicks, ParentAttemptId, Status, DownloadedBytes, TotalBytes, UpdatedAtUtcTicks, ErrorMessage) VALUES ({attemptId}, {jobId}, {"0123456789abcdef"}, {time}, NULL, {(int)observed}, {4096}, NULL, {time}, NULL)");
-            old.Files.Add(new() { Id = Guid.NewGuid(), JobId = jobId, AttemptId = attemptId, FileName = "intent.bin" });
+            old.Database.ExecuteSqlInterpolated($"INSERT INTO Files (Id, JobId, AttemptId, FileName) VALUES ({Guid.NewGuid()}, {jobId}, {attemptId}, {"intent.bin"})");
             if (latest == DownloadAction.Resume)
-                old.Operations.Add(new() { Id = Guid.NewGuid(), JobId = jobId, AttemptId = attemptId, Action = DownloadAction.Pause,
-                    Status = OperationStatus.Confirmed, RequestedAtUtcTicks = time - 1 });
+                old.Database.ExecuteSqlInterpolated($"INSERT INTO Operations (Id, JobId, AttemptId, Action, Status, RequestedAtUtcTicks) VALUES ({Guid.NewGuid()}, {jobId}, {attemptId}, {(int)DownloadAction.Pause}, {(int)OperationStatus.Confirmed}, {time - 1})");
             if (latest is { } action)
-                old.Operations.Add(new() { Id = Guid.NewGuid(), JobId = jobId, AttemptId = attemptId, Action = action,
-                    Status = operationStatus, RequestedAtUtcTicks = time });
-            old.SaveChanges();
+                old.Database.ExecuteSqlInterpolated($"INSERT INTO Operations (Id, JobId, AttemptId, Action, Status, RequestedAtUtcTicks) VALUES ({Guid.NewGuid()}, {jobId}, {attemptId}, {(int)action}, {(int)operationStatus}, {time})");
         }
         var repository = runtime.Repository(); await repository.InitializeAsync(default); var saved = Assert.Single(await repository.LoadAsync(default));
         Assert.Equal(paused, saved.DesiredPaused); Assert.Equal(removed, saved.DesiredRemoved);

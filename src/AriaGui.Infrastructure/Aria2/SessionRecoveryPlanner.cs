@@ -38,7 +38,9 @@ internal static class SessionRecoveryPlanner
                 {
                     if (!known.TryGetValue(record.Gid, out var entry)) { unknown++; continue; }
                     if (entry.Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed or DownloadStatus.Removed || entry.DesiredRemoved) continue;
-                    if (record.Source != (entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri) || !CanRestore(entry)) { blocked++; continue; }
+                    // A direct engine publishes bytes itself; it cannot uphold a
+                    // required pre-publication checksum after restart.
+                    if (entry.Job.ExpectedChecksum is not null || record.Source != (entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri) || !CanRestore(entry)) { blocked++; continue; }
                     restore.Add(entry);
                 }
                 // POS_SET intent can be reapplied safely only after the old process is gone.

@@ -17,6 +17,181 @@ namespace AriaGui.Infrastructure.Tests;
 [Collection("Engine processes")]
 public sealed class RealDownloadTests
 {
+    [Fact]
+    public async Task Published_verified_receipt_converges_after_sqlite_completion_commit_is_lost()
+    {
+        using var runtime = new DownloadTestRuntime();
+        await using var server = new LocalHttpServer();
+        var repository = runtime.Repository();
+        await using var engine = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true }, repository);
+        await engine.StartAsync(CancellationToken.None);
+        var store = new DownloadRuntimeStore();
+        var faulting = new FaultingCompletionRepository(repository);
+        var coordinator = new DownloadCoordinator(new ManagedAria2Client(engine), store, TimeProvider.System, faulting, new FileDownloadDestination());
+        await coordinator.AddAsync(server.Url, directory: runtime.Output, fileName: "sqlite-gap.bin",
+            expectedSha256: Convert.ToHexString(SHA256.HashData(server.Payload)));
+        var deadline = Stopwatch.StartNew();
+        while (!faulting.Failed && deadline.Elapsed < TimeSpan.FromSeconds(12))
+        {
+            try { await coordinator.RefreshAsync(); }
+            catch (IOException) when (faulting.Failed) { }
+            if (!faulting.Failed) await Task.Delay(40);
+        }
+        Assert.True(faulting.Failed, "Completion commit boundary was not reached.");
+        var stale = Assert.Single(await repository.LoadAsync(default));
+        Assert.NotEqual(DownloadStatus.Completed, stale.Progress.Status);
+        Assert.Equal(server.Payload, await File.ReadAllBytesAsync(stale.Job.Destination));
+        await engine.StopAsync(CancellationToken.None);
+        await engine.StartAsync(CancellationToken.None);
+        var reopenedStore = new DownloadRuntimeStore();
+        var reopened = runtime.Coordinator(new ManagedAria2Client(engine), reopenedStore);
+        await reopened.InitializeAsync(); await reopened.RefreshAsync();
+        var completed = Assert.Single(reopenedStore.Current.Downloads);
+        Assert.Equal(DownloadStatus.Completed, completed.Progress.Status);
+        Assert.Equal(VerificationStatus.Verified, completed.Verification);
+        Assert.Equal(completed.Attempt.Id, reopenedStore.Current.LatestCompletion?.AttemptId);
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await repository.LoadAsync(default)).Progress.Status);
+    }
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Required_checksum_intake_is_rejected_without_guarded_enabled_verification(bool guarded, bool enabled)
+    {
+        using var runtime = new DownloadTestRuntime();
+        await using var server = new LocalHttpServer();
+        await using var engine = new Aria2ProcessManager(runtime.Options with
+        { UseContinuityGateway = guarded, EnableExpectedChecksumVerification = enabled }, runtime.Repository());
+        await engine.StartAsync(CancellationToken.None);
+        var coordinator = runtime.Coordinator(new ManagedAria2Client(engine), new DownloadRuntimeStore());
+        await Assert.ThrowsAsync<DownloadRequestException>(() => coordinator.AddAsync(server.Url, directory: runtime.Output,
+            fileName: "blocked.bin", expectedSha256: new string('0', 64)));
+        Assert.False(File.Exists(Path.Combine(runtime.Output, "blocked.bin")));
+        Assert.Empty(await runtime.Repository().LoadAsync(default));
+    }
+    [Fact]
+    public async Task Checksum_mismatch_repair_uses_fresh_attempt_and_keeps_failed_stage()
+    {
+        using var runtime = new DownloadTestRuntime();
+        await using var server = new LocalHttpServer { RecoverPartial = true, ChangeEntity = true };
+        await using var engine = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true }, runtime.Repository());
+        await engine.StartAsync(CancellationToken.None);
+        var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(new ManagedAria2Client(engine), store);
+        var expected = Convert.ToHexString(SHA256.HashData(server.Payload));
+        await coordinator.AddAsync(server.Url, directory: runtime.Output, fileName: "repair.bin", expectedSha256: expected);
+        var failed = await WaitForTerminalAsync(coordinator, store);
+        Assert.Equal(VerificationStatus.Mismatch, failed.Verification);
+        var oldStage = Path.Combine(runtime.Output, ".aria-gui-continuity-" + failed.Job.Id.ToString("N"),
+            failed.Attempt.Id.ToString("N"), "repair.bin");
+        var oldBytes = await File.ReadAllBytesAsync(oldStage);
+        Assert.NotEqual(server.Payload, oldBytes);
+        server.ChangeEntity = false;
+        await coordinator.RetryAsync(failed.Job.Id);
+        var repaired = await WaitForTerminalAsync(coordinator, store);
+        Assert.True(repaired.Progress.Status == DownloadStatus.Completed, repaired.ErrorMessage);
+        Assert.Equal(VerificationStatus.Verified, repaired.Verification);
+        Assert.Equal(failed.Attempt.Id, repaired.Attempt.ParentAttemptId);
+        Assert.Equal(expected, repaired.Job.ExpectedChecksum?.Sha256);
+        Assert.Equal(oldBytes, await File.ReadAllBytesAsync(oldStage));
+        Assert.Equal(server.Payload, await File.ReadAllBytesAsync(repaired.Job.Destination));
+    }
+    [Fact]
+    public async Task Checksum_repair_collision_keeps_existing_public_payload_and_control()
+    {
+        using var runtime = new DownloadTestRuntime();
+        await using var server = new LocalHttpServer { RecoverPartial = true, ChangeEntity = true };
+        await using var engine = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true }, runtime.Repository());
+        await engine.StartAsync(CancellationToken.None);
+        var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(new ManagedAria2Client(engine), store);
+        await coordinator.AddAsync(server.Url, directory: runtime.Output, fileName: "collision.bin",
+            expectedSha256: Convert.ToHexString(SHA256.HashData(server.Payload)));
+        var failed = await WaitForTerminalAsync(coordinator, store);
+        Assert.Equal(VerificationStatus.Mismatch, failed.Verification);
+        var stage = Path.Combine(runtime.Output, ".aria-gui-continuity-" + failed.Job.Id.ToString("N"),
+            failed.Attempt.Id.ToString("N"), "collision.bin");
+        var stageBytes = await File.ReadAllBytesAsync(stage);
+        var originalPayload = new byte[] { 42, 43, 44, 45 };
+        var originalControl = new byte[] { 6, 7, 8, 9 };
+        await File.WriteAllBytesAsync(failed.Job.Destination, originalPayload);
+        await File.WriteAllBytesAsync(failed.Job.Destination + ".aria2", originalControl);
+        server.ChangeEntity = false;
+        await coordinator.RetryAsync(failed.Job.Id);
+        var retried = await WaitForTerminalAsync(coordinator, store);
+        Assert.Equal(DownloadStatus.Failed, retried.Progress.Status);
+        Assert.Equal(failed.Attempt.Id, retried.Attempt.ParentAttemptId);
+        Assert.Equal(originalPayload, await File.ReadAllBytesAsync(failed.Job.Destination));
+        Assert.Equal(originalControl, await File.ReadAllBytesAsync(failed.Job.Destination + ".aria2"));
+        Assert.Equal(stageBytes, await File.ReadAllBytesAsync(stage));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Pinned_engine_synthetic_file_verifies_exact_sha256_or_rejects_changed_digest(bool mismatch)
+    {
+        var fixture = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "ChecksumFixture", "m2-synthetic.bin"));
+        Assert.Equal(131072, fixture.Length);
+        const string knownDigest = "821BA32C43E025C60AC06EB3BA0F9E716D4857D10065AB3A87F952E2881C244D";
+        Assert.Equal(knownDigest, Convert.ToHexString(SHA256.HashData(fixture)));
+        var suppliedDigest = mismatch ? "0" + knownDigest[1..] : knownDigest;
+
+        using var runtime = new DownloadTestRuntime();
+        await using var server = new LocalHttpServer(fixture.Length);
+        fixture.CopyTo(server.Payload, 0);
+        await using var engine = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true }, runtime.Repository());
+        await engine.StartAsync(CancellationToken.None);
+        var store = new DownloadRuntimeStore();
+        var coordinator = runtime.Coordinator(new ManagedAria2Client(engine), store);
+        await coordinator.AddAsync(server.Url, directory: runtime.Output, fileName: "m2-synthetic.bin", expectedSha256: suppliedDigest);
+
+        var terminal = await WaitForTerminalAsync(coordinator, store);
+        Assert.Equal(mismatch ? DownloadStatus.Failed : DownloadStatus.Completed, terminal.Progress.Status);
+        Assert.Equal(mismatch ? VerificationStatus.Mismatch : VerificationStatus.Verified, terminal.Verification);
+        Assert.Equal(suppliedDigest, terminal.Job.ExpectedChecksum?.Sha256);
+        Assert.Equal(!mismatch, File.Exists(terminal.Job.Destination));
+        if (mismatch)
+        {
+            var stage = Path.Combine(runtime.Output, ".aria-gui-continuity-" + terminal.Job.Id.ToString("N"),
+                terminal.Attempt.Id.ToString("N"), "m2-synthetic.bin");
+            Assert.Equal(fixture, await File.ReadAllBytesAsync(stage));
+        }
+        else
+        {
+            var downloaded = await File.ReadAllBytesAsync(terminal.Job.Destination);
+            Assert.Equal(fixture, downloaded);
+            Assert.Equal(knownDigest, Convert.ToHexString(SHA256.HashData(downloaded)));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Pinned_engine_required_sha256_verifies_before_publication_or_retains_mismatch(bool mismatch)
+    {
+        using var runtime = new DownloadTestRuntime();
+        await using var server = new LocalHttpServer();
+        await using var engine = new Aria2ProcessManager(runtime.Options with { UseContinuityGateway = true }, runtime.Repository());
+        await engine.StartAsync(CancellationToken.None);
+        var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(new ManagedAria2Client(engine), store);
+        var digest = Convert.ToHexString(SHA256.HashData(server.Payload));
+        await coordinator.AddAsync(server.Url, directory: runtime.Output, fileName: "required.bin",
+            expectedSha256: mismatch ? new string('0', 64) : digest);
+        var terminal = await WaitForTerminalAsync(coordinator, store);
+        Assert.Equal(mismatch ? DownloadStatus.Failed : DownloadStatus.Completed, terminal.Progress.Status);
+        Assert.Equal(mismatch ? VerificationStatus.Mismatch : VerificationStatus.Verified, terminal.Verification);
+        Assert.Equal(mismatch ? new string('0', 64) : digest, terminal.Job.ExpectedChecksum?.Sha256);
+        Assert.Equal(ChecksumProvenance.UserSupplied, terminal.Job.ExpectedChecksum?.Provenance);
+        Assert.Equal(!mismatch, File.Exists(terminal.Job.Destination));
+        if (!mismatch) Assert.Equal(server.Payload, await File.ReadAllBytesAsync(terminal.Job.Destination));
+        var saved = Assert.Single(await runtime.Repository().LoadAsync(default));
+        Assert.Equal(terminal.Verification, saved.Verification);
+        await engine.StopAsync(CancellationToken.None);
+        await engine.StartAsync(CancellationToken.None);
+        var reopenedStore = new DownloadRuntimeStore();
+        var reopened = runtime.Coordinator(new ManagedAria2Client(engine), reopenedStore);
+        await reopened.InitializeAsync(); await reopened.RefreshAsync();
+        var afterRestart = Assert.Single(reopenedStore.Current.Downloads);
+        Assert.Equal(terminal.Verification, afterRestart.Verification);
+        Assert.Equal(terminal.Progress.Status, afterRestart.Progress.Status);
+    }
     [Theory]
     [InlineData(false, 0, false)]
     [InlineData(true, 0, false)]
@@ -86,7 +261,7 @@ public sealed class RealDownloadTests
         Assert.Single(db.Attempts);
         Assert.Single(db.Files);
         Assert.Equal(OperationStatus.Confirmed, Assert.Single(db.Operations).Status);
-        Assert.Equal(9, db.Database.GetAppliedMigrations().Count());
+        Assert.Equal(10, db.Database.GetAppliedMigrations().Count());
         Assert.False(db.Database.HasPendingModelChanges());
         db.Database.OpenConnection();
         using var command = db.Database.GetDbConnection().CreateCommand();
@@ -258,6 +433,21 @@ public sealed class RealDownloadTests
             throw new EngineException(EngineFailure.RpcUnavailable, "Injected lost Add reply.");
         }
         public Task<IReadOnlyList<EngineDownload>> GetDownloadsAsync(IReadOnlyList<string> ids, CancellationToken token) => inner.GetDownloadsAsync(ids, token);
+    }
+    private sealed class FaultingCompletionRepository(SqliteDownloadRepository inner) : IDownloadRepository
+    {
+        public bool Failed { get; private set; }
+        public Task InitializeAsync(CancellationToken token) => inner.InitializeAsync(token);
+        public Task<IReadOnlyList<DownloadEntry>> LoadAsync(CancellationToken token) => inner.LoadAsync(token);
+        public Task<IReadOnlyList<DownloadEntry>> LoadCurrentAsync(CancellationToken token) => inner.LoadCurrentAsync(token);
+        public Task InsertIntentAsync(DownloadEntry entry, CancellationToken token) => inner.InsertIntentAsync(entry, token);
+        public Task SaveAsync(IReadOnlyList<DownloadEntry> entries, CancellationToken token) => inner.SaveAsync(entries, token);
+        public Task<IReadOnlyList<Guid>> SaveAndReportCompletionsAsync(IReadOnlyList<DownloadEntry> entries, CancellationToken token)
+        {
+            if (!Failed && entries.Any(entry => entry.Progress.Status == DownloadStatus.Completed))
+            { Failed = true; throw new IOException("Injected crash before SQLite completion commit."); }
+            return inner.SaveAndReportCompletionsAsync(entries, token);
+        }
     }
     private sealed class NoMutationClient : IAria2Client
     {

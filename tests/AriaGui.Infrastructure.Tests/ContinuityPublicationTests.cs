@@ -5,6 +5,7 @@ using AriaGui.Infrastructure.Aria2;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using AriaGui.Infrastructure.Persistence;
 
 namespace AriaGui.Infrastructure.Tests;
 
@@ -256,8 +257,10 @@ public sealed class ContinuityPublicationTests
         }
         finally { Directory.Delete(root, true); }
     }
-    [Fact]
-    public async Task Crash_replay_refuses_replaced_destination_directory_even_with_identical_content()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Crash_replay_refuses_replaced_destination_directory_even_with_identical_content(bool requiredChecksum)
     {
         var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N"));
         var targetDirectory = Path.Combine(root, "destination"); Directory.CreateDirectory(targetDirectory);
@@ -266,12 +269,14 @@ public sealed class ContinuityPublicationTests
             await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
             var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); using var ledger = new ContinuityTransferLedger(root, gateway, phase =>
             { if (phase == "completion-prepared") throw new IOException("Crash"); });
+            var bytes = new byte[] { 1, 2, 3, 4 };
             var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: targetDirectory, FileName: "payload.bin",
-                ContinuityJobId: job, ContinuityAttemptId: attempt);
-            var routed = await ledger.PrepareAsync(request, default); var bytes = new byte[] { 1, 2, 3, 4 };
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: requiredChecksum ? ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))) : null);
+            var routed = await ledger.PrepareAsync(request, default);
             await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
             await File.WriteAllBytesAsync(Path.Combine(routed.Directory, "payload.bin"), bytes);
-            await Assert.ThrowsAsync<IOException>(() => ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Completed, 4, 4, 0)), default));
+            await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, request.EngineId));
             ledger.Dispose(); Directory.Move(targetDirectory, targetDirectory + "-retained"); Directory.CreateDirectory(targetDirectory);
             var oldStage = Path.Combine(targetDirectory + "-retained", ".aria-gui-continuity-" + job.ToString("N"));
             var newWork = Path.Combine(targetDirectory, ".aria-gui-continuity-" + job.ToString("N"), attempt.ToString("N")); Directory.CreateDirectory(newWork);
@@ -426,5 +431,369 @@ public sealed class ContinuityPublicationTests
             if (!Path.GetFullPath(root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unsafe fixture cleanup");
             Directory.Delete(root, true);
         }
+    }
+    [Fact]
+    public async Task Required_checksum_mismatch_keeps_retained_payload_and_control()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid();
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            var bytes = new byte[] { 1, 2, 3, 4 }; var expectedBytes = new byte[] { 1, 2, 3, 5 };
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(expectedBytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            var control = new byte[] { 9, 8 };
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            var target = Path.Combine(root, "payload.bin"); await File.WriteAllBytesAsync(target, new byte[] { 7 }); await File.WriteAllBytesAsync(target + ".aria2", control);
+            var observed = await ObserveSettledAsync(ledger, request.EngineId);
+            Assert.Equal(DownloadStatus.Failed, observed.Progress.Status); Assert.Equal(VerificationStatus.Mismatch, observed.Verification);
+            Assert.Equal(new byte[] { 7 }, await File.ReadAllBytesAsync(target)); Assert.Equal(control, await File.ReadAllBytesAsync(target + ".aria2"));
+            using var recovered = new ContinuityTransferLedger(root, gateway); await recovered.LoadAsync(default);
+            var replay = await recovered.ObserveAsync(new(request.EngineId, new(DownloadStatus.Completed, 4, 4, 0)), default);
+            Assert.Equal(DownloadStatus.Failed, replay.Progress.Status); Assert.Equal(VerificationStatus.Mismatch, replay.Verification);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Theory]
+    [InlineData("verification-confirmed")]
+    [InlineData("completion-prepared")]
+    [InlineData("completion-moved")]
+    public async Task Required_checksum_replays_verification_and_publication_crashes(string phase)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var bytes = new byte[] { 1, 2, 3, 4 };
+            using var ledger = new ContinuityTransferLedger(root, gateway, point => { if (point == phase) throw new IOException("Crash"); });
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, request.EngineId));
+            ledger.Dispose();
+            using var recovered = new ContinuityTransferLedger(root, gateway); await recovered.LoadAsync(default);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(root, "payload.bin")));
+            var observed = await recovered.ObserveAsync(new(request.EngineId, new(DownloadStatus.Completed, 4, 4, 0)), default);
+            Assert.Equal(DownloadStatus.Completed, observed.Progress.Status); Assert.Equal(VerificationStatus.Verified, observed.Verification);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Verified_receipt_cannot_publish_replaced_stage_even_with_identical_bytes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var bytes = new byte[] { 1, 2, 3, 4 };
+            using var ledger = new ContinuityTransferLedger(root, gateway, point => { if (point == "verification-confirmed") throw new IOException("Crash"); });
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            var work = Path.Combine(routed.Directory, routed.FileName); await File.WriteAllBytesAsync(work, bytes);
+            await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, request.EngineId));
+            ledger.Dispose(); File.Move(work, work + ".retained"); await File.WriteAllBytesAsync(work, bytes);
+            await Assert.ThrowsAnyAsync<IOException>(() => new ContinuityTransferLedger(root, gateway).LoadAsync(default));
+            Assert.False(File.Exists(Path.Combine(root, "payload.bin")));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(work + ".retained"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Startup_replay_refuses_journal_whose_required_digest_conflicts_with_database()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var gid = "1234567890abcdef"; var now = DateTimeOffset.UtcNow;
+            var bytes = new byte[] { 1, 2, 3, 4 }; var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            var repository = new SqliteDownloadRepository(Path.Combine(root, "downloads.db")); await repository.InitializeAsync(default);
+            await repository.InsertIntentAsync(new(new(job, "payload.bin", new("https://example.invalid/file"), Path.Combine(root, "payload.bin"), now,
+                    ExpectedChecksum.FromManualInput(new string('0', 64))),
+                new(attempt, job, gid, now), new(Guid.NewGuid(), job, attempt, "payload.bin", 4),
+                new(DownloadStatus.Queued, 0, 4, 0), new(Guid.NewGuid(), job, DownloadAction.Add, OperationStatus.Pending, now),
+                Verification: VerificationStatus.Pending), default);
+            using var ledger = new ContinuityTransferLedger(root, gateway, point => { if (point == "completion-prepared") throw new IOException("Crash"); });
+            var request = new EngineDownloadRequest(gid, new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt, ExpectedChecksum: ExpectedChecksum.FromManualInput(hash));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, gid));
+            ledger.Dispose();
+            await Assert.ThrowsAnyAsync<IOException>(() => new ContinuityTransferLedger(root, gateway).LoadAsync(default, repository));
+            Assert.False(File.Exists(Path.Combine(root, "payload.bin")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Moved_receipt_cannot_accept_same_byte_replacement_before_commit()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var bytes = new byte[] { 1, 2, 3, 4 };
+            using var ledger = new ContinuityTransferLedger(root, gateway, point => { if (point == "completion-moved") throw new IOException("Crash"); });
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, request.EngineId));
+            ledger.Dispose(); var target = Path.Combine(root, "payload.bin"); File.Move(target, target + ".retained"); await File.WriteAllBytesAsync(target, bytes);
+            await Assert.ThrowsAnyAsync<IOException>(() => new ContinuityTransferLedger(root, gateway).LoadAsync(default));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(target + ".retained"));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(target));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Digest_mismatch_after_retained_partial_repair_starts_empty_and_keeps_old_pair()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var first = Guid.NewGuid(); var next = Guid.NewGuid();
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            var expected = ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(new byte[] { 1, 2, 3, 5 })));
+            var original = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: first, ExpectedChecksum: expected);
+            var routed = await ledger.PrepareAsync(original, default); var work = Path.Combine(routed.Directory, routed.FileName);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, first).SaveBeforeBodyAsync(new(1, original.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(work, new byte[] { 1, 2 }); await File.WriteAllBytesAsync(work + ".aria2", new byte[] { 7, 8 });
+            await ledger.ObserveAsync(new(original.EngineId, new(DownloadStatus.Paused, 2, 4, 0)), default);
+            var target = Path.Combine(root, "payload.bin"); var oldPayload = await File.ReadAllBytesAsync(target); var oldControl = await File.ReadAllBytesAsync(target + ".aria2");
+            await File.WriteAllBytesAsync(work, new byte[] { 1, 2, 3, 4 });
+            var failed = await ObserveSettledAsync(ledger, original.EngineId);
+            Assert.Equal(VerificationStatus.Mismatch, failed.Verification);
+            var retry = original with { EngineId = "abcdef1234567890", ContinuityAttemptId = next };
+            var fresh = await ledger.PrepareAsync(retry, default);
+            Assert.False(fresh.ContinueExisting); Assert.Empty(Directory.GetFiles(fresh.Directory));
+            Assert.Equal(oldPayload, await File.ReadAllBytesAsync(target)); Assert.Equal(oldControl, await File.ReadAllBytesAsync(target + ".aria2"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Theory]
+    [InlineData("verification-confirmed")]
+    [InlineData("completion-prepared")]
+    public async Task Disabled_verification_holds_required_publication_checkpoint(string phase)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var bytes = new byte[] { 1, 2, 3, 4 };
+            using var ledger = new ContinuityTransferLedger(root, gateway, point => { if (point == phase) throw new IOException("Crash"); });
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, request.EngineId));
+            ledger.Dispose();
+            using (var disabled = new ContinuityTransferLedger(root, gateway))
+            {
+                await disabled.LoadAsync(default, enableExpectedChecksumVerification: false);
+                var held = await disabled.ObserveAsync(new(request.EngineId, new(DownloadStatus.Completed, 4, 4, 0)), default);
+                Assert.Equal(DownloadStatus.Interrupted, held.Progress.Status);
+                Assert.Equal(VerificationStatus.Pending, held.Verification);
+            }
+            Assert.False(File.Exists(Path.Combine(root, "payload.bin")));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(routed.Directory, routed.FileName)));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Large_required_hash_is_visible_responsive_and_cancellable_without_publication()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            var bytes = new byte[32 * 1024 * 1024]; Random.Shared.NextBytes(bytes);
+            var reachedChunk = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var callbacks = 0;
+            Task HoldFirstChunk(long _, CancellationToken token)
+            {
+                if (Interlocked.Increment(ref callbacks) != 1) return Task.CompletedTask;
+                reachedChunk.TrySetResult();
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway, hashProgress: HoldFirstChunk);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid();
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/large"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", bytes.Length, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            using var cancellation = new CancellationTokenSource();
+            var completed = new EngineDownload(request.EngineId, new(DownloadStatus.Completed, bytes.Length, bytes.Length, 0));
+            var first = await ledger.ObserveAsync(completed, cancellation.Token);
+            Assert.Equal(VerificationStatus.Verifying, first.Verification);
+            await reachedChunk.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var concurrent = await ledger.ObserveAsync(completed, default);
+            stopwatch.Stop();
+            Assert.Equal(VerificationStatus.Verifying, concurrent.Verification);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromMilliseconds(250), $"Observation blocked for {stopwatch.Elapsed}.");
+            cancellation.Cancel();
+            Assert.False(File.Exists(Path.Combine(root, "payload.bin")));
+            Assert.True(File.Exists(Path.Combine(routed.Directory, routed.FileName)));
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+            EngineDownload result;
+            do
+            {
+                result = await ledger.ObserveAsync(completed, default);
+                if (result.Verification == VerificationStatus.Verifying) await Task.Delay(10);
+            } while (result.Verification == VerificationStatus.Verifying && DateTimeOffset.UtcNow < deadline);
+            Assert.Equal(VerificationStatus.Verified, result.Verification);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(root, "payload.bin")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Cancel_before_required_hash_keeps_stage_and_allows_later_verification()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            var bytes = new byte[] { 1, 2, 3, 4 }; var job = Guid.NewGuid(); var attempt = Guid.NewGuid();
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", bytes.Length, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+            try { await ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Completed, 4, 4, 0)), cancellation.Token); }
+            catch (OperationCanceledException) { }
+            Assert.False(File.Exists(Path.Combine(root, "payload.bin")));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(routed.Directory, routed.FileName)));
+            var completed = await ObserveSettledAsync(ledger, request.EngineId);
+            Assert.Equal(VerificationStatus.Verified, completed.Verification);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(root, "payload.bin")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Storage_failure_before_verification_checkpoint_keeps_stage_and_can_retry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            var faults = 0;
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway, point =>
+            {
+                if (point == "verification-before-checkpoint" && Interlocked.Increment(ref faults) == 1)
+                    throw new IOException("Injected storage exhaustion before journal checkpoint.");
+            });
+            var bytes = new byte[] { 1, 2, 3, 4 }; var job = Guid.NewGuid(); var attempt = Guid.NewGuid();
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", bytes.Length, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, request.EngineId));
+            Assert.False(File.Exists(Path.Combine(root, "payload.bin")));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(routed.Directory, routed.FileName)));
+            var completed = await ObserveSettledAsync(ledger, request.EngineId);
+            Assert.Equal(VerificationStatus.Verified, completed.Verification);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(root, "payload.bin")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Hash_read_fault_keeps_stage_and_can_retry_same_attempt(bool accessDenied)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            var faults = 0;
+            Task FaultOnce(long _, CancellationToken __)
+            {
+                if (Interlocked.Increment(ref faults) == 1)
+                {
+                    if (accessDenied) throw new UnauthorizedAccessException("Injected read denial.");
+                    throw new IOException("Injected storage read failure.");
+                }
+                return Task.CompletedTask;
+            }
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway, hashProgress: FaultOnce);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var bytes = new byte[] { 1, 2, 3, 4 };
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))));
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            if (accessDenied) await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ObserveSettledAsync(ledger, request.EngineId));
+            else await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(ledger, request.EngineId));
+            Assert.False(File.Exists(Path.Combine(root, "payload.bin")));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(routed.Directory, routed.FileName)));
+            var recovered = await ObserveSettledAsync(ledger, request.EngineId);
+            Assert.Equal(VerificationStatus.Verified, recovered.Verification);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Synthetic_published_receipt_requires_bound_attempt_and_original_public_file()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var bytes = new byte[] { 1, 2, 3, 4 }; var now = DateTimeOffset.UtcNow;
+            var expected = ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)));
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt, ExpectedChecksum: expected);
+            var routed = await ledger.PrepareAsync(request, default);
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt).SaveBeforeBodyAsync(new(1, request.Source.AbsoluteUri, "\"strong\"", 4, "identity"), default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            Assert.Equal(DownloadStatus.Completed, (await ObserveSettledAsync(ledger, request.EngineId)).Progress.Status);
+            var entry = new DownloadEntry(new(job, "payload.bin", request.Source, Path.Combine(root, "payload.bin"), now, expected),
+                new(attempt, job, request.EngineId, now), new(Guid.NewGuid(), job, attempt, "payload.bin", 4),
+                new(DownloadStatus.Downloading, 4, 4, 0), Verification: VerificationStatus.Verifying);
+            Assert.NotNull(await ledger.PublishedReceiptAsync(request.EngineId, entry, default));
+            Assert.Null(await ledger.PublishedReceiptAsync(request.EngineId, entry with { Job = entry.Job with { ExpectedChecksum = ExpectedChecksum.FromManualInput(new string('0', 64)) } }, default));
+            var target = entry.Job.Destination; File.Move(target, target + ".retained"); await File.WriteAllBytesAsync(target, bytes);
+            Assert.Null(await ledger.PublishedReceiptAsync(request.EngineId, entry, default));
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(target + ".retained"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    private static async Task<EngineDownload> ObserveSettledAsync(ContinuityTransferLedger ledger, string gid)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var observed = await ledger.ObserveAsync(new(gid, new(DownloadStatus.Completed, 4, 4, 0)), default);
+            if (observed.Verification != VerificationStatus.Verifying) return observed;
+            await Task.Delay(5);
+        }
+        throw new TimeoutException("Required checksum verification did not settle.");
     }
 }

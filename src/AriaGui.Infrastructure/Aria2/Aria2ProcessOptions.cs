@@ -12,5 +12,6 @@ public sealed record Aria2ProcessOptions(string ExecutablePath, string RuntimeDi
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(5);
     public string ExpectedSha256 { get; init; } = BundledSha256;
     public bool UseContinuityGateway { get; init; }
+    public bool EnableExpectedChecksumVerification { get; init; } = true;
     internal Func<string, AriaGui.Infrastructure.Downloads.IContinuityOriginTransport>? ContinuityTestOrigins { get; init; }
 }

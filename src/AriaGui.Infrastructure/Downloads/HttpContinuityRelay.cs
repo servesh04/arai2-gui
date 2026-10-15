@@ -35,7 +35,8 @@ public sealed class HttpRepresentationStore
     private readonly string _path;
     private readonly string _completionPath;
     private readonly string _freshPath;
-    public HttpRepresentationStore(string privateRuntimeDirectory, Guid attemptId, Guid? completionAttempt = null)
+    private readonly bool _forceFresh;
+    public HttpRepresentationStore(string privateRuntimeDirectory, Guid attemptId, Guid? completionAttempt = null, bool forceFresh = false)
     {
         if (!Path.IsPathFullyQualified(privateRuntimeDirectory) || attemptId == Guid.Empty) throw new ArgumentException();
         var directory = Path.Combine(Path.GetFullPath(privateRuntimeDirectory), "representations");
@@ -43,10 +44,11 @@ public sealed class HttpRepresentationStore
         _path = Path.Combine(directory, attemptId.ToString("N") + ".json");
         _completionPath = Path.Combine(directory, (completionAttempt ?? attemptId).ToString("N") + ".completion.json");
         _freshPath = Path.Combine(directory, (completionAttempt ?? attemptId).ToString("N") + ".fresh.json");
+        _forceFresh = forceFresh;
     }
     public async Task<HttpRepresentation?> LoadAsync(CancellationToken token)
     {
-        var path = File.Exists(_freshPath) ? _freshPath : _path;
+        var path = _forceFresh || File.Exists(_freshPath) ? _freshPath : _path;
         if (!File.Exists(path)) return null;
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0 || new FileInfo(path).Length > 65536) throw new IOException("Invalid representation record.");
         var record = JsonSerializer.Deserialize<HttpRepresentation>(await File.ReadAllTextAsync(path, token));
@@ -83,7 +85,7 @@ public sealed class HttpRepresentationStore
         if (!IsValid(record)) throw new ArgumentException("A strong representation is required.");
         var existing = await LoadAsync(token);
         if (existing is not null) { if (existing != record) throw new IOException("Representation conflict."); return; }
-        var path = record.Resumable ? _path : _freshPath;
+        var path = _forceFresh || !record.Resumable ? _freshPath : _path;
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".new";
         try
         {

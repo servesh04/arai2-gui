@@ -8,6 +8,56 @@ namespace AriaGui.Application.Tests;
 
 public sealed class QueueCommandTests
 {
+    [Theory]
+    [InlineData(" ")]
+    [InlineData("abc")]
+    [InlineData("gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg")]
+    public void Expected_sha256_requires_exact_hex(string malformed) =>
+        Assert.Throws<ArgumentException>(() => ExpectedChecksum.FromManualInput(malformed));
+
+    [Fact]
+    public async Task Required_checksum_cannot_complete_from_unverified_engine_observation()
+    {
+        var rig = new Rig();
+        await rig.Coordinator.AddAsync("https://example.com/required.bin", expectedSha256: new string('0', 64));
+        var gid = Assert.Single(rig.Store.Current.Downloads).Attempt.EngineId;
+        rig.Engine.Set(gid, DownloadStatus.Completed);
+        await rig.Coordinator.RefreshAsync();
+        var entry = Assert.Single(rig.Store.Current.Downloads);
+        Assert.Equal(DownloadStatus.Interrupted, entry.Progress.Status);
+        Assert.Equal(VerificationStatus.Pending, entry.Verification);
+        Assert.Null(rig.Store.Current.LatestCompletion);
+    }
+    [Fact]
+    public async Task Verifying_state_is_separate_from_transfer_completion_and_visible_in_row()
+    {
+        var rig = new Rig();
+        await rig.Coordinator.AddAsync("https://example.com/required.bin", expectedSha256: new string('0', 64));
+        var gid = Assert.Single(rig.Store.Current.Downloads).Attempt.EngineId;
+        rig.Engine.Transfers[gid] = rig.Engine.Transfers[gid] with
+        { Progress = new(DownloadStatus.Downloading, 1000, 1000, 0), Verification = VerificationStatus.Verifying };
+        await rig.Coordinator.RefreshAsync();
+        using var view = new DownloadsViewModel(rig.Coordinator, rig.Store, new ImmediateDispatcher());
+        var row = Assert.Single(view.Downloads);
+        Assert.Equal("Verifying SHA-256…", row.Status);
+        Assert.Equal("Verification: Checking SHA-256…", row.VerificationLabel);
+        Assert.False(row.ShowPause);
+        Assert.Null(rig.Store.Current.LatestCompletion);
+    }
+    [Fact]
+    public async Task Disabled_checksum_restore_has_explicit_row_reason_without_resuming()
+    {
+        var rig = new Rig();
+        await rig.Coordinator.AddAsync("https://example.com/required.bin", expectedSha256: new string('0', 64));
+        var gid = Assert.Single(rig.Store.Current.Downloads).Attempt.EngineId;
+        rig.Engine.ChecksumEnabled = false;
+        rig.Engine.Transfers.Remove(gid);
+        await rig.Coordinator.RefreshAsync();
+        var held = Assert.Single(rig.Store.Current.Downloads);
+        Assert.Equal(DownloadStatus.Interrupted, held.Progress.Status);
+        Assert.Contains("Required SHA-256 verification is unavailable", held.ErrorMessage);
+        Assert.Equal(VerificationStatus.Pending, held.Verification);
+    }
     [Fact]
     public async Task Blocked_schedule_stages_fresh_and_retry_jobs_paused_before_add_rpc()
     {
@@ -490,6 +540,8 @@ public sealed class QueueCommandTests
     }
     private sealed class CommandEngine : IAria2Client
     {
+        public bool SupportsChecksumVerification => ChecksumEnabled;
+        public bool ChecksumEnabled = true;
         public Dictionary<string, EngineDownload> Transfers { get; } = [];
         public List<(DownloadAction Action, int? Position)> Commands { get; } = [];
         public Func<string, DownloadAction, Task>? BeforeExecute;

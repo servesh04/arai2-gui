@@ -415,6 +415,8 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     }
     public string DirectoryPath { get => _directory; set => SetProperty(ref _directory, value); }
     public string FileName { get => _fileName; set => SetProperty(ref _fileName, value); }
+    private string _expectedSha256 = "";
+    public string ExpectedSha256 { get => _expectedSha256; set => SetProperty(ref _expectedSha256, value); }
     public bool UnknownSize { get => _unknownSize; set => SetProperty(ref _unknownSize, value); }
     public string ErrorMessage
     {
@@ -442,8 +444,8 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         ErrorMessage = "";
         try
         {
-            await _coordinator.AddAsync(InputUrl, UnknownSize, token, DirectoryPath, FileName);
-            _dispatcher.Enqueue(() => { InputUrl = ""; FileName = ""; IsAddExpanded = false; });
+            await _coordinator.AddAsync(InputUrl, UnknownSize, token, DirectoryPath, FileName, expectedSha256: ExpectedSha256);
+            _dispatcher.Enqueue(() => { InputUrl = ""; FileName = ""; ExpectedSha256 = ""; IsAddExpanded = false; });
         }
         catch (OperationCanceledException) { }
         catch (ArgumentException ex) { _dispatcher.Enqueue(() => ErrorMessage = ex.Message.Split(Environment.NewLine)[0]); }
@@ -512,7 +514,10 @@ public sealed class DownloadsViewModel : RuntimeViewModel
             _ => snapshot.ObservedConcurrency is int limit ? $"Engine limit: {limit}. Waiting order never preempts active downloads." : "Waiting for the engine…"
         };
         if (snapshot.LatestCompletion is { } notice && notice.AttemptId != _lastCompletion)
-        { _lastCompletion = notice.AttemptId; CompletionMessage = $"{notice.FileName} finished downloading."; if (IsHistoryView && !IsBrowsing) QueueHistory(_history.Page, false); }
+        { _lastCompletion = notice.AttemptId; CompletionMessage = notice.Verification == VerificationStatus.Verified
+                ? $"{notice.FileName} finished downloading. Matches supplied SHA-256."
+                : $"{notice.FileName} finished downloading. SHA-256 not supplied.";
+            if (IsHistoryView && !IsBrowsing) QueueHistory(_history.Page, false); }
         ConnectionMessage = snapshot.Connection switch
         {
             EngineConnectionState.Connected => snapshot.ErrorMessage ?? "Connected · history saved locally",

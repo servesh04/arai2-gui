@@ -8,6 +8,7 @@
     <ProjectReference Include="../AriaGui.EngineFixture/AriaGui.EngineFixture.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../src/AriaGui.NativeHost/AriaGui.NativeHost.csproj" ReferenceOutputAssembly="false" />
     <Content Include="../../vendor/aria2/win-x64/aria2c.exe" Link="Engine/aria2c.exe" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="ChecksumFixture/m2-synthetic.bin" CopyToOutputDirectory="PreserveNewest" />
     <Using Include="Xunit" />
   </ItemGroup>
   <Target Name="CopyEngineFixture" AfterTargets="Build">

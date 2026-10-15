@@ -37,6 +37,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
     private ContinuityTransferLedger? _continuityTransfers;
     private SharedRelayRateLimiter? _relayLimiter;
     public bool SupportsFreshRestart => _options.UseContinuityGateway;
+    public bool SupportsChecksumVerification => _options.UseContinuityGateway && _options.EnableExpectedChecksumVerification;
 
     public event EventHandler? UnexpectedExit;
     public int? OwnedProcessId => _process is { HasExited: false } process ? process.Id : null;
@@ -89,7 +90,8 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                         : new(_options.RuntimeDirectory, () => OwnedProcessId, _options.ContinuityTestOrigins, true, _relayLimiter);
                     await _continuityGateway.StartAsync(cancellationToken).ConfigureAwait(false);
                     _continuityTransfers = new(_options.RuntimeDirectory, _continuityGateway);
-                    await _continuityTransfers.LoadAsync(cancellationToken).ConfigureAwait(false);
+                    await _continuityTransfers.LoadAsync(cancellationToken, _repository,
+                        _options.EnableExpectedChecksumVerification).ConfigureAwait(false);
                 }
                 _observations.Clear(); _nextReconcile = default; _unknownCount = 0;
                 _knownIds = _repository is null ? [] : (await _repository.LoadEngineIdsAsync(cancellationToken).ConfigureAwait(false)).ToHashSet(StringComparer.Ordinal);
@@ -102,7 +104,8 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 var plan = _repository is null ? new SessionRecoveryPlan([], null, "Ready · local connection verified")
                     : await SessionRecoveryPlanner.PrepareAsync(_options.RuntimeDirectory, history, cancellationToken).ConfigureAwait(false);
                 if (_continuityTransfers is not null)
-                    plan = await _continuityTransfers.PrepareRestoreAsync(_options.RuntimeDirectory, history, cancellationToken).ConfigureAwait(false);
+                    plan = await _continuityTransfers.PrepareRestoreAsync(_options.RuntimeDirectory, history, cancellationToken,
+                        _options.EnableExpectedChecksumVerification).ConfigureAwait(false);
                 var policy = _repository is null ? new QueuePolicy() : await _repository.LoadQueuePolicyAsync(cancellationToken).ConfigureAwait(false);
                 var bandwidth = _repository is null ? BandwidthPolicy.Default : await _repository.LoadBandwidthPolicyAsync(cancellationToken).ConfigureAwait(false);
                 bandwidth.Validate();
@@ -238,6 +241,17 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
         try
         {
             var rpc = ConnectedClient();
+            if (request.ExpectedChecksum is not null && (_continuityTransfers is null || !_options.EnableExpectedChecksumVerification))
+                throw new EngineException(EngineFailure.RequestRejected, "Expected SHA-256 requires guarded staging.");
+            if (request.ExpectedChecksum is not null && _repository is null)
+                throw new EngineException(EngineFailure.RequestRejected, "Expected SHA-256 requires durable job intent.");
+            if (_repository is not null && request.ContinuityJobId is Guid expectedJob)
+            {
+                var savedSpec = await _repository.GetAsync(expectedJob, token).ConfigureAwait(false);
+                if (savedSpec is null || savedSpec.Attempt.Id != request.ContinuityAttemptId ||
+                    savedSpec.Job.ExpectedChecksum != request.ExpectedChecksum)
+                    throw new EngineException(EngineFailure.RequestRejected, "Saved checksum specification changed.");
+            }
             if (request.FreshRestart && (_continuityTransfers is null || request.LegacyParentEngineId is null || _continuityTransfers.Owns(request.LegacyParentEngineId)))
                 throw new EngineException(EngineFailure.RequestRejected, "Use Recover for a protected attempt; a legacy fresh restart requires a protected engine session.");
             if (_continuityTransfers is not null)
@@ -332,6 +346,11 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             var rows = new List<EngineDownload>();
             foreach (var gid in gids.Where(_observations.ContainsKey))
                 rows.Add(_continuityTransfers is null ? _observations[gid] : await ObserveContinuityAsync(_observations[gid], token).ConfigureAwait(false));
+            if (_continuityTransfers is not null && _repository is not null)
+                foreach (var gid in gids.Where(gid => !rows.Any(row => row.EngineId == gid) && _knownIds.Contains(gid)))
+                    if (await _repository.GetAttemptAsync(gid, token).ConfigureAwait(false) is { } entry &&
+                        await _continuityTransfers.PublishedReceiptAsync(gid, entry, token).ConfigureAwait(false) is { } receipt)
+                        rows.Add(receipt);
             return new(_info!.SessionId, rows, _concurrency, _restoredIds, _unknownCount);
         }
         finally { _gate.Release(); }
@@ -772,10 +791,12 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 return new(entry.Attempt.EngineId, new(AriaGui.Core.Downloads.DownloadStatus.Removed, entry.Progress.DownloadedBytes, entry.Progress.TotalBytes, 0));
             var target = await new AriaGui.Infrastructure.Downloads.FileDownloadDestination().ValidateRetryAsync(entry.Job.Source,
                 Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, token).ConfigureAwait(false);
+            if (entry.Job.ExpectedChecksum is not null && (!SupportsChecksumVerification || _repository is null))
+                throw new EngineException(EngineFailure.RequestRejected, "Required SHA-256 verification is disabled; attempt preserved for review.");
             var recoveryRequest = new EngineDownloadRequest(entry.Attempt.EngineId, entry.Job.Source, Directory: target.Directory, FileName: target.FileName,
                 ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused || entry.PolicyHeld, ExactSourceUrl: entry.ExactSourceUrl,
                 ContinuityJobId: entry.Job.Id, ContinuityAttemptId: entry.Attempt.Id,
-                RequirePublicOrigin: entry.ExactSourceUrl is not null);
+                RequirePublicOrigin: entry.ExactSourceUrl is not null, ExpectedChecksum: entry.Job.ExpectedChecksum);
             if (_repository is not null)
             {
                 var jobRate = await _repository.LoadJobBandwidthPolicyAsync(entry.Job.Id, token).ConfigureAwait(false);

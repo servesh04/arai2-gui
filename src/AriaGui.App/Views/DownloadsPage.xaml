@@ -142,7 +142,7 @@
                     <ScrollViewer x:Name="DetailsHost" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0">
                         <StackPanel Spacing="7">
                             <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                            <StackPanel x:Name="InspectorMetadata" Spacing="6"><TextBlock Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" /><TextBlock Text="{Binding SizeLabel}" FontSize="12" TextWrapping="Wrap" /><TextBlock Text="{Binding QueueLabel}" FontSize="12" TextWrapping="Wrap" /></StackPanel>
+                            <StackPanel x:Name="InspectorMetadata" Spacing="6"><TextBlock Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" /><TextBlock Text="{Binding VerificationLabel}" FontSize="12" TextWrapping="Wrap" /><TextBlock Text="{Binding SizeLabel}" FontSize="12" TextWrapping="Wrap" /><TextBlock Text="{Binding QueueLabel}" FontSize="12" TextWrapping="Wrap" /></StackPanel>
                             <TextBlock Text="{Binding Source}" FontSize="12" IsTextSelectionEnabled="True" TextWrapping="Wrap" /><TextBlock Text="{Binding Destination}" FontSize="12" IsTextSelectionEnabled="True" TextWrapping="Wrap" /><TextBlock Text="{Binding ErrorMessage}" FontSize="12" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" Spacing="6"><Button x:Name="InspectorOpenFile" Content="Open file" Click="SingleActionClick" Tag="OpenFile" Style="{StaticResource SmallButton}" /><Button x:Name="InspectorOpenFolder" Content="Open folder" Click="SingleActionClick" Tag="OpenFolder" Style="{StaticResource SmallButton}" /></StackPanel>
                         </StackPanel>

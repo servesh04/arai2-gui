@@ -14,7 +14,8 @@ namespace AriaGui.Infrastructure.Downloads;
 public sealed class ContinuityLoopbackGateway : IAsyncDisposable
 {
     private sealed record Endpoint(int Version, int Port);
-    private sealed record Route(int Version, Guid JobId, Guid AttemptId, string Source, string Capability, bool Retained, bool RequirePublicOrigin = true);
+    private sealed record Route(int Version, Guid JobId, Guid AttemptId, string Source, string Capability, bool Retained,
+        bool RequirePublicOrigin = true, bool FreshAttempt = false);
     private readonly string _root;
     private readonly Func<int?> _enginePid;
     private readonly Func<string, bool, IContinuityOriginTransport> _origins;
@@ -82,11 +83,12 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
             || !route.Capability.All(Uri.IsHexDigit)) throw new IOException("Invalid route identity.");
         var origin = _origins(route.Source, route.RequirePublicOrigin);
         var resource = route.RequirePublicOrigin ? route.Source : new UriBuilder(route.Source) { Fragment = "" }.Uri.AbsoluteUri;
-        var relay = new HttpContinuityRelay(resource, new(_root, route.JobId, route.AttemptId), origin, route.Retained,
+        var relay = new HttpContinuityRelay(resource, new(_root, route.JobId, route.AttemptId, forceFresh: route.FreshAttempt), origin, route.Retained,
             enableExperimental: true, limits: null, upstreamLimit: _upstreamLimit);
         if (!_routes.TryAdd(route.AttemptId, (route, relay, origin))) { (origin as IDisposable)?.Dispose(); throw new IOException("Duplicate route identity."); }
     }
-    public async Task<Uri> RegisterAsync(Guid jobId, Guid attemptId, string exactSource, bool retained, CancellationToken token, bool requirePublicOrigin = true)
+    public async Task<Uri> RegisterAsync(Guid jobId, Guid attemptId, string exactSource, bool retained, CancellationToken token,
+        bool requirePublicOrigin = true, bool freshAttempt = false)
     {
         if (!_admitting || jobId == Guid.Empty || attemptId == Guid.Empty) throw new InvalidOperationException("Gateway not ready.");
         await _registration.WaitAsync(token);
@@ -94,11 +96,12 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
         {
             if (_routes.TryGetValue(attemptId, out var existing))
             {
-                if (existing.Route.JobId != jobId || existing.Route.Source != exactSource || existing.Route.Retained != retained || existing.Route.RequirePublicOrigin != requirePublicOrigin) throw new IOException("Route conflict.");
+                if (existing.Route.JobId != jobId || existing.Route.Source != exactSource || existing.Route.Retained != retained ||
+                    existing.Route.RequirePublicOrigin != requirePublicOrigin || existing.Route.FreshAttempt != freshAttempt) throw new IOException("Route conflict.");
                 return Address(existing.Route);
             }
             if (_routes.Count >= 4096) throw new IOException("Gateway route capacity exceeded.");
-            var route = new Route(1, jobId, attemptId, exactSource, Convert.ToHexString(RandomNumberGenerator.GetBytes(32)), retained, requirePublicOrigin);
+            var route = new Route(1, jobId, attemptId, exactSource, Convert.ToHexString(RandomNumberGenerator.GetBytes(32)), retained, requirePublicOrigin, freshAttempt);
             // Validate transport/relay construction before durable admission.
             AddRoute(route);
             try { await WriteNewAsync(Path.Combine(_root, "route-" + attemptId.ToString("N") + ".json"), route, token); }

@@ -75,12 +75,14 @@ public sealed partial class SqliteDownloadRepository
         return attempts.Select(attempt =>
         {
             var job = jobs[attempt.JobId]; var file = files[attempt.Id]; operations.TryGetValue(attempt.Id, out var op);
-            return new DownloadEntry(new(job.Id, job.DisplayName, new Uri(job.Source), job.Destination, At(job.CreatedAtUtcTicks)),
+            return new DownloadEntry(new(job.Id, job.DisplayName, new Uri(job.Source), job.Destination, At(job.CreatedAtUtcTicks),
+                    job.ExpectedSha256 is null ? null : new ExpectedChecksum(job.ExpectedSha256, job.ChecksumProvenance ?? 0)),
                 new(attempt.Id, job.Id, attempt.EngineId, At(attempt.StartedAtUtcTicks), attempt.ParentAttemptId),
                 new(file.Id, job.Id, attempt.Id, file.FileName, file.TotalBytes), new(attempt.Status, attempt.DownloadedBytes, attempt.TotalBytes, 0),
                 op is null ? null : new(op.Id, job.Id, op.Action, op.Status, At(op.RequestedAtUtcTicks), op.QueuePosition),
                 attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),
-                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null, PolicyHeld: attempt.PolicyHeld);
+                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null, PolicyHeld: attempt.PolicyHeld,
+                Verification: attempt.Verification);
         }).ToArray();
     }
 }

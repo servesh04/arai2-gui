@@ -60,6 +60,9 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.Property<long>("UpdatedAtUtcTicks")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Verification")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EngineId")
@@ -242,6 +245,9 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("ChecksumProvenance")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("CreatedAtUtcTicks")
                         .HasColumnType("INTEGER");
 
@@ -255,6 +261,9 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExpectedSha256")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Source")

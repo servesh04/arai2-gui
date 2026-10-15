@@ -5,9 +5,9 @@ namespace AriaGui.Application.Downloads;
 public sealed record EngineDownloadRequest(string EngineId, Uri Source, bool SimulateUnknownSize = false,
     string Directory = "", string FileName = "", bool ContinueExisting = false, bool StartPaused = false, string? ExactSourceUrl = null,
     Guid? ContinuityJobId = null, Guid? ContinuityAttemptId = null, bool RequirePublicOrigin = true, string? LegacyParentEngineId = null, bool FreshRestart = false,
-    ByteRateLimit? JobDownloadLimit = null);
+    ByteRateLimit? JobDownloadLimit = null, ExpectedChecksum? ExpectedChecksum = null);
 public sealed record EngineDownload(string EngineId, DownloadSnapshot Progress, string? ErrorMessage = null,
-    int? QueuePosition = null);
+    int? QueuePosition = null, VerificationStatus Verification = VerificationStatus.NotSupplied);
 public sealed record EngineObservation(string Generation, IReadOnlyList<EngineDownload> Downloads, int MaxConcurrentDownloads,
     IReadOnlyList<string>? RestoredIds = null, int UnknownTransferCount = 0);
 public sealed record EngineCommandResult(string Generation, EngineDownload? Download);
@@ -16,6 +16,7 @@ public sealed record EngineCommandResult(string Generation, EngineDownload? Down
 public interface IAria2Client
 {
     bool SupportsFreshRestart => false;
+    bool SupportsChecksumVerification => false;
     Task<bool> CanRestartFreshAsync(string engineId, CancellationToken token) => Task.FromResult(false);
     Task<EngineDownload> AddAsync(EngineDownloadRequest request, CancellationToken cancellationToken);
     Task<IReadOnlyList<EngineDownload>> GetDownloadsAsync(IReadOnlyList<string> engineIds, CancellationToken cancellationToken);

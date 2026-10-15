@@ -25,8 +25,31 @@ internal sealed class IdentifiedFile : IDisposable
         }
         catch { handle.Dispose(); throw; }
     }
-    internal async Task<string> HashAsync(CancellationToken token)
-    { _stream.Position = 0; return Convert.ToHexString(await SHA256.HashDataAsync(_stream, token)); }
+    internal async Task<string> HashAsync(CancellationToken token, Func<long, CancellationToken, Task>? afterChunk = null)
+    {
+        _stream.Position = 0;
+        using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[1024 * 1024];
+        long total = 0;
+        while (true)
+        {
+            var length = await _stream.ReadAsync(buffer, token).ConfigureAwait(false);
+            if (length == 0) break;
+            digest.AppendData(buffer, 0, length);
+            total += length;
+            if (afterChunk is not null) await afterChunk(total, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+        }
+        return Convert.ToHexString(digest.GetHashAndReset());
+    }
+    internal string Identity
+    {
+        get
+        {
+            if (!GetFileInformationByHandle(_stream.SafeFileHandle, out var info)) throw Failure();
+            return $"{info.Volume:x8}:{info.IndexHigh:x8}{info.IndexLow:x8}";
+        }
+    }
     internal void FlushToDisk() => _stream.Flush(true);
     internal void RenameWithoutReplacement(string destination)
     {
@@ -56,6 +79,14 @@ internal sealed class IdentifiedFile : IDisposable
     }
     public void Dispose() => _stream.Dispose();
     [StructLayout(LayoutKind.Sequential)] private struct AttributeTag { public uint Attributes; public uint Tag; }
+    [StructLayout(LayoutKind.Sequential)] private struct Information
+    {
+        public uint Attributes; public System.Runtime.InteropServices.ComTypes.FILETIME Creation, Access, Write;
+        public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out Information information);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true)]

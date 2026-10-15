@@ -51,17 +51,20 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
     }
 
     public async Task AddAsync(string url, bool unknownSize = false, CancellationToken cancellationToken = default,
-        string directory = "", string? fileName = null)
+        string directory = "", string? fileName = null, string? expectedSha256 = null)
     {
         if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var source)
             || (source.Scheme != Uri.UriSchemeHttp && source.Scheme != Uri.UriSchemeHttps)
             || string.IsNullOrWhiteSpace(source.Host)) throw new ArgumentException("Enter a complete HTTP or HTTPS URL.");
         if (!string.IsNullOrEmpty(source.UserInfo)) throw new ArgumentException("Use a URL without embedded credentials.");
+        var expected = string.IsNullOrEmpty(expectedSha256) ? null : ExpectedChecksum.FromManualInput(expectedSha256);
+        if (expected is not null && !engine.SupportsChecksumVerification)
+            throw new DownloadRequestException("Expected SHA-256 requires guarded private staging.");
         await InitializeAsync(cancellationToken).ConfigureAwait(false);
         if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(directory, cancellationToken).ConfigureAwait(false);
         var target = await destination.ValidateAsync(source, directory, fileName, cancellationToken).ConfigureAwait(false);
         if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(target.Directory, cancellationToken).ConfigureAwait(false);
-        var entry = BuildIntent(source, target, clock.GetUtcNow());
+        var entry = BuildIntent(source, target, clock.GetUtcNow(), expected);
         if (_schedule.Enabled) entry = entry with { PolicyHeld = true };
         var jobId = entry.Job.Id;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -78,12 +81,13 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
         await DispatchAddAsync(entry, unknownSize, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static DownloadEntry BuildIntent(Uri source, DownloadTarget target, DateTimeOffset now)
+    internal static DownloadEntry BuildIntent(Uri source, DownloadTarget target, DateTimeOffset now, ExpectedChecksum? expected = null)
     {
         var jobId = Guid.NewGuid(); var attemptId = Guid.NewGuid();
-        return new(new(jobId, target.FileName, source, target.FullPath, now), new(attemptId, jobId, NewGid(), now),
+        return new(new(jobId, target.FileName, source, target.FullPath, now, expected), new(attemptId, jobId, NewGid(), now),
             new(Guid.NewGuid(), jobId, attemptId, target.FileName, null), new(DownloadStatus.Queued, 0, null, 0),
-            new(Guid.NewGuid(), jobId, DownloadAction.Add, OperationStatus.Pending, now));
+            new(Guid.NewGuid(), jobId, DownloadAction.Add, OperationStatus.Pending, now),
+            Verification: expected is null ? VerificationStatus.NotSupplied : VerificationStatus.Pending);
     }
     private async Task DispatchAddAsync(DownloadEntry entry, bool unknownSize, CancellationToken cancellationToken)
     {
@@ -96,7 +100,8 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                 ContinuityJobId: entry.Job.Id, ContinuityAttemptId: entry.Attempt.Id,
                 // ExactSourceUrl is assigned by external intake and restored from its durable ledger.
                 // Request JSON cannot select the manual-origin policy.
-                RequirePublicOrigin: entry.ExactSourceUrl is not null, StartPaused: entry.PolicyHeld), cancellationToken).ConfigureAwait(false);
+                RequirePublicOrigin: entry.ExactSourceUrl is not null, StartPaused: entry.PolicyHeld,
+                ExpectedChecksum: entry.Job.ExpectedChecksum), cancellationToken).ConfigureAwait(false);
             await CommitAsync(ApplyObservation(entry, result), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -253,11 +258,13 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                     Progress = new(entry.DesiredRemoved ? DownloadStatus.Removed : DownloadStatus.Interrupted, entry.Progress.DownloadedBytes, entry.Progress.TotalBytes, 0),
                     PendingOperation = entry.DesiredRemoved ? null : entry.PendingOperation is null ? null : entry.PendingOperation with { Status = OperationStatus.Uncertain },
                     ErrorMessage = entry.DesiredRemoved ? "Removal intent reconciled: this owned engine has no running transfer. Files were kept."
-                        : "Transfer is missing. Use Recover to check its files and restore the same ID; existing files without control files are preserved."
+                        : entry.Job.ExpectedChecksum is not null && !engine.SupportsChecksumVerification
+                            ? "Required SHA-256 verification is unavailable. Transfer remains held; enable guarded verification before recovery."
+                            : "Transfer is missing. Use Recover to check its files and restore the same ID; existing files without control files are preserved."
                 };
                 else return entry;
                 if (next != entry) next = next with { ObservedAt = now };
-                if (next != entry && (next.Progress.Status != entry.Progress.Status || next.PendingOperation != entry.PendingOperation
+                if (next != entry && (next.Progress.Status != entry.Progress.Status || next.Verification != entry.Verification || next.PendingOperation != entry.PendingOperation
                     || next.ErrorMessage != entry.ErrorMessage || next.Progress.TotalBytes != entry.Progress.TotalBytes
                     || !_checkpoints.TryGetValue(entry.Job.Id, out var last) || now - last >= TimeSpan.FromSeconds(5))) save.Add(next);
                 return next;
@@ -271,7 +278,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             var notice = updated.LastOrDefault(item => completed.Contains(item.Attempt.Id));
             store.Publish(updated, EngineConnectionState.Connected, batch.UnknownTransferCount > 0 ? $"{batch.UnknownTransferCount} unrecognized engine transfers need review; they were not changed." : null,
                 policy: _policy, observedConcurrency: batch.MaxConcurrentDownloads,
-                completion: notice is null ? null : new(notice.Attempt.Id, notice.Job.DisplayName), bandwidthPolicy: _bandwidth,
+                completion: notice is null ? null : new(notice.Attempt.Id, notice.Job.DisplayName, notice.Verification), bandwidthPolicy: _bandwidth,
                 jobBandwidthPolicies: new Dictionary<Guid, JobBandwidthPolicy>(_jobBandwidth), schedule: _schedule);
         }
         finally { _gate.Release(); }
@@ -295,11 +302,19 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             DownloadAction.Move => observation.QueuePosition == operation.QueuePosition || observation.Progress.Status == DownloadStatus.Downloading,
             _ => false
         };
+        if (entry.Job.ExpectedChecksum is not null && observation.Progress.Status == DownloadStatus.Completed &&
+            observation.Verification != VerificationStatus.Verified)
+            return entry with { Progress = new(DownloadStatus.Interrupted, observation.Progress.DownloadedBytes,
+                    observation.Progress.TotalBytes, 0),
+                ErrorMessage = "Required SHA-256 has not been verified before publication; recovery requires review.",
+                Verification = VerificationStatus.Pending };
         return entry with
         {
             Progress = observation.Progress, File = entry.File with { TotalBytes = observation.Progress.TotalBytes },
             PendingOperation = confirmed ? null : operation, QueuePosition = observation.QueuePosition,
-            ErrorMessage = confirmed ? observation.ErrorMessage : "Command is awaiting engine confirmation. No duplicate command was sent."
+            ErrorMessage = confirmed ? observation.ErrorMessage : "Command is awaiting engine confirmation. No duplicate command was sent.",
+            Verification = entry.Job.ExpectedChecksum is null ? VerificationStatus.NotSupplied
+                : observation.Verification == VerificationStatus.NotSupplied ? entry.Verification : observation.Verification
         };
     }
 
@@ -469,7 +484,8 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             retry = previous with { Attempt = attempt, File = new(Guid.NewGuid(), jobId, attempt.Id, target.FileName, null),
                 DesiredPaused = false, DesiredRemoved = false, PolicyHeld = _schedule.Enabled,
                 Progress = new(DownloadStatus.Queued, 0, null, 0), QueuePosition = null, ErrorMessage = null,
-                PendingOperation = new(Guid.NewGuid(), jobId, DownloadAction.Retry, OperationStatus.Pending, now) };
+                PendingOperation = new(Guid.NewGuid(), jobId, DownloadAction.Retry, OperationStatus.Pending, now),
+                Verification = previous.Job.ExpectedChecksum is null ? VerificationStatus.NotSupplied : VerificationStatus.Pending };
             await _gate.WaitAsync(token).ConfigureAwait(false);
             try
             {
@@ -487,7 +503,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                     FileName: target.FileName, ContinueExisting: target.ContinueExisting, ExactSourceUrl: retry.ExactSourceUrl,
                     ContinuityJobId: retry.Job.Id, ContinuityAttemptId: retry.Attempt.Id,
                     RequirePublicOrigin: retry.ExactSourceUrl is not null, LegacyParentEngineId: previous.Attempt.EngineId, FreshRestart: freshRestart,
-                    StartPaused: retry.PolicyHeld), token).ConfigureAwait(false);
+                    StartPaused: retry.PolicyHeld, ExpectedChecksum: retry.Job.ExpectedChecksum), token).ConfigureAwait(false);
                 await CommitAsync(ApplyObservation(retry, result), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)

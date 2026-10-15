@@ -51,6 +51,8 @@ public sealed class JobRow
     public string Destination { get; set; } = "";
     public string DestinationKey { get; set; } = "";
     public long CreatedAtUtcTicks { get; set; }
+    public string? ExpectedSha256 { get; set; }
+    public ChecksumProvenance? ChecksumProvenance { get; set; }
 }
 public sealed class AttemptRow
 {
@@ -60,6 +62,7 @@ public sealed class AttemptRow
     public long StartedAtUtcTicks { get; set; }
     public Guid? ParentAttemptId { get; set; }
     public DownloadStatus Status { get; set; }
+    public VerificationStatus Verification { get; set; }
     public long DownloadedBytes { get; set; }
     public long? TotalBytes { get; set; }
     public long UpdatedAtUtcTicks { get; set; }

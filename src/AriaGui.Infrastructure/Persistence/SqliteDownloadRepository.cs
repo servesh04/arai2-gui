@@ -38,13 +38,15 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
             var file = files.Single(row => row.AttemptId == attempt.Id);
             var operation = operations.Where(row => row.AttemptId == attempt.Id && row.Status is OperationStatus.Pending or OperationStatus.Uncertain)
                 .MaxBy(row => row.RequestedAtUtcTicks);
-            return new DownloadEntry(new(job.Id, job.DisplayName, new Uri(job.Source), job.Destination, At(job.CreatedAtUtcTicks)),
+            return new DownloadEntry(new(job.Id, job.DisplayName, new Uri(job.Source), job.Destination, At(job.CreatedAtUtcTicks),
+                    job.ExpectedSha256 is null ? null : new ExpectedChecksum(job.ExpectedSha256, job.ChecksumProvenance ?? 0)),
                 new(attempt.Id, job.Id, attempt.EngineId, At(attempt.StartedAtUtcTicks), attempt.ParentAttemptId),
                 new(file.Id, job.Id, attempt.Id, file.FileName, file.TotalBytes),
                 new(attempt.Status, attempt.DownloadedBytes, attempt.TotalBytes, 0),
                 operation is null ? null : new(operation.Id, job.Id, operation.Action, operation.Status, At(operation.RequestedAtUtcTicks), operation.QueuePosition),
                 attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),
-                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null, PolicyHeld: attempt.PolicyHeld);
+                ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null, PolicyHeld: attempt.PolicyHeld,
+                Verification: attempt.Verification);
         }).ToArray();
     }, token);
 
@@ -65,10 +67,11 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
     {
         var operation = entry.PendingOperation ?? throw new InvalidOperationException("An Add intent is required.");
         db.Jobs.Add(new() { Id = entry.Job.Id, DisplayName = entry.Job.DisplayName, Source = entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri,
-            Destination = entry.Job.Destination, DestinationKey = entry.Job.Destination.ToUpperInvariant(), CreatedAtUtcTicks = entry.Job.CreatedAt.UtcTicks });
+            Destination = entry.Job.Destination, DestinationKey = entry.Job.Destination.ToUpperInvariant(), CreatedAtUtcTicks = entry.Job.CreatedAt.UtcTicks,
+            ExpectedSha256 = entry.Job.ExpectedChecksum?.Sha256, ChecksumProvenance = entry.Job.ExpectedChecksum?.Provenance });
         db.Attempts.Add(new() { Id = entry.Attempt.Id, JobId = entry.Job.Id, EngineId = entry.Attempt.EngineId,
             StartedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, ParentAttemptId = entry.Attempt.ParentAttemptId,
-            Status = entry.Progress.Status, UpdatedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, PolicyHeld = entry.PolicyHeld });
+            Status = entry.Progress.Status, Verification = entry.Verification, UpdatedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, PolicyHeld = entry.PolicyHeld });
         db.Files.Add(new() { Id = entry.File.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, FileName = entry.File.FileName });
         db.Operations.Add(new() { Id = operation.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, Action = operation.Action,
             Status = operation.Status, RequestedAtUtcTicks = operation.RequestedAt.UtcTicks });
@@ -91,6 +94,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
             // The attempt's persisted terminal transition is the notification receipt.
             if (attempt.Status != DownloadStatus.Completed && entry.Progress.Status == DownloadStatus.Completed) completed.Add(attempt.Id);
             attempt.Status = entry.Progress.Status;
+            attempt.Verification = entry.Verification;
             attempt.DownloadedBytes = entry.Progress.DownloadedBytes;
             attempt.TotalBytes = entry.Progress.TotalBytes;
             attempt.ErrorMessage = entry.ErrorMessage;
@@ -143,7 +147,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         var operation = retry.PendingOperation!;
         db.Attempts.Add(new() { Id = retry.Attempt.Id, JobId = retry.Job.Id, EngineId = retry.Attempt.EngineId,
             StartedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, ParentAttemptId = previous.Attempt.Id,
-            Status = DownloadStatus.Queued, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
+            Status = DownloadStatus.Queued, Verification = retry.Verification, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
         db.Files.Add(new() { Id = retry.File.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id, FileName = retry.File.FileName });
         db.Operations.Add(new() { Id = operation.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id,
             Action = DownloadAction.Retry, Status = OperationStatus.Pending, RequestedAtUtcTicks = operation.RequestedAt.UtcTicks });
@@ -166,7 +170,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         var intent = retry.PendingOperation!;
         db.Attempts.Add(new() { Id = retry.Attempt.Id, JobId = retry.Job.Id, EngineId = retry.Attempt.EngineId,
             StartedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, ParentAttemptId = old.Id,
-            Status = DownloadStatus.Queued, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
+            Status = DownloadStatus.Queued, Verification = retry.Verification, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
         db.Files.Add(new() { Id = retry.File.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id, FileName = retry.File.FileName });
         db.Operations.Add(new() { Id = intent.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id,
             Action = DownloadAction.Retry, Status = OperationStatus.Pending, RequestedAtUtcTicks = intent.RequestedAt.UtcTicks });

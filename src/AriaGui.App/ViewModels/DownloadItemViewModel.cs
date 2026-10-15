@@ -50,6 +50,13 @@ public sealed class DownloadItemViewModel : ObservableObject
     public string SourceUrl => _entry.Job.Source.AbsoluteUri;
     public string FileName => _entry.Job.DisplayName;
     public string Source => _entry.Job.Source.Host;
+    public string VerificationLabel => _entry.Job.ExpectedChecksum is null ? "Verification: Not supplied" : _entry.Verification switch
+    {
+        VerificationStatus.Verified => "Verification: Matches supplied SHA-256",
+        VerificationStatus.Mismatch => "Verification: SHA-256 mismatch",
+        VerificationStatus.Verifying => "Verification: Checking SHA-256…",
+        _ => "Verification: SHA-256 pending"
+    };
     public string Status => _entry.PendingOperation?.Status switch
     {
         OperationStatus.Uncertain => _entry.Progress.Status == DownloadStatus.Interrupted ? "Needs recovery" : $"Checking {_entry.PendingOperation.Action.ToString().ToLowerInvariant()}…",
@@ -58,10 +65,12 @@ public sealed class DownloadItemViewModel : ObservableObject
             DownloadAction.Pause => "Pausing…", DownloadAction.Resume => "Resuming…", DownloadAction.Remove => "Removing…",
             DownloadAction.Retry => "Retrying…", DownloadAction.Recover => "Recovering…", DownloadAction.Move => "Moving…", _ => "Adding…"
         },
-        _ => _entry.Progress.Status == DownloadStatus.Interrupted ? "Needs recovery" : _entry.Progress.Status.ToString()
+        _ => _entry.Verification == VerificationStatus.Verifying ? "Verifying SHA-256…"
+            : _entry.Progress.Status == DownloadStatus.Interrupted ? "Needs recovery" : _entry.Progress.Status.ToString()
     };
     public string Destination => _entry.Job.Destination;
-    public bool ShowPause => _entry.Progress.Status is DownloadStatus.Downloading or DownloadStatus.Queued;
+    public bool ShowPause => _entry.Verification != VerificationStatus.Verifying &&
+        _entry.Progress.Status is (DownloadStatus.Downloading or DownloadStatus.Queued);
     public bool ShowResume => _entry.Progress.Status == DownloadStatus.Paused;
     public bool ShowRemove => ShowPause || ShowResume;
     public bool ShowRetry => _entry.Progress.Status is DownloadStatus.Failed or DownloadStatus.Removed;
@@ -102,6 +111,7 @@ public sealed class DownloadItemViewModel : ObservableObject
         OnPropertyChanged(nameof(SpeedLabel));
         OnPropertyChanged(nameof(EtaLabel));
         OnPropertyChanged(nameof(ErrorMessage));
+        OnPropertyChanged(nameof(VerificationLabel));
         OnPropertyChanged(nameof(QueueLabel));
         OnPropertyChanged(nameof(FileName)); OnPropertyChanged(nameof(Source)); OnPropertyChanged(nameof(Destination));
         foreach (var name in new[] { nameof(ShowPause), nameof(ShowResume), nameof(ShowRemove), nameof(ShowRetry), nameof(ShowRecover), nameof(ShowQueue), nameof(ShowOpenFile) }) OnPropertyChanged(name);

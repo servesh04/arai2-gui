@@ -40,13 +40,13 @@ public sealed class UpgradeTests
         var policy = await repository.LoadQueuePolicyAsync(default);
         Assert.Equal(migration == Queue ? 4 : 3, policy.Limit);
         if (migration == Queue) { Assert.Equal(6, policy.RequestedLimit); Assert.Equal(OperationStatus.Uncertain, policy.RequestStatus); }
-        using var current = runtime.Db(); Assert.Equal(9, current.Database.GetAppliedMigrations().Count());
+        using var current = runtime.Db(); Assert.Equal(10, current.Database.GetAppliedMigrations().Count());
         Assert.False(current.Database.HasPendingModelChanges());
 
         var backup = Assert.Single(Directory.GetFiles(Path.Combine(runtime.Root, "Backups"), "*.db"));
         using var copy = runtime.Db(backup);
         Assert.Equal(migration == Queue ? 2 : 1, copy.Database.GetAppliedMigrations().Count());
-        Assert.Equal(4, copy.Jobs.Count()); // Data committed to the WAL is present in the backup.
+        Assert.Equal(4, CountLegacyJobs(copy)); // Data committed to the WAL is present in the backup.
         using var connection = new SqliteConnection($"Data Source={backup};Pooling=False"); connection.Open();
         using var check = connection.CreateCommand(); check.CommandText = "PRAGMA quick_check;";
         Assert.Equal("ok", check.ExecuteScalar());
@@ -62,7 +62,7 @@ public sealed class UpgradeTests
         File.WriteAllText(Path.Combine(runtime.Root, "Backups"), "blocked");
         var error = await Assert.ThrowsAsync<DownloadStorageException>(() => runtime.Repository().InitializeAsync(default));
         Assert.Contains("upgrade failed", error.Message);
-        Assert.Single(old.Database.GetAppliedMigrations()); Assert.Single(old.Jobs);
+        Assert.Single(old.Database.GetAppliedMigrations()); Assert.Equal(1, CountLegacyJobs(old));
         Assert.Equal("blocked", File.ReadAllText(Path.Combine(runtime.Root, "Backups")));
     }
 
@@ -76,8 +76,8 @@ public sealed class UpgradeTests
         var error = await Assert.ThrowsAsync<DownloadStorageException>(() => runtime.Repository().InitializeAsync(default));
         var backup = Assert.Single(Directory.GetFiles(Path.Combine(runtime.Root, "Backups"), "*.db"));
         Assert.Contains(backup, error.Message);
-        using var copy = runtime.Db(backup); Assert.Single(copy.Jobs); Assert.Single(copy.Database.GetAppliedMigrations());
-        Assert.Single(old.Jobs); Assert.Single(old.Database.GetAppliedMigrations());
+        using var copy = runtime.Db(backup); Assert.Equal(1, CountLegacyJobs(copy)); Assert.Single(copy.Database.GetAppliedMigrations());
+        Assert.Equal(1, CountLegacyJobs(old)); Assert.Single(old.Database.GetAppliedMigrations());
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class UpgradeTests
         using var db = runtime.Db();
         db.Database.ExecuteSqlRaw("INSERT INTO __EFMigrationsHistory VALUES ('20990101000000_Future', '99.0.0');");
         var error = await Assert.ThrowsAsync<DownloadStorageException>(() => runtime.Repository().InitializeAsync(default));
-        Assert.Contains("newer", error.Message); Assert.Equal(10, db.Database.GetAppliedMigrations().Count());
+        Assert.Contains("newer", error.Message); Assert.Equal(11, db.Database.GetAppliedMigrations().Count());
         Assert.False(Directory.Exists(Path.Combine(runtime.Root, "Backups")));
     }
 
@@ -109,6 +109,14 @@ public sealed class UpgradeTests
         db.Database.ExecuteSqlInterpolated($"INSERT INTO Files VALUES ({file}, {job}, {attempt}, {name + ".bin"}, {100L});");
         if (action is not null) db.Database.ExecuteSqlInterpolated($"INSERT INTO Operations (Id, JobId, AttemptId, Action, Status, RequestedAtUtcTicks) VALUES ({operation}, {job}, {attempt}, {(int)action.Value}, {(int)OperationStatus.Pending}, {ticks});");
         return job;
+    }
+
+    private static int CountLegacyJobs(DownloadDbContext db)
+    {
+        db.Database.OpenConnection();
+        using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM Jobs";
+        return Convert.ToInt32(command.ExecuteScalar());
     }
 
     private sealed class Runtime : IDisposable
