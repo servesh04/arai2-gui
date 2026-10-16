@@ -6,6 +6,7 @@ public sealed class ManagedAria2Client(Aria2ProcessManager manager) : IAria2Clie
 {
     public bool SupportsFreshRestart => manager.SupportsFreshRestart;
     public bool SupportsChecksumVerification => manager.SupportsChecksumVerification;
+    public bool SupportsParallelHttpRanges => manager.SupportsParallelHttpRanges;
     public Task<bool> CanRestartFreshAsync(string engineId, CancellationToken token) => manager.CanRestartFreshAsync(engineId, token);
     public Task<EngineDownload> AddAsync(EngineDownloadRequest request, CancellationToken token) => manager.AddDownloadAsync(request, token);
     public Task<IReadOnlyList<EngineDownload>> GetDownloadsAsync(IReadOnlyList<string> gids, CancellationToken token) => manager.GetDownloadsAsync(gids, token);

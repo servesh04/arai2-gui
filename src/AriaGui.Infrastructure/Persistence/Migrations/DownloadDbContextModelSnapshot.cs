@@ -39,6 +39,11 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("HttpConnections")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<Guid>("JobId")
                         .HasColumnType("TEXT");
 

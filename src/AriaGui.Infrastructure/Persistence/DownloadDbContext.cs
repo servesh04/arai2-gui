@@ -32,6 +32,7 @@ public sealed class DownloadDbContext(DbContextOptions<DownloadDbContext> option
         model.Entity<ExternalRequestRow>().HasOne<JobRow>().WithMany().HasForeignKey(row => row.JobId).OnDelete(DeleteBehavior.Restrict);
         model.Entity<JobRow>().HasIndex(row => row.DestinationKey).IsUnique();
         model.Entity<AttemptRow>().HasIndex(row => row.EngineId).IsUnique();
+        model.Entity<AttemptRow>().Property(row => row.HttpConnections).HasDefaultValue(1);
         model.Entity<AttemptRow>().HasOne<JobRow>().WithMany().HasForeignKey(row => row.JobId);
         model.Entity<AttemptRow>().HasOne<AttemptRow>().WithMany().HasForeignKey(row => row.ParentAttemptId).OnDelete(DeleteBehavior.Restrict);
         model.Entity<FileRow>().HasOne<JobRow>().WithMany().HasForeignKey(row => row.JobId);
@@ -61,6 +62,7 @@ public sealed class AttemptRow
     public string EngineId { get; set; } = "";
     public long StartedAtUtcTicks { get; set; }
     public Guid? ParentAttemptId { get; set; }
+    public int HttpConnections { get; set; } = 1;
     public DownloadStatus Status { get; set; }
     public VerificationStatus Verification { get; set; }
     public long DownloadedBytes { get; set; }

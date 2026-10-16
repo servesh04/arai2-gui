@@ -40,7 +40,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
                 .MaxBy(row => row.RequestedAtUtcTicks);
             return new DownloadEntry(new(job.Id, job.DisplayName, new Uri(job.Source), job.Destination, At(job.CreatedAtUtcTicks),
                     job.ExpectedSha256 is null ? null : new ExpectedChecksum(job.ExpectedSha256, job.ChecksumProvenance ?? 0)),
-                new(attempt.Id, job.Id, attempt.EngineId, At(attempt.StartedAtUtcTicks), attempt.ParentAttemptId),
+                new(attempt.Id, job.Id, attempt.EngineId, At(attempt.StartedAtUtcTicks), attempt.ParentAttemptId, attempt.HttpConnections),
                 new(file.Id, job.Id, attempt.Id, file.FileName, file.TotalBytes),
                 new(attempt.Status, attempt.DownloadedBytes, attempt.TotalBytes, 0),
                 operation is null ? null : new(operation.Id, job.Id, operation.Action, operation.Status, At(operation.RequestedAtUtcTicks), operation.QueuePosition),
@@ -71,6 +71,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
             ExpectedSha256 = entry.Job.ExpectedChecksum?.Sha256, ChecksumProvenance = entry.Job.ExpectedChecksum?.Provenance });
         db.Attempts.Add(new() { Id = entry.Attempt.Id, JobId = entry.Job.Id, EngineId = entry.Attempt.EngineId,
             StartedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, ParentAttemptId = entry.Attempt.ParentAttemptId,
+            HttpConnections = entry.Attempt.HttpConnections,
             Status = entry.Progress.Status, Verification = entry.Verification, UpdatedAtUtcTicks = entry.Attempt.StartedAt.UtcTicks, PolicyHeld = entry.PolicyHeld });
         db.Files.Add(new() { Id = entry.File.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, FileName = entry.File.FileName });
         db.Operations.Add(new() { Id = operation.Id, JobId = entry.Job.Id, AttemptId = entry.Attempt.Id, Action = operation.Action,
@@ -147,6 +148,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         var operation = retry.PendingOperation!;
         db.Attempts.Add(new() { Id = retry.Attempt.Id, JobId = retry.Job.Id, EngineId = retry.Attempt.EngineId,
             StartedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, ParentAttemptId = previous.Attempt.Id,
+            HttpConnections = retry.Attempt.HttpConnections,
             Status = DownloadStatus.Queued, Verification = retry.Verification, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
         db.Files.Add(new() { Id = retry.File.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id, FileName = retry.File.FileName });
         db.Operations.Add(new() { Id = operation.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id,
@@ -170,6 +172,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         var intent = retry.PendingOperation!;
         db.Attempts.Add(new() { Id = retry.Attempt.Id, JobId = retry.Job.Id, EngineId = retry.Attempt.EngineId,
             StartedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, ParentAttemptId = old.Id,
+            HttpConnections = retry.Attempt.HttpConnections,
             Status = DownloadStatus.Queued, Verification = retry.Verification, UpdatedAtUtcTicks = retry.Attempt.StartedAt.UtcTicks, PolicyHeld = retry.PolicyHeld });
         db.Files.Add(new() { Id = retry.File.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id, FileName = retry.File.FileName });
         db.Operations.Add(new() { Id = intent.Id, JobId = retry.Job.Id, AttemptId = retry.Attempt.Id,

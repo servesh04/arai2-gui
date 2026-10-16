@@ -38,6 +38,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
     private SharedRelayRateLimiter? _relayLimiter;
     public bool SupportsFreshRestart => _options.UseContinuityGateway;
     public bool SupportsChecksumVerification => _options.UseContinuityGateway && _options.EnableExpectedChecksumVerification;
+    public bool SupportsParallelHttpRanges => SupportsChecksumVerification && _options.ParallelHttpRanges;
 
     public event EventHandler? UnexpectedExit;
     public int? OwnedProcessId => _process is { HasExited: false } process ? process.Id : null;
@@ -91,7 +92,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                     await _continuityGateway.StartAsync(cancellationToken).ConfigureAwait(false);
                     _continuityTransfers = new(_options.RuntimeDirectory, _continuityGateway);
                     await _continuityTransfers.LoadAsync(cancellationToken, _repository,
-                        _options.EnableExpectedChecksumVerification).ConfigureAwait(false);
+                        _options.EnableExpectedChecksumVerification, SupportsParallelHttpRanges).ConfigureAwait(false);
                 }
                 _observations.Clear(); _nextReconcile = default; _unknownCount = 0;
                 _knownIds = _repository is null ? [] : (await _repository.LoadEngineIdsAsync(cancellationToken).ConfigureAwait(false)).ToHashSet(StringComparer.Ordinal);
@@ -105,7 +106,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                     : await SessionRecoveryPlanner.PrepareAsync(_options.RuntimeDirectory, history, cancellationToken).ConfigureAwait(false);
                 if (_continuityTransfers is not null)
                     plan = await _continuityTransfers.PrepareRestoreAsync(_options.RuntimeDirectory, history, cancellationToken,
-                        _options.EnableExpectedChecksumVerification).ConfigureAwait(false);
+                        _options.EnableExpectedChecksumVerification, SupportsParallelHttpRanges).ConfigureAwait(false);
                 var policy = _repository is null ? new QueuePolicy() : await _repository.LoadQueuePolicyAsync(cancellationToken).ConfigureAwait(false);
                 var bandwidth = _repository is null ? BandwidthPolicy.Default : await _repository.LoadBandwidthPolicyAsync(cancellationToken).ConfigureAwait(false);
                 bandwidth.Validate();
@@ -241,6 +242,9 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
         try
         {
             var rpc = ConnectedClient();
+            if (request.HttpConnections is not (1 or 2 or 4) || request.HttpConnections > 1 &&
+                (!SupportsParallelHttpRanges || _repository is null || request.ExpectedChecksum is null || _continuityTransfers is null))
+                throw new EngineException(EngineFailure.RequestRejected, "Parallel HTTP requires guarded, durable SHA-256 verification and explicit opt-in.");
             if (request.ExpectedChecksum is not null && (_continuityTransfers is null || !_options.EnableExpectedChecksumVerification))
                 throw new EngineException(EngineFailure.RequestRejected, "Expected SHA-256 requires guarded staging.");
             if (request.ExpectedChecksum is not null && _repository is null)
@@ -249,7 +253,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             {
                 var savedSpec = await _repository.GetAsync(expectedJob, token).ConfigureAwait(false);
                 if (savedSpec is null || savedSpec.Attempt.Id != request.ContinuityAttemptId ||
-                    savedSpec.Job.ExpectedChecksum != request.ExpectedChecksum)
+                    savedSpec.Job.ExpectedChecksum != request.ExpectedChecksum || savedSpec.Attempt.HttpConnections != request.HttpConnections)
                     throw new EngineException(EngineFailure.RequestRejected, "Saved checksum specification changed.");
             }
             if (request.FreshRestart && (_continuityTransfers is null || request.LegacyParentEngineId is null || _continuityTransfers.Owns(request.LegacyParentEngineId)))
@@ -793,10 +797,13 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 Path.GetDirectoryName(entry.Job.Destination)!, entry.File.FileName, token).ConfigureAwait(false);
             if (entry.Job.ExpectedChecksum is not null && (!SupportsChecksumVerification || _repository is null))
                 throw new EngineException(EngineFailure.RequestRejected, "Required SHA-256 verification is disabled; attempt preserved for review.");
+            if (entry.Attempt.HttpConnections > 1 && !SupportsParallelHttpRanges)
+                throw new EngineException(EngineFailure.RequestRejected, "Parallel HTTP is disabled; private stage preserved for review.");
             var recoveryRequest = new EngineDownloadRequest(entry.Attempt.EngineId, entry.Job.Source, Directory: target.Directory, FileName: target.FileName,
                 ContinueExisting: target.ContinueExisting, StartPaused: entry.DesiredPaused || entry.PolicyHeld, ExactSourceUrl: entry.ExactSourceUrl,
                 ContinuityJobId: entry.Job.Id, ContinuityAttemptId: entry.Attempt.Id,
-                RequirePublicOrigin: entry.ExactSourceUrl is not null, ExpectedChecksum: entry.Job.ExpectedChecksum);
+                RequirePublicOrigin: entry.ExactSourceUrl is not null, ExpectedChecksum: entry.Job.ExpectedChecksum,
+                HttpConnections: entry.Attempt.HttpConnections);
             if (_repository is not null)
             {
                 var jobRate = await _repository.LoadJobBandwidthPolicyAsync(entry.Job.Id, token).ConfigureAwait(false);

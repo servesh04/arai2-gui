@@ -7,6 +7,13 @@
             <TextBox x:Name="UrlBox" Header="Download URL" Text="{x:Bind ViewModel.InputUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="https://example.com/file.zip" AutomationProperties.AutomationId="DownloadUrl" />
             <TextBox Header="Filename" Text="{x:Bind ViewModel.FileName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Output filename" AutomationProperties.AutomationId="OutputFilename" />
             <TextBox Header="Expected SHA-256 (optional)" Text="{x:Bind ViewModel.ExpectedSha256, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="64 hexadecimal characters from the publisher" AutomationProperties.AutomationId="ExpectedSha256" />
+            <ComboBox Header="HTTP connections" SelectedIndex="{x:Bind ViewModel.HttpConnectionChoice, Mode=TwoWay}"
+                      IsEnabled="{x:Bind ViewModel.ParallelHttpAvailable, Mode=OneWay}"
+                      HorizontalAlignment="Stretch" AutomationProperties.AutomationId="HttpConnectionChoice">
+                <ComboBoxItem Content="1 (standard)" />
+                <ComboBoxItem Content="2 (requires expected SHA-256)" />
+                <ComboBoxItem Content="4 (requires expected SHA-256)" />
+            </ComboBox>
             <TextBox Header="Save to folder" Text="{x:Bind ViewModel.DirectoryPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Destination folder" AutomationProperties.AutomationId="DestinationFolder" />
             <Button Content="Browse…" Command="{x:Bind ViewModel.BrowseCommand}" />
             <InfoBar IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}" IsClosable="False" Severity="Error" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />

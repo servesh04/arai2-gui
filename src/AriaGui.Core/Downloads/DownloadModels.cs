@@ -22,7 +22,7 @@ public sealed record DownloadJob(Guid Id, string DisplayName, Uri Source, string
     ExpectedChecksum? ExpectedChecksum = null);
 
 public sealed record TransferAttempt(Guid Id, Guid JobId, string EngineId, DateTimeOffset StartedAt,
-    Guid? ParentAttemptId = null);
+    Guid? ParentAttemptId = null, int HttpConnections = 1);
 
 public sealed record DownloadFile(Guid Id, Guid JobId, Guid AttemptId, string FileName, long? TotalBytes);
 

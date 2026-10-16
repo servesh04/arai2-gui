@@ -261,7 +261,7 @@ public sealed class RealDownloadTests
         Assert.Single(db.Attempts);
         Assert.Single(db.Files);
         Assert.Equal(OperationStatus.Confirmed, Assert.Single(db.Operations).Status);
-        Assert.Equal(10, db.Database.GetAppliedMigrations().Count());
+        Assert.Equal(11, db.Database.GetAppliedMigrations().Count());
         Assert.False(db.Database.HasPendingModelChanges());
         db.Database.OpenConnection();
         using var command = db.Database.GetDbConnection().CreateCommand();
@@ -456,7 +456,7 @@ public sealed class RealDownloadTests
         public Task<IReadOnlyList<EngineDownload>> GetDownloadsAsync(IReadOnlyList<string> ids, CancellationToken token) => Task.FromResult<IReadOnlyList<EngineDownload>>([]);
     }
 
-    private sealed class DownloadTestRuntime : IDisposable
+    internal sealed class DownloadTestRuntime : IDisposable
     {
         private string Root { get; } = Path.Combine(Path.GetTempPath(), "AriaGUI.DownloadTests", Guid.NewGuid().ToString("N"));
         public string Database => Path.Combine(Root, "data", "downloads.db");

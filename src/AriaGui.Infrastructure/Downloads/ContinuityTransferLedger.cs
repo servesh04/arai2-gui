@@ -15,31 +15,38 @@ internal sealed class ContinuityTransferLedger : IDisposable
         string? Baseline, string? TargetHash, string? ControlHash, string Phase, string? NewHash, long Created, long CapturedLength = -1, bool RequirePublicOrigin = true,
         string? TargetDirectoryIdentity = null, string? LegacyParentGid = null, string? StageDirectoryIdentity = null, string? WorkDirectoryIdentity = null,
         string? WorkFileName = null, string? StageBaseDirectory = null, string? ExpectedSha256 = null,
-        ChecksumProvenance? ChecksumProvenance = null, string? VerifiedFileIdentity = null);
+        ChecksumProvenance? ChecksumProvenance = null, string? VerifiedFileIdentity = null, int HttpConnections = 1);
     private readonly string _root;
     private readonly ContinuityLoopbackGateway _gateway;
     private readonly Action<string>? _fault;
     private readonly Func<long, CancellationToken, Task>? _hashProgress;
     private readonly SemaphoreSlim _hashAdmission = new(2, 2);
     private readonly ConcurrentDictionary<string, VerificationWork> _verification = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, RangeCaptureMarker> _rangeCapture = new(StringComparer.Ordinal);
+    private sealed record RangeCaptureMarker(long PayloadLength, long PayloadWriteTicks, long PayloadChangeTicks, string PayloadIdentity,
+        long ControlLength, long ControlWriteTicks, long ControlChangeTicks, string ControlIdentity, long CompletedBytes);
     private sealed record VerificationResult(bool ValidRepresentation, string? Hash, string? Identity);
     private sealed record VerificationWork(Task<VerificationResult> Task, CancellationTokenSource Cancellation);
     private bool _verificationEnabled = true;
+    private bool _parallelEnabled;
     private readonly Dictionary<string, State> _states = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PublicationDirectories> _leases = new(StringComparer.Ordinal);
     internal ContinuityTransferLedger(string runtime, ContinuityLoopbackGateway gateway, Action<string>? fault = null,
         Func<long, CancellationToken, Task>? hashProgress = null)
     { _root = Path.Combine(Path.GetFullPath(runtime), "continuity", "transfers"); UserRuntimeDirectory.EnsurePrivate(_root); _gateway = gateway; _fault = fault; _hashProgress = hashProgress; }
     public async Task LoadAsync(CancellationToken token, IDownloadRepository? repository = null,
-        bool enableExpectedChecksumVerification = true)
+        bool enableExpectedChecksumVerification = true, bool enableParallelHttpRanges = false)
     {
         _verificationEnabled = enableExpectedChecksumVerification;
+        _parallelEnabled = enableParallelHttpRanges;
         try
         {
             foreach (var path in Directory.EnumerateFiles(_root, "*.json").Take(4097))
             {
                 if (_states.Count >= 4096 || new FileInfo(path).Length > 65536 || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Invalid transfer journal.");
                 var state = JsonSerializer.Deserialize<State>(await File.ReadAllTextAsync(path, token)) ?? throw new IOException("Invalid transfer journal.");
+                if (!string.Equals(Path.GetFileName(path), state.Gid + ".json", StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("Transfer journal GID does not match its durable path.");
                 Validate(state);
                 var missingProof = false;
                 if (repository is not null)
@@ -51,13 +58,15 @@ internal sealed class ContinuityTransferLedger : IDisposable
                     missingProof = saved is null;
                     if (saved is not null && (saved.Job.Id != state.Job || saved.Attempt.Id != state.Attempt ||
                         saved.Job.ExpectedChecksum?.Sha256 != state.ExpectedSha256 ||
-                        saved.Job.ExpectedChecksum?.Provenance != state.ChecksumProvenance))
+                        saved.Job.ExpectedChecksum?.Provenance != state.ChecksumProvenance ||
+                        saved.Attempt.HttpConnections != state.HttpConnections))
                         throw new IOException("Transfer journal conflicts with durable checksum intent.");
                 }
                 _states.Add(state.Gid, state);
                 if (state.Phase == "complete-published") { Complete(state); continue; }
                 HoldLease(state);
-                if (missingProof || state.ExpectedSha256 is not null && !enableExpectedChecksumVerification) continue;
+                if (missingProof || state.ExpectedSha256 is not null && !enableExpectedChecksumVerification ||
+                    state.Version == 2 && !enableParallelHttpRanges) continue;
                 if (state.Phase == "verification-confirmed") await ConfirmPublicationAsync(state, token);
                 if (state.Phase is "partial-prepared" or "complete-prepared") await RecoverPublicationAsync(state, token);
             }
@@ -94,7 +103,8 @@ internal sealed class ContinuityTransferLedger : IDisposable
         if (!_states.TryGetValue(gid, out var state) || state.Phase != "complete-published" ||
             state.Job != entry.Job.Id || state.Attempt != entry.Attempt.Id ||
             state.ExpectedSha256 != entry.Job.ExpectedChecksum?.Sha256 ||
-            state.ChecksumProvenance != entry.Job.ExpectedChecksum?.Provenance) return null;
+            state.ChecksumProvenance != entry.Job.ExpectedChecksum?.Provenance ||
+            state.HttpConnections != entry.Attempt.HttpConnections) return null;
         Validate(state);
         if (entry.Progress.Status != DownloadStatus.Completed && state.ExpectedSha256 is not null)
         {
@@ -122,7 +132,9 @@ internal sealed class ContinuityTransferLedger : IDisposable
             state.NewHash != state.ExpectedSha256) throw new IOException("Unverified required completion journal.");
         if (state.ExpectedSha256 is not null && state.Phase is ("verification-confirmed" or "complete-prepared" or "complete-published") &&
             string.IsNullOrEmpty(state.VerifiedFileIdentity)) throw new IOException("Required verification lacks file identity.");
-        if (state.Version != 1 || state.Job == Guid.Empty || state.Attempt == Guid.Empty || state.Gid.Length != 16 || !state.Gid.All(Uri.IsHexDigit)
+        if (state.Version is not (1 or 2) || state.HttpConnections is not (1 or 2 or 4) ||
+            (state.Version == 1) != (state.HttpConnections == 1) || state.Version == 2 && state.ExpectedSha256 is null ||
+            state.Job == Guid.Empty || state.Attempt == Guid.Empty || state.Gid.Length != 16 || !state.Gid.All(Uri.IsHexDigit)
             || !Path.IsPathFullyQualified(state.Target) || !WindowsFileNamePolicy.IsValid(Path.GetFileName(state.Target))
             || !WindowsFileNamePolicy.IsValid(FileName(state)) || !Path.IsPathFullyQualified(state.Work)) throw new IOException("Invalid transfer identity.");
         if (state.StageBaseDirectory is not null && !IsDestinationAncestor(state.Target, state.StageBaseDirectory))
@@ -140,6 +152,9 @@ internal sealed class ContinuityTransferLedger : IDisposable
     }
     public async Task<EngineDownloadRequest> PrepareAsync(EngineDownloadRequest request, CancellationToken token, bool verifiedLegacyFresh = false)
     {
+        if (request.HttpConnections is not (1 or 2 or 4) || request.HttpConnections > 1 &&
+            (!_parallelEnabled || !_verificationEnabled || request.ExpectedChecksum is null))
+            throw new IOException("Parallel transfer policy is unavailable.");
         if (request.ContinuityJobId is not Guid job || request.ContinuityAttemptId is not Guid attempt || job == Guid.Empty || attempt == Guid.Empty) throw new IOException("Durable transfer identity required.");
         if (_states.TryGetValue(request.EngineId, out var published) && published.Phase == "complete-published")
             throw new IOException("Published transfer cannot be dispatched again.");
@@ -154,7 +169,8 @@ internal sealed class ContinuityTransferLedger : IDisposable
             if (existing.TargetDirectoryIdentity is null || existing.TargetDirectoryIdentity != parentDirectories.Identity(Path.GetDirectoryName(target)!))
                 throw new IOException("Destination directory ownership changed.");
             if (existing.Job != job || existing.Attempt != attempt || existing.Target != target || existing.Source != source ||
-                existing.ExpectedSha256 != request.ExpectedChecksum?.Sha256 || existing.ChecksumProvenance != request.ExpectedChecksum?.Provenance)
+                existing.ExpectedSha256 != request.ExpectedChecksum?.Sha256 || existing.ChecksumProvenance != request.ExpectedChecksum?.Provenance ||
+                existing.HttpConnections != request.HttpConnections)
                 throw new IOException("Transfer journal conflict.");
             if (request.RequirePublicOrigin && !existing.RequirePublicOrigin) throw new IOException("Origin policy conflict.");
             HoldLease(existing);
@@ -170,8 +186,8 @@ internal sealed class ContinuityTransferLedger : IDisposable
         request.ExpectedChecksum?.Validate();
         if (previous is not null && (previous.ExpectedSha256 != request.ExpectedChecksum?.Sha256 ||
             previous.ChecksumProvenance != request.ExpectedChecksum?.Provenance)) throw new IOException("Immutable checksum specification changed.");
-        var state = new State(1, job, attempt, request.EngineId, source, target, "", null, previous?.TargetHash, previous?.ControlHash, "working", null, DateTimeOffset.UtcNow.UtcTicks,
-            ExpectedSha256: request.ExpectedChecksum?.Sha256, ChecksumProvenance: request.ExpectedChecksum?.Provenance);
+        var state = new State(request.HttpConnections == 1 ? 1 : 2, job, attempt, request.EngineId, source, target, "", null, previous?.TargetHash, previous?.ControlHash, "working", null, DateTimeOffset.UtcNow.UtcTicks,
+            ExpectedSha256: request.ExpectedChecksum?.Sha256, ChecksumProvenance: request.ExpectedChecksum?.Provenance, HttpConnections: request.HttpConnections);
         // The pinned engine is not long-path aware. Private payload names need
         // not equal the eventual public name; retain the choice across retries
         // so control and snapshot ownership never changes beneath continuation.
@@ -192,6 +208,8 @@ internal sealed class ContinuityTransferLedger : IDisposable
         // A digest mismatch invalidates the whole old representation. Repair is
         // a fresh stage even if the failed attempt descended from a partial.
         var retained = previous?.Phase == "verification-mismatch" ? null : previous?.Baseline;
+        if (retained is not null && previous!.Version != state.Version)
+            throw new IOException("Retained partial cannot change route version.");
         if (retained is not null)
         {
             if (await _gateway.GetRepresentationAsync(job, previous!.Attempt, token) is null) throw new IOException("Retained representation metadata missing.");
@@ -208,8 +226,12 @@ internal sealed class ContinuityTransferLedger : IDisposable
         if (stageDirectories.Identity(Path.GetDirectoryName(target)!) != state.TargetDirectoryIdentity) throw new IOException("Destination directory ownership changed.");
         parentDirectories.Dispose();
         state = state with { StageDirectoryIdentity = stageDirectories.Identity(root), WorkDirectoryIdentity = stageDirectories.Identity(state.Work) };
-        await _gateway.RegisterAsync(job, attempt, source, retained is not null, token, state.RequirePublicOrigin,
-            freshAttempt: previous?.Phase == "verification-mismatch");
+        if (state.Version == 2)
+            await _gateway.RegisterRangeExperimentalAsync(job, attempt, source, token, state.RequirePublicOrigin,
+                retained is not null, previous?.Phase == "verification-mismatch");
+        else
+            await _gateway.RegisterAsync(job, attempt, source, retained is not null, token, state.RequirePublicOrigin,
+                freshAttempt: previous?.Phase == "verification-mismatch");
         await SaveAsync(state, token); HoldLease(state); return Routed(request, state);
     }
     private EngineDownloadRequest Routed(EngineDownloadRequest request, State state) => request with
@@ -234,7 +256,8 @@ internal sealed class ContinuityTransferLedger : IDisposable
     public bool Owns(string gid) => _states.ContainsKey(gid);
     public bool Owns(string gid, Guid jobId, Guid attemptId) =>
         _states.TryGetValue(gid, out var state) && state.Job == jobId && state.Attempt == attemptId && state.Phase != "complete-published";
-    internal bool CanResume(string gid) => _states.TryGetValue(gid, out var state) && state.Phase != "complete-published";
+    internal bool CanResume(string gid) => _states.TryGetValue(gid, out var state) && state.Phase != "complete-published"
+        && (state.Version == 1 || _parallelEnabled && _verificationEnabled);
     internal async Task<bool> VerifySurvivorAsync(Aria2RpcClient rpc, IReadOnlyList<DownloadEntry> history, CancellationToken token, IDownloadRepository? repository = null)
     {
         var inventory = await rpc.GetInventoryAsync(token, 4096);
@@ -244,15 +267,19 @@ internal sealed class ContinuityTransferLedger : IDisposable
             if (!_states.TryGetValue(gid, out var state)) return false;
             Validate(state);
             if (state.Phase != "complete-published" && !HasDestinationIdentity(state)) return false;
-            if (!_gateway.MatchesRoute(state.Job, state.Attempt, state.Source, state.RequirePublicOrigin)) return false;
+            if (!_gateway.MatchesRoute(state.Job, state.Attempt, state.Source, state.RequirePublicOrigin, state.Version)) return false;
+            var representation = await _gateway.GetRepresentationAsync(state.Job, state.Attempt, token).ConfigureAwait(false);
+            if (representation is not null && (state.Version == 2) != (representation.Version == 3)) return false;
             var entry = history.SingleOrDefault(row => row.Attempt.EngineId == gid);
             var historical = entry is null;
             if (historical && repository is not null) entry = await repository.GetAttemptAsync(gid, token);
             if (entry is null || entry.ExactSourceUrl is not null && !state.RequirePublicOrigin || state.Job != entry.Job.Id || state.Attempt != entry.Attempt.Id || state.Source != (entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri)
                 || state.ExpectedSha256 != entry.Job.ExpectedChecksum?.Sha256 || state.ChecksumProvenance != entry.Job.ExpectedChecksum?.Provenance
+                || state.HttpConnections != entry.Attempt.HttpConnections || state.Version == 2 && !_parallelEnabled
                 || !string.Equals(state.Target, entry.Job.Destination, StringComparison.OrdinalIgnoreCase)) return false;
             var observed = await rpc.FindAsync(gid, token);
             if (observed is null || historical && (!DownloadBrowsing.IsTerminal(entry.Progress.Status) || !DownloadBrowsing.IsTerminal(observed.Progress.Status))) return false;
+            if (state.Version == 2 && representation is null && observed.Progress.DownloadedBytes > 0) return false;
             // The publication journal may precede the coordinator's Completed commit.
             // Authenticated engine completion plus the durable publication receipt
             // permits that crash window to converge; an active engine never does.
@@ -273,28 +300,57 @@ internal sealed class ContinuityTransferLedger : IDisposable
         return true;
     }
     internal async Task<SessionRecoveryPlan> PrepareRestoreAsync(string runtime, IReadOnlyList<DownloadEntry> history, CancellationToken token,
-        bool enableExpectedChecksumVerification = true)
+        bool enableExpectedChecksumVerification = true, bool enableParallelHttpRanges = false)
     {
         var entries = new List<DownloadEntry>(); var lines = new List<string>(); var blocked = 0;
         var formatted = new Dictionary<string, string[]>(StringComparer.Ordinal);
         foreach (var entry in history.Where(row => !row.DesiredRemoved && row.Progress.Status is not (DownloadStatus.Completed or DownloadStatus.Failed or DownloadStatus.Removed)))
         {
             if (entry.Job.ExpectedChecksum is not null && !enableExpectedChecksumVerification) { blocked++; continue; }
+            if (entry.Attempt.HttpConnections > 1 && !enableParallelHttpRanges) { blocked++; continue; }
             if (!_states.TryGetValue(entry.Attempt.EngineId, out var state)) { blocked++; continue; }
             Validate(state);
             if (!HasDestinationIdentity(state)) { blocked++; continue; }
-            if (!_gateway.MatchesRoute(state.Job, state.Attempt, state.Source, state.RequirePublicOrigin)) { blocked++; continue; }
+            if (!_gateway.MatchesRoute(state.Job, state.Attempt, state.Source, state.RequirePublicOrigin, state.Version)) { blocked++; continue; }
             if (entry.ExactSourceUrl is not null && !state.RequirePublicOrigin || state.Job != entry.Job.Id || state.Attempt != entry.Attempt.Id || state.Source != (entry.ExactSourceUrl ?? entry.Job.Source.AbsoluteUri)
                 || state.ExpectedSha256 != entry.Job.ExpectedChecksum?.Sha256 || state.ChecksumProvenance != entry.Job.ExpectedChecksum?.Provenance
+                || state.HttpConnections != entry.Attempt.HttpConnections
                 || !string.Equals(state.Target, entry.Job.Destination, StringComparison.OrdinalIgnoreCase) || state.Phase == "complete-published") { blocked++; continue; }
             var work = Path.Combine(state.Work, FileName(state));
             var representation = await _gateway.GetRepresentationAsync(state.Job, state.Attempt, token);
+            if (state.Version == 2)
+            {
+                if (representation is not { Version: 3, Resumable: true } && representation is not null)
+                { blocked++; continue; }
+                var checkpoints = new RangeCheckpointStore(Path.Combine(_root, "range-checkpoints"), state.Attempt);
+                RetainedPartialStage? restored;
+                try { restored = await checkpoints.RestoreCopyAsync(StageRoot(state), token).ConfigureAwait(false); }
+                catch (IOException) { blocked++; continue; }
+                if (restored is null && (representation is not null || File.Exists(work) || File.Exists(work + ".aria2")))
+                { blocked++; continue; }
+                if (restored is not null)
+                {
+                    if (representation is null) { blocked++; continue; }
+                    var checkpoint = await checkpoints.LoadAsync(token).ConfigureAwait(false);
+                    if (checkpoint?.TotalLength != representation.Length) { blocked++; continue; }
+                    state = state with { Work = restored.Directory, WorkDirectoryIdentity = null };
+                    using (var lease = new PublicationDirectories(Path.GetDirectoryName(state.Target)!, StageRoot(state), state.Work, _root))
+                        state = state with { WorkDirectoryIdentity = lease.Identity(state.Work) };
+                    await SaveAsync(state, token).ConfigureAwait(false);
+                    if (_leases.Remove(state.Gid, out var oldLease)) oldLease.Dispose();
+                    HoldLease(state);
+                    work = Path.Combine(state.Work, FileName(state));
+                }
+            }
+            else if (representation?.Version == 3) { blocked++; continue; }
             if (representation is { Resumable: false } || (File.Exists(work) || File.Exists(work + ".aria2")) && representation is not { Resumable: true }) { blocked++; continue; }
             if (state.Work.IndexOfAny(['\r', '\n']) >= 0) { blocked++; continue; }
             entries.Add(entry);
             formatted.Add(state.Gid, [_gateway.GetAddress(state.Attempt).AbsoluteUri, $" gid={state.Gid}", $" dir={state.Work}", $" out={FileName(state)}",
                 " pause=true", $" continue={(File.Exists(work + ".aria2") ? "true" : "false")}", " always-resume=true", " allow-overwrite=false",
-                " auto-file-renaming=false", " content-disposition=false", " follow-torrent=false", " follow-metalink=false", " split=1", " max-connection-per-server=1", ""]);
+                " auto-file-renaming=false", " content-disposition=false", " follow-torrent=false", " follow-metalink=false",
+                $" split={state.HttpConnections}", $" max-connection-per-server={state.HttpConnections}",
+                state.HttpConnections > 1 ? " min-split-size=1M" : "", ""]);
         }
         foreach (var entry in entries.Where(row => row.PendingOperation?.Action == DownloadAction.Move).ToArray())
         {
@@ -319,6 +375,9 @@ internal sealed class ContinuityTransferLedger : IDisposable
         if (state.ExpectedSha256 is not null && !_verificationEnabled && state.Phase != "complete-published")
             return download with { Progress = new(DownloadStatus.Interrupted, download.Progress.DownloadedBytes, download.Progress.TotalBytes, 0),
                 ErrorMessage = "Required SHA-256 verification is disabled; private stage preserved for review.", Verification = VerificationStatus.Pending };
+        if (state.Version == 2 && !_parallelEnabled && state.Phase != "complete-published")
+            return download with { Progress = new(DownloadStatus.Interrupted, download.Progress.DownloadedBytes, download.Progress.TotalBytes, 0),
+                ErrorMessage = "Parallel HTTP is disabled; private stage preserved for review.", Verification = VerificationStatus.Pending };
         if (state.Phase == "complete-published")
         {
             Validate(state);
@@ -332,7 +391,38 @@ internal sealed class ContinuityTransferLedger : IDisposable
         if (state.TargetDirectoryIdentity is null || directories.Identity(Path.GetDirectoryName(state.Target)!) != state.TargetDirectoryIdentity)
             throw new IOException("Destination directory ownership changed.");
         Validate(state);
-        if (!_gateway.MatchesRoute(state.Job, state.Attempt, state.Source, state.RequirePublicOrigin)) throw new IOException("Transport ownership changed.");
+        if (!_gateway.MatchesRoute(state.Job, state.Attempt, state.Source, state.RequirePublicOrigin, state.Version)) throw new IOException("Transport ownership changed.");
+        var parallelRepresentation = state.Version == 2
+            ? await _gateway.GetRepresentationAsync(state.Job, state.Attempt, token) : null;
+        if (state.Version == 1 && await _gateway.GetRepresentationAsync(state.Job, state.Attempt, token) is { Version: 3 })
+            return download with { Progress = new(DownloadStatus.Interrupted, download.Progress.DownloadedBytes, download.Progress.TotalBytes, 0),
+                ErrorMessage = "Range representation conflicts with the sequential attempt; private stage preserved for review." };
+        if (state.Version == 2 && parallelRepresentation is not null and not { Version: 3 }
+            || state.Version == 2 && parallelRepresentation is null &&
+                (download.Progress.DownloadedBytes > 0 || download.Progress.Status == DownloadStatus.Completed))
+            throw new IOException("Parallel representation is missing or changed.");
+        if (state.Version == 2 && download.Progress.Status is DownloadStatus.Paused or DownloadStatus.Failed or DownloadStatus.Removed)
+        {
+            var work = Path.Combine(state.Work, FileName(state));
+            if (File.Exists(work) && File.Exists(work + ".aria2"))
+            {
+                var payload = new FileInfo(work); var control = new FileInfo(work + ".aria2");
+                RangeCaptureMarker marker;
+                using (var payloadIdentity = new IdentifiedFile(work))
+                using (var controlIdentity = new IdentifiedFile(work + ".aria2"))
+                    marker = new RangeCaptureMarker(payload.Length, payload.LastWriteTimeUtc.Ticks,
+                        payloadIdentity.ChangeTimeTicks, payloadIdentity.Identity,
+                        control.Length, control.LastWriteTimeUtc.Ticks, controlIdentity.ChangeTimeTicks, controlIdentity.Identity,
+                        download.Progress.DownloadedBytes);
+                if (!_rangeCapture.TryGetValue(state.Gid, out var prior) || prior != marker)
+                {
+                    await new RangeCheckpointStore(Path.Combine(_root, "range-checkpoints"), state.Attempt)
+                        .CaptureAsync(work, token, download.Progress.DownloadedBytes);
+                    _rangeCapture[state.Gid] = marker;
+                }
+            }
+            return download;
+        }
         if (download.Progress.Status == DownloadStatus.Completed)
         {
             if (state.ExpectedSha256 is not null)
@@ -380,7 +470,7 @@ internal sealed class ContinuityTransferLedger : IDisposable
             }
             return download with { Verification = state.ExpectedSha256 is null ? VerificationStatus.NotSupplied : VerificationStatus.Verified };
         }
-        else if (download.Progress.Status is DownloadStatus.Paused or DownloadStatus.Failed or DownloadStatus.Removed)
+        else if (state.Version == 1 && download.Progress.Status is DownloadStatus.Paused or DownloadStatus.Failed or DownloadStatus.Removed)
         {
             var work = Path.Combine(state.Work, FileName(state));
             if (File.Exists(work) && new FileInfo(work).Length > 0 && new FileInfo(work).Length != state.CapturedLength

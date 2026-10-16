@@ -19,6 +19,115 @@ public sealed class ContinuityLoopbackGatewayTests : IDisposable
             return Task.FromResult(response);
         }
     }
+    private sealed class BoundedOrigin(string resource, byte[] bytes) : IContinuityOriginTransport
+    {
+        public int Calls;
+        public Task<HttpResponseMessage> OpenAsync(long offset, string? ifMatch, CancellationToken token)
+        {
+            Interlocked.Increment(ref Calls);
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            { RequestMessage = new(HttpMethod.Get, resource), Content = new ByteArrayContent(bytes) };
+            response.Headers.ETag = new("\"stable\"");
+            return Task.FromResult(response);
+        }
+        public Task<HttpResponseMessage> OpenRangeAsync(long start, long end, string? ifMatch, CancellationToken token)
+        {
+            Interlocked.Increment(ref Calls);
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            { RequestMessage = new(HttpMethod.Get, resource), Content = new ByteArrayContent(bytes[(int)start..((int)end + 1)]) };
+            response.Headers.ETag = new("\"stable\"");
+            response.Content.Headers.ContentRange = new(start, end, bytes.Length);
+            return Task.FromResult(response);
+        }
+    }
+    [Fact]
+    public async Task Parallel_route_record_rejects_foreign_attempt_filename_on_restart()
+    {
+        const string source = "https://example.invalid/range.bin";
+        var job = Guid.NewGuid(); var attempt = Guid.NewGuid();
+        await using (var first = new ContinuityLoopbackGateway(_root, () => Environment.ProcessId,
+            _ => new BoundedOrigin(source, new byte[100]), true))
+        {
+            await first.StartAsync(default);
+            await first.RegisterRangeExperimentalAsync(job, attempt, source, default);
+        }
+        var routePath = Path.Combine(_root, "continuity", "route-" + attempt.ToString("N") + ".json");
+        var record = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(routePath))!;
+        record["AttemptId"] = Guid.NewGuid().ToString();
+        await File.WriteAllTextAsync(routePath, record.ToJsonString());
+        await using var restarted = new ContinuityLoopbackGateway(_root, () => Environment.ProcessId,
+            _ => new BoundedOrigin(source, new byte[100]), true);
+        await Assert.ThrowsAsync<IOException>(() => restarted.StartAsync(default));
+    }
+    [Fact]
+    public async Task Experimental_v2_route_initializes_with_aria2_style_unbounded_get_then_serves_exact_ranges()
+    {
+        const string source = "https://example.invalid/range.bin";
+        var bytes = Enumerable.Range(0, 100).Select(value => (byte)value).ToArray();
+        var origin = new BoundedOrigin(source, bytes);
+        await using var gateway = new ContinuityLoopbackGateway(_root, () => Environment.ProcessId, _ => origin, true);
+        await gateway.StartAsync(default);
+        var address = await gateway.RegisterRangeExperimentalAsync(Guid.NewGuid(), Guid.NewGuid(), source, default);
+        using var client = new HttpClient(new SocketsHttpHandler { UseProxy = false });
+        using (var unbounded = await client.GetAsync(address))
+        {
+            Assert.Equal(HttpStatusCode.OK, unbounded.StatusCode);
+            Assert.Equal(bytes, await unbounded.Content.ReadAsByteArrayAsync());
+        }
+        async Task<byte[]> ReadAsync(long start, long end)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, address);
+            request.Headers.Range = new(start, end);
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.PartialContent, response.StatusCode);
+            Assert.Equal($"bytes {start}-{end}/{bytes.Length}", response.Content.Headers.ContentRange?.ToString());
+            return await response.Content.ReadAsByteArrayAsync();
+        }
+        var results = await Task.WhenAll(ReadAsync(0, 49), ReadAsync(50, 99));
+        Assert.Equal(bytes, results[0].Concat(results[1]).ToArray());
+        Assert.Equal(3, origin.Calls);
+    }
+    [Theory]
+    [InlineData(0, 9)]
+    [InlineData(20, 29)]
+    public async Task Sequential_route_rejects_bounded_ranges_before_origin_contact(long start, long end)
+    {
+        const string source = "https://example.invalid/range.bin";
+        var origin = new Origin(source);
+        await using var gateway = new ContinuityLoopbackGateway(_root, () => Environment.ProcessId, _ => origin, true);
+        await gateway.StartAsync(default);
+        var address = await gateway.RegisterAsync(Guid.NewGuid(), Guid.NewGuid(), source, false, default);
+        using var client = new HttpClient(new SocketsHttpHandler { UseProxy = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, address);
+        request.Headers.Range = new(start, end);
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
+        Assert.Equal(0, origin.Calls);
+    }
+    [Fact]
+    public async Task Sequential_resume_accepts_only_a_bounded_tail_ending_at_authenticated_EOF()
+    {
+        const string source = "https://example.invalid/range.bin";
+        var origin = new Origin(source);
+        await using var gateway = new ContinuityLoopbackGateway(_root, () => Environment.ProcessId, _ => origin, true);
+        await gateway.StartAsync(default);
+        var address = await gateway.RegisterAsync(Guid.NewGuid(), Guid.NewGuid(), source, false, default);
+        using var client = new HttpClient(new SocketsHttpHandler { UseProxy = false });
+        Assert.Equal(100, (await client.GetByteArrayAsync(address)).Length);
+        using var invalid = new HttpRequestMessage(HttpMethod.Get, address);
+        invalid.Headers.Range = new(20, 98);
+        using var denied = await client.SendAsync(invalid);
+        Assert.Equal(HttpStatusCode.PreconditionFailed, denied.StatusCode);
+        Assert.Equal(1, origin.Calls);
+        using var valid = new HttpRequestMessage(HttpMethod.Get, address);
+        valid.Headers.Range = new(20, 99);
+        using var accepted = await client.SendAsync(valid);
+        Assert.Equal(HttpStatusCode.PartialContent, accepted.StatusCode);
+        Assert.Equal("bytes 20-99/100", accepted.Content.Headers.ContentRange?.ToString());
+        Assert.Equal(80, (await accepted.Content.ReadAsByteArrayAsync()).Length);
+        Assert.Equal(2, origin.Calls);
+    }
+
     [Fact]
     public async Task Manual_lan_route_survives_restart_while_browser_route_never_contacts_private_origin()
     {

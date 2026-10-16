@@ -136,7 +136,7 @@ public sealed class PreparedTakeoverTests
     {
         using var fixture = new Fixture(); using (var old = fixture.Db()) old.GetService<IMigrator>().Migrate("20261011123234_ExternalIntake");
         var services = fixture.Services(); var request = fixture.Request(); await services.Takeover.PrepareAsync(request);
-        using var db = fixture.Db(); Assert.Equal(10, db.Database.GetAppliedMigrations().Count()); Assert.False(db.Database.HasPendingModelChanges());
+        using var db = fixture.Db(); Assert.Equal(11, db.Database.GetAppliedMigrations().Count()); Assert.False(db.Database.HasPendingModelChanges());
         Assert.Single(Directory.GetFiles(Path.Combine(fixture.Root, "Backups"), "*.db"));
         var key = Path.Combine(fixture.Output, "fixture.bin").ToUpperInvariant();
         await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Jobs (Id,DisplayName,Source,Destination,DestinationKey,CreatedAtUtcTicks) VALUES ({Guid.NewGuid()},{"synthetic"},{"https://example.invalid/file"},{key},{key},{fixture.Clock.Now.UtcTicks})"));

@@ -74,7 +74,13 @@ public sealed class PublicHttpOriginTransport : IContinuityOriginTransport, IDis
         try { await socket.ConnectAsync(endpoint, token); return new NetworkStream(socket, ownsSocket: true); }
         catch { socket.Dispose(); throw; }
     }
-    public async Task<HttpResponseMessage> OpenAsync(long offset, string? ifMatch, CancellationToken token)
+    public Task<HttpResponseMessage> OpenAsync(long offset, string? ifMatch, CancellationToken token) => OpenCoreAsync(offset, null, ifMatch, token);
+    public Task<HttpResponseMessage> OpenRangeAsync(long start, long end, string? ifMatch, CancellationToken token)
+    {
+        if (start < 0 || end < start) throw new ArgumentOutOfRangeException(nameof(start));
+        return OpenCoreAsync(start, end, ifMatch, token);
+    }
+    private async Task<HttpResponseMessage> OpenCoreAsync(long offset, long? end, string? ifMatch, CancellationToken token)
     {
         var source = _source; var seen = new HashSet<string>(StringComparer.Ordinal);
         for (var hop = 0; ; hop++)
@@ -82,11 +88,16 @@ public sealed class PublicHttpOriginTransport : IContinuityOriginTransport, IDis
             if (!seen.Add(source.AbsoluteUri)) throw new HttpRequestException("Origin redirect loop denied.");
             var request = new HttpRequestMessage(HttpMethod.Get, source);
             request.Headers.AcceptEncoding.ParseAdd("identity");
-            if (offset > 0) request.Headers.Range = new RangeHeaderValue(offset, null);
+            if (offset > 0 || end is not null) request.Headers.Range = new RangeHeaderValue(offset, end);
             if (ifMatch is not null) request.Headers.IfMatch.ParseAdd(ifMatch);
-            HttpResponseMessage response;
-            try { response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token); }
-            catch { request.Dispose(); throw; }
+            var lease = await OriginConnectionBudget.AcquireAsync(source.Host, source.Port, token).ConfigureAwait(false);
+            HttpResponseMessage? response = null;
+            try
+            {
+                response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+                response.Content = new BudgetedResponseContent(response.Content, lease);
+            }
+            catch { response?.Dispose(); lease.Dispose(); request.Dispose(); throw; }
             if (response.StatusCode is not (HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect))
                 return response;
             var location = response.Headers.Location;

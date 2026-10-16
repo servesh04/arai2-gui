@@ -8,6 +8,7 @@ namespace AriaGui.Application.Downloads;
 public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRuntimeStore store, TimeProvider clock,
     IDownloadRepository repository, IDownloadDestination destination)
 {
+    public bool SupportsParallelHttpRanges => engine.SupportsParallelHttpRanges;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly HashSet<Guid> _inFlight = [];
     private readonly Dictionary<Guid, DateTimeOffset> _checkpoints = [];
@@ -51,20 +52,23 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
     }
 
     public async Task AddAsync(string url, bool unknownSize = false, CancellationToken cancellationToken = default,
-        string directory = "", string? fileName = null, string? expectedSha256 = null)
+        string directory = "", string? fileName = null, string? expectedSha256 = null, int httpConnections = 1)
     {
         if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var source)
             || (source.Scheme != Uri.UriSchemeHttp && source.Scheme != Uri.UriSchemeHttps)
             || string.IsNullOrWhiteSpace(source.Host)) throw new ArgumentException("Enter a complete HTTP or HTTPS URL.");
         if (!string.IsNullOrEmpty(source.UserInfo)) throw new ArgumentException("Use a URL without embedded credentials.");
         var expected = string.IsNullOrEmpty(expectedSha256) ? null : ExpectedChecksum.FromManualInput(expectedSha256);
+        if (httpConnections is not (1 or 2 or 4)) throw new ArgumentException("Choose 1, 2, or 4 HTTP connections.");
+        if (httpConnections > 1 && (expected is null || !engine.SupportsParallelHttpRanges))
+            throw new DownloadRequestException("Parallel HTTP requires guarded verification and an expected SHA-256.");
         if (expected is not null && !engine.SupportsChecksumVerification)
             throw new DownloadRequestException("Expected SHA-256 requires guarded private staging.");
         await InitializeAsync(cancellationToken).ConfigureAwait(false);
         if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(directory, cancellationToken).ConfigureAwait(false);
         var target = await destination.ValidateAsync(source, directory, fileName, cancellationToken).ConfigureAwait(false);
         if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(target.Directory, cancellationToken).ConfigureAwait(false);
-        var entry = BuildIntent(source, target, clock.GetUtcNow(), expected);
+        var entry = BuildIntent(source, target, clock.GetUtcNow(), expected, httpConnections);
         if (_schedule.Enabled) entry = entry with { PolicyHeld = true };
         var jobId = entry.Job.Id;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -81,10 +85,10 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
         await DispatchAddAsync(entry, unknownSize, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static DownloadEntry BuildIntent(Uri source, DownloadTarget target, DateTimeOffset now, ExpectedChecksum? expected = null)
+    internal static DownloadEntry BuildIntent(Uri source, DownloadTarget target, DateTimeOffset now, ExpectedChecksum? expected = null, int httpConnections = 1)
     {
         var jobId = Guid.NewGuid(); var attemptId = Guid.NewGuid();
-        return new(new(jobId, target.FileName, source, target.FullPath, now, expected), new(attemptId, jobId, NewGid(), now),
+        return new(new(jobId, target.FileName, source, target.FullPath, now, expected), new(attemptId, jobId, NewGid(), now, HttpConnections: httpConnections),
             new(Guid.NewGuid(), jobId, attemptId, target.FileName, null), new(DownloadStatus.Queued, 0, null, 0),
             new(Guid.NewGuid(), jobId, DownloadAction.Add, OperationStatus.Pending, now),
             Verification: expected is null ? VerificationStatus.NotSupplied : VerificationStatus.Pending);
@@ -101,7 +105,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                 // ExactSourceUrl is assigned by external intake and restored from its durable ledger.
                 // Request JSON cannot select the manual-origin policy.
                 RequirePublicOrigin: entry.ExactSourceUrl is not null, StartPaused: entry.PolicyHeld,
-                ExpectedChecksum: entry.Job.ExpectedChecksum), cancellationToken).ConfigureAwait(false);
+                ExpectedChecksum: entry.Job.ExpectedChecksum, HttpConnections: entry.Attempt.HttpConnections), cancellationToken).ConfigureAwait(false);
             await CommitAsync(ApplyObservation(entry, result), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -260,6 +264,8 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                     ErrorMessage = entry.DesiredRemoved ? "Removal intent reconciled: this owned engine has no running transfer. Files were kept."
                         : entry.Job.ExpectedChecksum is not null && !engine.SupportsChecksumVerification
                             ? "Required SHA-256 verification is unavailable. Transfer remains held; enable guarded verification before recovery."
+                            : entry.Attempt.HttpConnections > 1 && !engine.SupportsParallelHttpRanges
+                                ? "Parallel HTTP is disabled. Private stage remains held; enable guarded parallel verification before recovery."
                             : "Transfer is missing. Use Recover to check its files and restore the same ID; existing files without control files are preserved."
                 };
                 else return entry;
@@ -480,7 +486,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             if (engine.SupportsFreshRestart) await destination.ValidateProtectedAsync(target.Directory, token).ConfigureAwait(false);
             var now = clock.GetUtcNow();
             if (now <= previous.Attempt.StartedAt) now = previous.Attempt.StartedAt.AddTicks(1);
-            var attempt = new TransferAttempt(Guid.NewGuid(), jobId, NewGid(), now, previous.Attempt.Id);
+            var attempt = new TransferAttempt(Guid.NewGuid(), jobId, NewGid(), now, previous.Attempt.Id, previous.Attempt.HttpConnections);
             retry = previous with { Attempt = attempt, File = new(Guid.NewGuid(), jobId, attempt.Id, target.FileName, null),
                 DesiredPaused = false, DesiredRemoved = false, PolicyHeld = _schedule.Enabled,
                 Progress = new(DownloadStatus.Queued, 0, null, 0), QueuePosition = null, ErrorMessage = null,
@@ -503,7 +509,8 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                     FileName: target.FileName, ContinueExisting: target.ContinueExisting, ExactSourceUrl: retry.ExactSourceUrl,
                     ContinuityJobId: retry.Job.Id, ContinuityAttemptId: retry.Attempt.Id,
                     RequirePublicOrigin: retry.ExactSourceUrl is not null, LegacyParentEngineId: previous.Attempt.EngineId, FreshRestart: freshRestart,
-                    StartPaused: retry.PolicyHeld, ExpectedChecksum: retry.Job.ExpectedChecksum), token).ConfigureAwait(false);
+                    StartPaused: retry.PolicyHeld, ExpectedChecksum: retry.Job.ExpectedChecksum,
+                    HttpConnections: retry.Attempt.HttpConnections), token).ConfigureAwait(false);
                 await CommitAsync(ApplyObservation(retry, result), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)

@@ -56,7 +56,10 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
         foreach (var path in Directory.EnumerateFiles(_root, "route-*.json").Take(4097))
         {
             if (_routes.Count >= 4096) throw new IOException("Gateway route capacity exceeded.");
-            AddRoute(await ReadAsync<Route>(path, token) ?? throw new IOException("Invalid route record."));
+            var route = await ReadAsync<Route>(path, token) ?? throw new IOException("Invalid route record.");
+            if (!string.Equals(Path.GetFileName(path), "route-" + route.AttemptId.ToString("N") + ".json", StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Gateway route attempt does not match its durable path.");
+            AddRoute(route);
         }
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = [], EnvironmentName = "Production" });
         builder.Logging.ClearProviders();
@@ -79,7 +82,7 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
     }
     private void AddRoute(Route route)
     {
-        if (route.Version != 1 || route.JobId == Guid.Empty || route.AttemptId == Guid.Empty || route.Capability.Length != 64
+        if (route.Version is not (1 or 2) || route.JobId == Guid.Empty || route.AttemptId == Guid.Empty || route.Capability.Length != 64
             || !route.Capability.All(Uri.IsHexDigit)) throw new IOException("Invalid route identity.");
         var origin = _origins(route.Source, route.RequirePublicOrigin);
         var resource = route.RequirePublicOrigin ? route.Source : new UriBuilder(route.Source) { Fragment = "" }.Uri.AbsoluteUri;
@@ -89,6 +92,12 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
     }
     public async Task<Uri> RegisterAsync(Guid jobId, Guid attemptId, string exactSource, bool retained, CancellationToken token,
         bool requirePublicOrigin = true, bool freshAttempt = false)
+        => await RegisterCoreAsync(1, jobId, attemptId, exactSource, retained, token, requirePublicOrigin, freshAttempt);
+    internal Task<Uri> RegisterRangeExperimentalAsync(Guid jobId, Guid attemptId, string exactSource, CancellationToken token,
+        bool requirePublicOrigin = true, bool retained = false, bool freshAttempt = false) =>
+        RegisterCoreAsync(2, jobId, attemptId, exactSource, retained, token, requirePublicOrigin, freshAttempt);
+    private async Task<Uri> RegisterCoreAsync(int version, Guid jobId, Guid attemptId, string exactSource, bool retained, CancellationToken token,
+        bool requirePublicOrigin, bool freshAttempt)
     {
         if (!_admitting || jobId == Guid.Empty || attemptId == Guid.Empty) throw new InvalidOperationException("Gateway not ready.");
         await _registration.WaitAsync(token);
@@ -96,12 +105,12 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
         {
             if (_routes.TryGetValue(attemptId, out var existing))
             {
-                if (existing.Route.JobId != jobId || existing.Route.Source != exactSource || existing.Route.Retained != retained ||
+                if (existing.Route.Version != version || existing.Route.JobId != jobId || existing.Route.Source != exactSource || existing.Route.Retained != retained ||
                     existing.Route.RequirePublicOrigin != requirePublicOrigin || existing.Route.FreshAttempt != freshAttempt) throw new IOException("Route conflict.");
                 return Address(existing.Route);
             }
             if (_routes.Count >= 4096) throw new IOException("Gateway route capacity exceeded.");
-            var route = new Route(1, jobId, attemptId, exactSource, Convert.ToHexString(RandomNumberGenerator.GetBytes(32)), retained, requirePublicOrigin, freshAttempt);
+            var route = new Route(version, jobId, attemptId, exactSource, Convert.ToHexString(RandomNumberGenerator.GetBytes(32)), retained, requirePublicOrigin, freshAttempt);
             // Validate transport/relay construction before durable admission.
             AddRoute(route);
             try { await WriteNewAsync(Path.Combine(_root, "route-" + attemptId.ToString("N") + ".json"), route, token); }
@@ -112,41 +121,54 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
     }
     public Uri GetAddress(Guid attemptId) => _routes.TryGetValue(attemptId, out var route) ? Address(route.Route) : throw new IOException("Route unavailable.");
     internal void CompleteRoute(Guid attemptId) => _completedRoutes.TryAdd(attemptId, 0);
-    internal bool MatchesRoute(Guid job, Guid attempt, string source, bool requirePublicOrigin = true) => _routes.TryGetValue(attempt, out var value)
-        && value.Route.JobId == job && value.Route.Source == source && value.Route.RequirePublicOrigin == requirePublicOrigin;
+    internal bool MatchesRoute(Guid job, Guid attempt, string source, bool requirePublicOrigin = true, int version = 1) => _routes.TryGetValue(attempt, out var value)
+        && value.Route.Version == version && value.Route.JobId == job && value.Route.Source == source && value.Route.RequirePublicOrigin == requirePublicOrigin;
     public Task<HttpRepresentation?> GetRepresentationAsync(Guid jobId, CancellationToken token) => new HttpRepresentationStore(_root, jobId).LoadAsync(token);
     public Task<HttpRepresentation?> GetRepresentationAsync(Guid jobId, Guid attemptId, CancellationToken token) => new HttpRepresentationStore(_root, jobId, attemptId).LoadAsync(token);
     public Task<HttpTransferCompletion?> GetCompletionAsync(Guid jobId, Guid attemptId, CancellationToken token) => new HttpRepresentationStore(_root, jobId, attemptId).LoadCompletionAsync(token);
-    private Uri Address(Route route) => new($"http://127.0.0.1:{_port}/v1/transfer/{route.AttemptId:N}/{route.Capability}");
+    private Uri Address(Route route) => new($"http://127.0.0.1:{_port}/v{route.Version}/transfer/{route.AttemptId:N}/{route.Capability}");
     private async Task ServeAsync(HttpContext context)
     {
         context.Response.Headers.CacheControl = "no-store";
         var parts = context.Request.Path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (!_admitting || context.Request.Method != "GET" || context.Request.Headers.ContainsKey("Origin") || context.Request.ContentLength is > 0
-            || context.Request.QueryString.HasValue || parts is not { Length: 4 } || parts[0] != "v1" || parts[1] != "transfer"
+            || context.Request.QueryString.HasValue || parts is not { Length: 4 } || parts[1] != "transfer"
             || !Guid.TryParseExact(parts[2], "N", out var id) || _completedRoutes.ContainsKey(id) || !_routes.TryGetValue(id, out var route)
             || parts[3].Length != 64 || !parts[3].All(Uri.IsHexDigit)
+            || parts[0] != $"v{route.Route.Version}"
             || !CryptographicOperations.FixedTimeEquals(Convert.FromHexString(parts[3]), Convert.FromHexString(route.Route.Capability))
             || !LoopbackPeerProcess.IsExpected(context.Connection.RemotePort, _port, _enginePid() ?? 0))
         { context.Response.StatusCode = 403; return; }
-        long offset = 0;
-        if (context.Request.Headers.TryGetValue("Range", out var header))
+        var hasRange = context.Request.Headers.TryGetValue("Range", out var header);
+        if (hasRange && header.Count != 1 || !GatewayByteRange.TryParse(hasRange ? header[0] : null, out var requested)
+            || route.Route.Version == 2 && (requested.IsRange && requested.End is null))
+        { context.Response.StatusCode = 412; return; }
+        if (route.Route.Version == 1 && requested.End is long requestedEnd)
         {
-            if (header.Count != 1 || !System.Net.Http.Headers.RangeHeaderValue.TryParse(header[0], out var range)
-                || range.Unit != "bytes" || range.Ranges.Count != 1 || range.Ranges.Single().From is not long start || start < 0)
+            // Pinned aria2 can express a sequential resume as a bounded tail.
+            // Admit it only when the immutable v1 representation proves that
+            // its end is exactly EOF; RelayAsync still validates origin 206.
+            var representation = await route.Relay.GetSequentialRepresentationAsync(context.RequestAborted);
+            if (requested.Start == 0 || representation is not { Version: 1, Resumable: true }
+                || requestedEnd != representation.Length - 1)
             { context.Response.StatusCode = 412; return; }
-            offset = start;
         }
+        var offset = requested.Start;
         try
         {
-            var accepted = await route.Relay.RelayAsync(offset, (response, _) =>
+            Task SendHeaders(ContinuityResponse response, CancellationToken _)
             {
-                context.Response.StatusCode = offset > 0 ? 206 : 200;
+                context.Response.StatusCode = requested.IsRange && (route.Route.Version == 2 || offset > 0) ? 206 : 200;
                 if (response.Length >= 0) context.Response.ContentLength = response.Length;
                 if (response.StrongETag.Length > 0) { context.Response.Headers.ETag = response.StrongETag; context.Response.Headers.AcceptRanges = "bytes"; }
-                if (offset > 0) context.Response.Headers.ContentRange = $"bytes {offset}-{response.Total - 1}/{response.Total}";
+                if (requested.IsRange && (route.Route.Version == 2 || offset > 0)) context.Response.Headers.ContentRange = $"bytes {offset}-{(route.Route.Version == 2 ? requested.End : response.Total - 1)}/{response.Total}";
                 return Task.CompletedTask;
-            }, context.Response.Body, context.RequestAborted);
+            }
+            var accepted = route.Route.Version == 2
+                ? requested.IsRange
+                    ? await route.Relay.RelayBoundedAsync(offset, requested.End!.Value, SendHeaders, context.Response.Body, context.RequestAborted)
+                    : await route.Relay.RelayParallelInitialAsync(SendHeaders, context.Response.Body, context.RequestAborted)
+                : await route.Relay.RelayAsync(offset, SendHeaders, context.Response.Body, context.RequestAborted);
             if (!accepted) context.Response.StatusCode = 412;
         }
         catch (Exception ex) when (ex is IOException or HttpRequestException or OperationCanceledException or JsonException)

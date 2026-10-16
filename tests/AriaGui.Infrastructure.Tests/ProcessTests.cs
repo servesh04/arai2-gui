@@ -17,6 +17,15 @@ public sealed class EngineProcessCollection;
 public sealed class ProcessTests
 {
     [Fact]
+    public void Application_composition_enables_guarded_parallel_http()
+    {
+        var options = Aria2ProcessOptions.ForApplication("aria2c.exe", "runtime");
+
+        Assert.True(options.UseContinuityGateway);
+        Assert.True(options.ParallelHttpRanges);
+    }
+
+    [Fact]
     public async Task Real_engine_becomes_ready_reuses_owned_process_and_exits_gracefully()
     {
         using var runtime = new TestRuntime();

@@ -7,6 +7,62 @@ using AriaGui.Infrastructure.Persistence;
 // Isolated owner process used by recovery tests. The parent kills this host, not a user app.
 if (args.Length > 0 && args[0].StartsWith("--bridge-", StringComparison.Ordinal)) return await BrowserBridgeFixture.RunAsync(args);
 if (args.Length == 3 && args[0] == "--takeover-crash") return await PreparedTakeoverCrashFixture.RunAsync(args[1], args[2]);
+if (args.Length == 4 && args[0] == "--m3-boundary-host")
+{
+    var root = Path.GetFullPath(args[1]);
+    var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.M3ProcessBoundary")) + Path.DirectorySeparatorChar;
+    if (!root.StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || !Directory.Exists(root))
+        throw new ArgumentException("M3 boundary fixture requires an owned temporary runtime.");
+    var gid = args[2]; var phase = args[3];
+    await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true);
+    await gateway.StartAsync(default);
+    using var ledger = new ContinuityTransferLedger(root, gateway, point =>
+    {
+        if (point != phase) return;
+        Console.WriteLine("READY " + point); Console.Out.Flush();
+        Thread.Sleep(Timeout.Infinite);
+    });
+    await ledger.LoadAsync(default, enableParallelHttpRanges: true);
+    while (true)
+    {
+        await ledger.ObserveAsync(new(gid, new(AriaGui.Core.Downloads.DownloadStatus.Completed, 4, 4, 0)), default);
+        await Task.Delay(5);
+    }
+}
+if (args.Length == 4 && args[0] is "--m3-recovery-host" or "--m3-recovery-active-host")
+{
+    var active = args[0] == "--m3-recovery-active-host";
+    var runtime = Path.GetFullPath(args[1]);
+    var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.DownloadTests")) + Path.DirectorySeparatorChar;
+    if (!runtime.StartsWith(allowed, StringComparison.OrdinalIgnoreCase) || !Directory.Exists(runtime))
+        throw new ArgumentException("M3 recovery fixture requires an owned temporary runtime.");
+    var output = Path.Combine(Path.GetDirectoryName(runtime)!, "downloads");
+    using var owner = new SingleInstanceLease(runtime);
+    var repository = new SqliteDownloadRepository(Path.Combine(runtime, "downloads.db"));
+    var options = new Aria2ProcessOptions(args[2], runtime) { RpcPort = int.Parse(args[3]), UseContinuityGateway = true,
+        ParallelHttpRanges = true, ContinuityTestOrigins = _ => new AriaGui.Infrastructure.Tests.M3ProcessOrigin(active ? 10 : 2) };
+    await using var manager = new Aria2ProcessManager(options, repository);
+    await manager.StartAsync(default);
+    var store = new DownloadRuntimeStore();
+    var coordinator = new DownloadCoordinator(new ManagedAria2Client(manager), store, TimeProvider.System,
+        repository, new FileDownloadDestination());
+    await coordinator.AddAsync("http://127.0.0.1/m3-process.bin", directory: output, fileName: "m3-survivor.bin",
+        expectedSha256: Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(AriaGui.Infrastructure.Tests.M3ProcessOrigin.Bytes)),
+        httpConnections: 4);
+    var job = store.Current.Downloads[0].Job.Id;
+    while (store.Current.Downloads[0].Progress.DownloadedBytes == 0)
+    { await coordinator.RefreshAsync(); await Task.Delay(25); }
+    if (!active)
+    {
+        await coordinator.PauseAsync(job);
+        while (store.Current.Downloads[0].Progress.Status != AriaGui.Core.Downloads.DownloadStatus.Paused)
+        { await coordinator.RefreshAsync(); await Task.Delay(25); }
+    }
+    await manager.CheckpointAsync(default);
+    Console.WriteLine($"READY {manager.OwnedProcessId}"); Console.Out.Flush();
+    await Task.Delay(Timeout.InfiniteTimeSpan);
+    return 0;
+}
 if (args.Length == 2 && args[0] == "--gateway-runtime-probe")
 {
     var runtime = Path.GetFullPath(args[1]); var allowed = Path.GetFullPath(AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;

@@ -77,7 +77,7 @@ public sealed partial class SqliteDownloadRepository
             var job = jobs[attempt.JobId]; var file = files[attempt.Id]; operations.TryGetValue(attempt.Id, out var op);
             return new DownloadEntry(new(job.Id, job.DisplayName, new Uri(job.Source), job.Destination, At(job.CreatedAtUtcTicks),
                     job.ExpectedSha256 is null ? null : new ExpectedChecksum(job.ExpectedSha256, job.ChecksumProvenance ?? 0)),
-                new(attempt.Id, job.Id, attempt.EngineId, At(attempt.StartedAtUtcTicks), attempt.ParentAttemptId),
+                new(attempt.Id, job.Id, attempt.EngineId, At(attempt.StartedAtUtcTicks), attempt.ParentAttemptId, attempt.HttpConnections),
                 new(file.Id, job.Id, attempt.Id, file.FileName, file.TotalBytes), new(attempt.Status, attempt.DownloadedBytes, attempt.TotalBytes, 0),
                 op is null ? null : new(op.Id, job.Id, op.Action, op.Status, At(op.RequestedAtUtcTicks), op.QueuePosition),
                 attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),

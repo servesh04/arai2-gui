@@ -18,7 +18,7 @@ internal sealed class IdentifiedFile : IDisposable
         if (handle.IsInvalid) { handle.Dispose(); throw Failure(); }
         try
         {
-            if (!GetFileInformationByHandleEx(handle, 9, out var attributes, 8)) throw Failure();
+            if (!GetFileInformationByHandleEx(handle, 9, out AttributeTag attributes, 8)) throw Failure();
             if ((attributes.Attributes & 0x400) != 0) throw new IOException("Reparse publication object denied.");
             _stream = new FileStream(handle, flushForPublication ? FileAccess.ReadWrite : FileAccess.Read, 4096, false);
             if (flushForPublication) _stream.Flush(true);
@@ -50,6 +50,14 @@ internal sealed class IdentifiedFile : IDisposable
             return $"{info.Volume:x8}:{info.IndexHigh:x8}{info.IndexLow:x8}";
         }
     }
+    internal long ChangeTimeTicks
+    {
+        get
+        {
+            if (!GetFileInformationByHandleEx(_stream.SafeFileHandle, 0, out FileBasicInfo info, 40)) throw Failure();
+            return info.ChangeTime;
+        }
+    }
     internal void FlushToDisk() => _stream.Flush(true);
     internal void RenameWithoutReplacement(string destination)
     {
@@ -79,6 +87,11 @@ internal sealed class IdentifiedFile : IDisposable
     }
     public void Dispose() => _stream.Dispose();
     [StructLayout(LayoutKind.Sequential)] private struct AttributeTag { public uint Attributes; public uint Tag; }
+    [StructLayout(LayoutKind.Sequential)] private struct FileBasicInfo
+    {
+        public long CreationTime, LastAccessTime, LastWriteTime, ChangeTime;
+        public uint Attributes, Padding;
+    }
     [StructLayout(LayoutKind.Sequential)] private struct Information
     {
         public uint Attributes; public System.Runtime.InteropServices.ComTypes.FILETIME Creation, Access, Write;
@@ -92,6 +105,9 @@ internal sealed class IdentifiedFile : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int info, out AttributeTag value, uint size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int info, out FileBasicInfo value, uint size);
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int info, IntPtr value, uint size);

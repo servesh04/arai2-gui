@@ -65,6 +65,10 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
 
     public async Task<EngineDownload> AddAsync(EngineDownloadRequest request, CancellationToken token)
     {
+        if (request.HttpConnections is not (1 or 2 or 4)) throw new EngineException(EngineFailure.RequestRejected, "Unsupported HTTP connection count.");
+        if (request.HttpConnections > 1 && (request.ExpectedChecksum is null || request.Source.IsLoopback == false ||
+            !request.Source.AbsolutePath.StartsWith("/v2/transfer/", StringComparison.Ordinal)))
+            throw new EngineException(EngineFailure.RequestRejected, "Parallel HTTP requires an authenticated v2 gateway route and expected SHA-256.");
         var options = new Dictionary<string, string>
         {
             ["gid"] = request.EngineId, ["dir"] = request.Directory, ["out"] = request.FileName,
@@ -72,8 +76,10 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
             ["always-resume"] = "true",
             ["pause"] = request.StartPaused ? "true" : "false",
             ["content-disposition"] = "false", ["follow-torrent"] = "false", ["follow-metalink"] = "false",
-            ["check-certificate"] = "true", ["split"] = "1", ["max-connection-per-server"] = "1"
+            ["check-certificate"] = "true", ["split"] = request.HttpConnections.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["max-connection-per-server"] = request.HttpConnections.ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
+        if (request.HttpConnections > 1) options["min-split-size"] = "1M";
         if (request.JobDownloadLimit is { } cap)
         {
             cap.Validate();

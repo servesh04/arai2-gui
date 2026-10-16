@@ -1,6 +1,6 @@
 # Five aria2-backed capabilities: phased implementation plan
 
-2026-10-14 · Proposed work, not completed milestones. Architecture and technical source links: [design](ARIA2_FEATURE_ARCHITECTURE.md). Scope is five capabilities; Metalink is an optional metadata dependency/extension, not a sixth deliverable.
+Proposed 2026-10-14. M0–M3 are complete; M3 acceptance closed on 2026-10-16 with guarded fixed 2/4 HTTP connections enabled in application composition. Architecture and technical source links: [design](ARIA2_FEATURE_ARCHITECTURE.md). Scope is five capabilities; Metalink is an optional metadata dependency/extension, not a sixth deliverable.
 
 ## Delivery order and scope
 

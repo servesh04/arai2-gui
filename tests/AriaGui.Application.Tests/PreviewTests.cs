@@ -130,6 +130,21 @@ public sealed class PreviewTests
         Assert.False(list.HasError);
         Assert.Single(list.Downloads);
     }
+    [Fact]
+    public async Task Parallel_intake_choice_stays_disabled_without_guarded_engine_capability()
+    {
+        var coordinator = CreateCoordinator();
+        using var list = new DownloadsViewModel(coordinator, _store, new ImmediateDispatcher());
+        Assert.False(list.ParallelHttpAvailable);
+        Assert.Equal(0, list.HttpConnectionChoice);
+        list.InputUrl = "https://example.com/file.zip";
+        list.ExpectedSha256 = new string('A', 64);
+        list.HttpConnectionChoice = 1;
+        await list.AddDownloadCommand.ExecuteAsync(null);
+        Assert.True(list.HasError);
+        Assert.Contains("Parallel HTTP", list.ErrorMessage);
+        Assert.Empty(list.Downloads);
+    }
 
     [Fact]
     public async Task Lost_add_response_is_reconciled_without_resubmission()

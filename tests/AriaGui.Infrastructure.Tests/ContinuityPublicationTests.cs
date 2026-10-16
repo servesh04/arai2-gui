@@ -6,11 +6,267 @@ using System.Text.Json;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using AriaGui.Infrastructure.Persistence;
+using System.Diagnostics;
 
 namespace AriaGui.Infrastructure.Tests;
 
 public sealed class ContinuityPublicationTests
 {
+    [Fact]
+    public async Task Parallel_bytes_without_representation_metadata_cannot_complete_or_checkpoint()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N"));
+        var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true);
+            await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            await ledger.LoadAsync(default, enableParallelHttpRanges: true);
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"),
+                Directory: output, FileName: "missing.bin", ContinuityJobId: Guid.NewGuid(), ContinuityAttemptId: Guid.NewGuid(),
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(new string('A', 64)), HttpConnections: 4);
+            var routed = await ledger.PrepareAsync(request, default);
+            await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), [1, 2, 3, 4]);
+            await Assert.ThrowsAsync<IOException>(() => ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Paused, 4, 4, 0)), default));
+            await Assert.ThrowsAsync<IOException>(() => ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Completed, 4, 4, 0)), default));
+            Assert.False(File.Exists(Path.Combine(output, "missing.bin")));
+        }
+        finally
+        {
+            var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests")) + Path.DirectorySeparatorChar;
+            if (!Path.GetFullPath(root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+    [Theory]
+    [InlineData("gid")]
+    [InlineData("work")]
+    public async Task Parallel_journal_rejects_foreign_gid_or_work_path_before_restore(string mutation)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N"));
+        var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true);
+            await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            await ledger.LoadAsync(default, enableParallelHttpRanges: true);
+            var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"),
+                Directory: output, FileName: "parallel.bin", ContinuityJobId: Guid.NewGuid(), ContinuityAttemptId: Guid.NewGuid(),
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(new string('A', 64)), HttpConnections: 4);
+            var routed = await ledger.PrepareAsync(request, default);
+            ledger.Dispose();
+            var journal = Path.Combine(root, "continuity", "transfers", request.EngineId + ".json");
+            var state = JsonSerializer.Deserialize<ContinuityTransferLedger.State>(await File.ReadAllTextAsync(journal))!;
+            state = mutation == "gid" ? state with { Gid = "fedcba0987654321" }
+                : state with { Work = Path.Combine(root, "foreign") };
+            await File.WriteAllTextAsync(journal, JsonSerializer.Serialize(state));
+            using var reloaded = new ContinuityTransferLedger(root, gateway);
+            await Assert.ThrowsAsync<IOException>(() => reloaded.LoadAsync(default, enableParallelHttpRanges: true));
+            Assert.False(File.Exists(Path.Combine(output, "parallel.bin")));
+            Assert.True(Directory.Exists(routed.Directory));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    [Theory]
+    [InlineData("verification-before-checkpoint")]
+    [InlineData("verification-confirmed")]
+    [InlineData("completion-prepared")]
+    [InlineData("completion-moved")]
+    [InlineData("control-cleaned")]
+    public async Task Parallel_required_digest_replays_each_durable_verification_and_publication_boundary(string phase)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N"));
+        var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true);
+            await gateway.StartAsync(default);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid();
+            var bytes = new byte[] { 1, 2, 3, 4 };
+            var source = new Uri("https://example.invalid/file");
+            var request = new EngineDownloadRequest("1234567890abcdef", source, Directory: output, FileName: "parallel.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt,
+                ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))),
+                HttpConnections: 4);
+            using (var faulting = new ContinuityTransferLedger(root, gateway,
+                point => { if (point == phase) throw new IOException("Injected checkpoint interruption."); }))
+            {
+                await faulting.LoadAsync(default, enableParallelHttpRanges: true);
+                var routed = await faulting.PrepareAsync(request, default);
+                await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt)
+                    .SaveBeforeBodyAsync(new(3, source.AbsoluteUri, "\"strong\"", bytes.Length, "identity"), default);
+                await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+                await Assert.ThrowsAsync<IOException>(() => ObserveSettledAsync(faulting, request.EngineId));
+            }
+            using var recovered = new ContinuityTransferLedger(root, gateway);
+            await recovered.LoadAsync(default, enableParallelHttpRanges: true);
+            var settled = await ObserveSettledAsync(recovered, request.EngineId);
+            Assert.Equal(DownloadStatus.Completed, settled.Progress.Status);
+            Assert.Equal(VerificationStatus.Verified, settled.Verification);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(output, "parallel.bin")));
+            Assert.False(File.Exists(Path.Combine(output, "parallel.bin.aria2")));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    [Theory]
+    [InlineData("verification-before-checkpoint")]
+    [InlineData("verification-confirmed")]
+    [InlineData("completion-prepared")]
+    [InlineData("completion-moved")]
+    [InlineData("control-cleaned")]
+    public async Task Killed_owner_replays_parallel_required_digest_at_each_durable_boundary(string phase)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.M3ProcessBoundary", Guid.NewGuid().ToString("N"));
+        var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
+        var gid = "1234567890abcdef";
+        try
+        {
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid();
+            var source = new Uri("https://example.invalid/file");
+            var bytes = new byte[] { 1, 2, 3, 4 };
+            await using (var setupGateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true))
+            {
+                await setupGateway.StartAsync(default);
+                using var setup = new ContinuityTransferLedger(root, setupGateway);
+                await setup.LoadAsync(default, enableParallelHttpRanges: true);
+                var request = new EngineDownloadRequest(gid, source, Directory: output, FileName: "parallel.bin",
+                    ContinuityJobId: job, ContinuityAttemptId: attempt,
+                    ExpectedChecksum: ExpectedChecksum.FromManualInput(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))),
+                    HttpConnections: 4);
+                var routed = await setup.PrepareAsync(request, default);
+                await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt)
+                    .SaveBeforeBodyAsync(new(3, source.AbsoluteUri, "\"strong\"", bytes.Length, "identity"), default);
+                await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), bytes);
+            }
+            var fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "AriaGui.EngineFixture.exe");
+            var start = new ProcessStartInfo(fixture) { UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true };
+            foreach (var value in new[] { "--m3-boundary-host", root, gid, phase }) start.ArgumentList.Add(value);
+            using var owner = Process.Start(start) ?? throw new IOException("Boundary owner did not start.");
+            try
+            {
+                var signal = await owner.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(12));
+                Assert.Equal("READY " + phase, signal);
+                owner.Kill(entireProcessTree: true);
+                await owner.WaitForExitAsync();
+            }
+            finally
+            {
+                if (!owner.HasExited) { owner.Kill(entireProcessTree: true); await owner.WaitForExitAsync(); }
+            }
+            await using var resumedGateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true);
+            await resumedGateway.StartAsync(default);
+            using var resumed = new ContinuityTransferLedger(root, resumedGateway);
+            await resumed.LoadAsync(default, enableParallelHttpRanges: true);
+            var result = await ObserveSettledAsync(resumed, gid);
+            Assert.Equal(DownloadStatus.Completed, result.Progress.Status);
+            Assert.Equal(VerificationStatus.Verified, result.Verification);
+            Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(output, "parallel.bin")));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    [Fact]
+    public async Task Corrupted_parallel_checkpoint_blocks_restore_and_preserves_public_pair()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N"));
+        var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true);
+            await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            await ledger.LoadAsync(default, enableParallelHttpRanges: true);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); const string source = "https://example.invalid/file";
+            var expected = ExpectedChecksum.FromManualInput(new string('A', 64));
+            var request = new EngineDownloadRequest("1234567890abcdef", new(source), Directory: output, FileName: "parallel.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt, ExpectedChecksum: expected, HttpConnections: 4);
+            var routed = await ledger.PrepareAsync(request, default);
+            var work = Path.Combine(routed.Directory, routed.FileName);
+            await File.WriteAllBytesAsync(work, [1, 2, 3, 4]);
+            await File.WriteAllBytesAsync(work + ".aria2", M3ControlFixture.OnePiece(4, false));
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt)
+                .SaveBeforeBodyAsync(new(3, source, "\"strong\"", 4, "identity"), default);
+            var checkpoints = new RangeCheckpointStore(Path.Combine(root, "continuity", "transfers", "range-checkpoints"), attempt);
+            await ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Paused, 0, 4, 0)), default);
+            var saved = Assert.IsType<RangeCheckpoint>(await checkpoints.LoadAsync(default));
+            await ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Paused, 0, 4, 0)), default);
+            Assert.Equal(saved, await checkpoints.LoadAsync(default));
+            Assert.Single(Directory.EnumerateDirectories(Path.Combine(root, "continuity", "transfers", "range-checkpoints", attempt.ToString("N"))));
+            var originalWrite = File.GetLastWriteTimeUtc(work);
+            await File.WriteAllBytesAsync(work, [1, 2, 7, 4]);
+            File.SetLastWriteTimeUtc(work, originalWrite);
+            await ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Paused, 0, 4, 0)), default);
+            var recaptured = Assert.IsType<RangeCheckpoint>(await checkpoints.LoadAsync(default));
+            Assert.Equal(2, recaptured.Revision);
+            Assert.NotEqual(saved.PayloadSha256, recaptured.PayloadSha256);
+            Assert.Single(Directory.EnumerateDirectories(Path.Combine(root, "continuity", "transfers", "range-checkpoints", attempt.ToString("N"))));
+            saved = recaptured;
+            var publicPath = Path.Combine(output, "parallel.bin");
+            await File.WriteAllBytesAsync(publicPath, [8, 7, 6]);
+            await File.WriteAllBytesAsync(publicPath + ".aria2", [5, 4, 3]);
+            await File.WriteAllBytesAsync(Path.Combine(root, "continuity", "transfers", "range-checkpoints", attempt.ToString("N"), saved.SnapshotDirectory, "parallel.bin"), [9, 9, 9, 9]);
+            var now = DateTimeOffset.UtcNow;
+            var entry = new DownloadEntry(new(job, "parallel.bin", new(source), publicPath, now, expected),
+                new(attempt, job, request.EngineId, now, HttpConnections: 4),
+                new(Guid.NewGuid(), job, attempt, "parallel.bin", 4), new(DownloadStatus.Paused, 0, 4, 0));
+            Assert.Empty((await ledger.PrepareRestoreAsync(root, [entry], default, true, true)).Entries);
+            Assert.Equal(new byte[] { 8, 7, 6 }, await File.ReadAllBytesAsync(publicPath));
+            Assert.Equal(new byte[] { 5, 4, 3 }, await File.ReadAllBytesAsync(publicPath + ".aria2"));
+            Assert.Equal(new byte[] { 1, 2, 7, 4 }, await File.ReadAllBytesAsync(work));
+        }
+        finally
+        {
+            var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests")) + Path.DirectorySeparatorChar;
+            if (!Path.GetFullPath(root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+    [Fact]
+    public async Task V3_range_record_cannot_downgrade_to_v1_restore_or_publish_without_coverage_reconciliation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N"));
+        var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
+        try
+        {
+            await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
+            using var ledger = new ContinuityTransferLedger(root, gateway);
+            var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); const string source = "https://example.invalid/file";
+            var request = new EngineDownloadRequest("1234567890abcdef", new(source), Directory: output, FileName: "payload.bin",
+                ContinuityJobId: job, ContinuityAttemptId: attempt);
+            var routed = await ledger.PrepareAsync(request, default);
+            var work = Path.Combine(routed.Directory, routed.FileName);
+            await File.WriteAllBytesAsync(work, [1, 2, 3, 4]);
+            await File.WriteAllBytesAsync(work + ".aria2", M3ControlFixture.OnePiece(4, false));
+            await new HttpRepresentationStore(Path.Combine(root, "continuity"), job, attempt)
+                .SaveBeforeBodyAsync(new(3, source, "\"strong\"", 4, "identity"), default);
+            var checkpoints = new RangeCheckpointStore(Path.Combine(root, "continuity", "transfers", "range-checkpoints"), attempt);
+            var paused = await ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Paused, 0, 4, 0)), default);
+            Assert.Equal(DownloadStatus.Interrupted, paused.Progress.Status);
+            Assert.Null(await checkpoints.LoadAsync(default));
+            await File.WriteAllBytesAsync(work, [1, 2, 7, 4]);
+            await File.WriteAllBytesAsync(work + ".aria2", M3ControlFixture.OnePiece(4, true));
+            paused = await ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Paused, 4, 4, 0)), default);
+            Assert.Equal(DownloadStatus.Interrupted, paused.Progress.Status);
+            Assert.Null(await checkpoints.LoadAsync(default));
+            var observed = await ledger.ObserveAsync(new(request.EngineId, new(DownloadStatus.Completed, 4, 4, 0)), default);
+            Assert.Equal(DownloadStatus.Interrupted, observed.Progress.Status);
+            Assert.False(File.Exists(Path.Combine(output, "payload.bin")));
+            var entry = new DownloadEntry(new(job, "payload.bin", new(source), Path.Combine(output, "payload.bin"), DateTimeOffset.UtcNow),
+                new(attempt, job, request.EngineId, DateTimeOffset.UtcNow), new(Guid.NewGuid(), job, attempt, "payload.bin", 4),
+                new(DownloadStatus.Paused, 2, 4, 0));
+            Assert.Empty((await ledger.PrepareRestoreAsync(root, [entry], default)).Entries);
+            Assert.Equal(new byte[] { 1, 2, 7, 4 }, await File.ReadAllBytesAsync(work));
+            Assert.Equal(M3ControlFixture.OnePiece(4, true), await File.ReadAllBytesAsync(work + ".aria2"));
+        }
+        finally
+        {
+            var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests")) + Path.DirectorySeparatorChar;
+            if (!Path.GetFullPath(root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unsafe fixture cleanup");
+            Directory.Delete(root, true);
+        }
+    }
     [Theory]
     [InlineData("ancestor")]
     [InlineData("filename")]
@@ -130,16 +386,21 @@ public sealed class ContinuityPublicationTests
         var error = Assert.Throws<DownloadRequestException>(() => ProtectedDestinationPolicy.Validate(path));
         Assert.Equal(ProtectedDestinationPolicy.Message, error.Message);
     }
-    [Fact]
-    public async Task Existing_gid_cannot_dispatch_after_its_unleased_work_directory_is_replaced()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Existing_gid_cannot_dispatch_after_its_unleased_work_directory_is_replaced(bool parallel)
     {
         var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try
         {
             await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
             using var ledger = new ContinuityTransferLedger(root, gateway);
+            await ledger.LoadAsync(default, enableParallelHttpRanges: parallel);
             var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: root, FileName: "payload.bin",
-                ContinuityJobId: Guid.NewGuid(), ContinuityAttemptId: Guid.NewGuid());
+                ContinuityJobId: Guid.NewGuid(), ContinuityAttemptId: Guid.NewGuid(),
+                ExpectedChecksum: parallel ? ExpectedChecksum.FromManualInput(new string('A', 64)) : null,
+                HttpConnections: parallel ? 4 : 1);
             var routed = await ledger.PrepareAsync(request, default);
             await File.WriteAllBytesAsync(Path.Combine(routed.Directory, routed.FileName), new byte[] { 1, 2, 3 });
             ledger.Dispose(); // Simulate a state whose prior lease has been released.
@@ -159,8 +420,10 @@ public sealed class ContinuityPublicationTests
             Directory.Delete(root, true);
         }
     }
-    [Fact]
-    public async Task Transfer_lease_pins_tree_between_observations_until_owner_stops()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Transfer_lease_pins_tree_between_observations_until_owner_stops(bool parallel)
     {
         var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PublicationTests", Guid.NewGuid().ToString("N"));
         var output = Path.Combine(root, "output"); Directory.CreateDirectory(output);
@@ -168,8 +431,11 @@ public sealed class ContinuityPublicationTests
         {
             await using var gateway = new ContinuityLoopbackGateway(root, () => Environment.ProcessId, true); await gateway.StartAsync(default);
             using var ledger = new ContinuityTransferLedger(root, gateway);
+            await ledger.LoadAsync(default, enableParallelHttpRanges: parallel);
             var request = new EngineDownloadRequest("1234567890abcdef", new("https://example.invalid/file"), Directory: output, FileName: "payload.bin",
-                ContinuityJobId: Guid.NewGuid(), ContinuityAttemptId: Guid.NewGuid());
+                ContinuityJobId: Guid.NewGuid(), ContinuityAttemptId: Guid.NewGuid(),
+                ExpectedChecksum: parallel ? ExpectedChecksum.FromManualInput(new string('A', 64)) : null,
+                HttpConnections: parallel ? 4 : 1);
             var routed = await ledger.PrepareAsync(request, default);
             Assert.ThrowsAny<IOException>(() => Directory.Move(output, output + "-moved"));
             Assert.ThrowsAny<IOException>(() => Directory.Move(routed.Directory, routed.Directory + "-moved"));

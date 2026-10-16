@@ -417,6 +417,17 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     public string FileName { get => _fileName; set => SetProperty(ref _fileName, value); }
     private string _expectedSha256 = "";
     public string ExpectedSha256 { get => _expectedSha256; set => SetProperty(ref _expectedSha256, value); }
+    private int _httpConnectionChoice;
+    public bool ParallelHttpAvailable => _coordinator.SupportsParallelHttpRanges;
+    public int HttpConnectionChoice
+    {
+        get => _httpConnectionChoice;
+        set
+        {
+            if (value is < 0 or > 2) throw new ArgumentOutOfRangeException(nameof(value));
+            SetProperty(ref _httpConnectionChoice, value);
+        }
+    }
     public bool UnknownSize { get => _unknownSize; set => SetProperty(ref _unknownSize, value); }
     public string ErrorMessage
     {
@@ -444,8 +455,9 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         ErrorMessage = "";
         try
         {
-            await _coordinator.AddAsync(InputUrl, UnknownSize, token, DirectoryPath, FileName, expectedSha256: ExpectedSha256);
-            _dispatcher.Enqueue(() => { InputUrl = ""; FileName = ""; ExpectedSha256 = ""; IsAddExpanded = false; });
+            await _coordinator.AddAsync(InputUrl, UnknownSize, token, DirectoryPath, FileName,
+                expectedSha256: ExpectedSha256, httpConnections: HttpConnectionChoice == 0 ? 1 : 1 << HttpConnectionChoice);
+            _dispatcher.Enqueue(() => { InputUrl = ""; FileName = ""; ExpectedSha256 = ""; HttpConnectionChoice = 0; IsAddExpanded = false; });
         }
         catch (OperationCanceledException) { }
         catch (ArgumentException ex) { _dispatcher.Enqueue(() => ErrorMessage = ex.Message.Split(Environment.NewLine)[0]); }

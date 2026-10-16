@@ -2,5 +2,6 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup><Compile Include="../AriaGui.Infrastructure.Tests/LocalHttpServer.cs" Link="LocalHttpServer.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../AriaGui.Infrastructure.Tests/ControlledLoopbackOrigin.cs" Link="ControlledLoopbackOrigin.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../AriaGui.Infrastructure.Tests/M3ProcessOrigin.cs" Link="M3ProcessOrigin.cs" /></ItemGroup>
   <ItemGroup><ProjectReference Include="../../src/AriaGui.Infrastructure/AriaGui.Infrastructure.csproj" /></ItemGroup>
 </Project>

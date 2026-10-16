@@ -73,6 +73,19 @@ public sealed class PublicOriginNetworkTests
         Assert.Contains("Range: bytes=2-", first.Headers); Assert.Contains("Range: bytes=2-", final.Headers);
         Assert.Contains("If-Match: \"old\"", final.Headers);
     }
+    [Fact]
+    public async Task Bounded_zero_range_is_sent_to_each_approved_redirect_hop()
+    {
+        await using var final = new Fixture(); final.Start();
+        await using var first = new Fixture(redirect: true, location: $"http://final.fixture.invalid:{final.Port}/file"); first.Start();
+        var address = IPAddress.Parse("8.8.8.8");
+        using var transport = new PublicHttpOriginTransport($"http://public.fixture.invalid:{first.Port}/start",
+            (_, _) => Task.FromResult(new[] { address }),
+            (endpoint, token) => (endpoint.Port == first.Port ? first : final).Connect(address, endpoint, token), null);
+        using var response = await transport.OpenRangeAsync(0, 3, null, default);
+        Assert.Contains("Range: bytes=0-3", first.Headers);
+        Assert.Contains("Range: bytes=0-3", final.Headers);
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

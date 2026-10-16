@@ -28,6 +28,10 @@ public sealed record ContinuityResourceLimits
 public interface IContinuityOriginTransport
 {
     Task<HttpResponseMessage> OpenAsync(long offset, string? ifMatch, CancellationToken token);
+    // Range-capable routes must opt in explicitly; the v1 transport must never
+    // silently turn a bounded interval into an open-ended resume.
+    Task<HttpResponseMessage> OpenRangeAsync(long start, long end, string? ifMatch, CancellationToken token) =>
+        throw new NotSupportedException("Bounded origin ranges are unavailable.");
 }
 
 public sealed class HttpRepresentationStore
@@ -55,7 +59,7 @@ public sealed class HttpRepresentationStore
         if (!IsValid(record)) throw new IOException("Invalid representation record.");
         return record;
     }
-    internal static bool IsValid(HttpRepresentation? record) => record is { Version: 1 or 2, Encoding: "identity", EffectiveResource: not null, StrongETag: not null }
+    internal static bool IsValid(HttpRepresentation? record) => record is { Version: 1 or 2 or 3, Encoding: "identity", EffectiveResource: not null, StrongETag: not null }
         && record.EffectiveResource.Length <= 16384 && record.StrongETag.Length <= 512
         && Uri.TryCreate(record.EffectiveResource, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
         && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Fragment)
@@ -108,6 +112,10 @@ public sealed class HttpContinuityRelay
     private readonly ContinuityResourceLimits _limits;
     private readonly SharedRelayRateLimiter? _upstreamLimit;
     private readonly SemaphoreSlim _gate = new(1);
+    private readonly SemaphoreSlim _rangeAdmission = new(4);
+    private readonly object _activeRangeGate = new();
+    private readonly List<(long Start, long End)> _activeRanges = [];
+    internal Task<HttpRepresentation?> GetSequentialRepresentationAsync(CancellationToken token) => _store.LoadAsync(token);
     // The argument validates initial source shape only. Transport owns source/redirect binding;
     // persisted representation checks below bind the eventual effective resource.
     public HttpContinuityRelay(string exactEffectiveResource, HttpRepresentationStore store, IContinuityOriginTransport transport,
@@ -135,6 +143,7 @@ public sealed class HttpContinuityRelay
         try
         {
             var prior = await _store.LoadAsync(deadline.Token);
+            if (prior?.Version == 3) return false; // An M3 checkpoint cannot be downgraded to the v1 reader.
             if (prior is { Resumable: false }) return false; // A consumed one-shot body never authorizes another response.
             if ((_requiresRetainedRepresentation || offset > 0) && prior is null) return false;
             if (prior is not null && offset >= prior.Length) return false;
@@ -199,6 +208,153 @@ public sealed class HttpContinuityRelay
             return true;
         }
         finally { _gate.Release(); }
+    }
+    // Used only by the opt-in v2 guarded route. Buffering each bounded interval
+    // ensures a truncated body contributes no bytes to aria2.
+    internal async Task<bool> RelayBoundedAsync(long start, long end,
+        Func<ContinuityResponse, CancellationToken, Task> sendHeaders, Stream destination, CancellationToken token)
+    {
+        if (start < 0 || end < start || end - start >= 8L * 1024 * 1024) return false;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(_limits.MaximumDuration);
+        using var admission = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        admission.CancelAfter(_limits.HeaderTimeout);
+        await _rangeAdmission.WaitAsync(admission.Token).ConfigureAwait(false);
+        var reservedRange = false;
+        try
+        {
+            lock (_activeRangeGate)
+            {
+                if (_activeRanges.Any(range => start <= range.End && range.Start <= end)) return false;
+                _activeRanges.Add((start, end));
+                reservedRange = true;
+            }
+            var prior = await _store.LoadAsync(admission.Token).ConfigureAwait(false);
+            if (prior is { Version: not 3 } || prior is null && _requiresRetainedRepresentation
+                || prior is not null && end >= prior.Length) return false;
+            // Origin headers may race. Only the short durable representation commit
+            // is serialized; all bodies and independent cancellations remain concurrent.
+            using var response = await _transport.OpenRangeAsync(start, end, prior?.StrongETag, admission.Token).ConfigureAwait(false);
+            var content = response.Content.Headers;
+            var etag = response.Headers.ETag;
+            var resource = response.RequestMessage?.RequestUri?.OriginalString;
+            var range = content.ContentRange;
+            var expectedLength = end - start + 1;
+            if (response.StatusCode != HttpStatusCode.PartialContent || !ValidResource(resource)
+                || etag is not { IsWeak: false } || etag.Tag == "*"
+                || content.ContentEncoding.Count != 0 && !content.ContentEncoding.SequenceEqual(["identity"])
+                || content.ContentType?.MediaType?.Equals("multipart/byteranges", StringComparison.OrdinalIgnoreCase) == true
+                || range is not { HasRange: true, HasLength: true, Unit: "bytes" }
+                || range.From != start || range.To != end || range.Length is not > 0
+                || end >= range.Length || range.Length > _limits.MaximumBytes
+                || content.ContentLength != expectedLength) return false;
+            HttpRepresentation representation;
+            await _gate.WaitAsync(admission.Token).ConfigureAwait(false);
+            try
+            {
+                var committed = await _store.LoadAsync(admission.Token).ConfigureAwait(false);
+                if (committed is { Version: not 3 } || committed is not null &&
+                    (committed.EffectiveResource != resource || committed.StrongETag != etag.Tag || committed.Length != range.Length)) return false;
+                representation = committed ?? new HttpRepresentation(3, resource!, etag.Tag, range.Length!.Value, "identity");
+                if (committed is null) await _store.SaveBeforeBodyAsync(representation, admission.Token).ConfigureAwait(false);
+            }
+            finally { _gate.Release(); }
+            using (var idle = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token))
+            await using (var body = await response.Content.ReadAsStreamAsync(deadline.Token).ConfigureAwait(false))
+            using (var buffered = new MemoryStream((int)(end - start + 1)))
+            {
+                var remaining = end - start + 1;
+                var buffer = new byte[32768];
+                while (remaining > 0)
+                {
+                    idle.CancelAfter(_limits.IdleTimeout);
+                    var maximum = (int)Math.Min(buffer.Length, remaining);
+                    var reserved = _upstreamLimit is null ? maximum : await _upstreamLimit.ReserveAsync(maximum, idle.Token).ConfigureAwait(false);
+                    int read;
+                    try { read = await body.ReadAsync(buffer.AsMemory(0, reserved), idle.Token).ConfigureAwait(false); }
+                    catch { _upstreamLimit?.Refund(reserved); throw; }
+                    _upstreamLimit?.Refund(reserved - read);
+                    if (read == 0) return false;
+                    await buffered.WriteAsync(buffer.AsMemory(0, read), idle.Token).ConfigureAwait(false);
+                    remaining -= read;
+                }
+                idle.CancelAfter(_limits.IdleTimeout);
+                if (await body.ReadAsync(buffer.AsMemory(0, 1), idle.Token).ConfigureAwait(false) != 0) return false;
+                await sendHeaders(new(start, buffered.Length, representation.Length, representation.StrongETag), deadline.Token).ConfigureAwait(false);
+                buffered.Position = 0;
+                await buffered.CopyToAsync(destination, deadline.Token).ConfigureAwait(false);
+                await destination.FlushAsync(deadline.Token).ConfigureAwait(false);
+                return true;
+            }
+        }
+        finally
+        {
+            if (reservedRange)
+                lock (_activeRangeGate) _activeRanges.Remove((start, end));
+            _rangeAdmission.Release();
+        }
+    }
+    // aria2 1.37.0 begins a split download with an unbounded GET at zero.
+    // Admit that response as a v3 representation initializer after validating
+    // its headers; independent bounded requests can proceed while it streams.
+    internal async Task<bool> RelayParallelInitialAsync(Func<ContinuityResponse, CancellationToken, Task> sendHeaders,
+        Stream destination, CancellationToken token)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(_limits.MaximumDuration);
+        using var headersDeadline = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        headersDeadline.CancelAfter(_limits.HeaderTimeout);
+        await _rangeAdmission.WaitAsync(headersDeadline.Token).ConfigureAwait(false);
+        try
+        {
+            var prior = await _store.LoadAsync(headersDeadline.Token).ConfigureAwait(false);
+            if (prior is { Version: not 3 } || prior is null && _requiresRetainedRepresentation) return false;
+            using var response = await _transport.OpenAsync(0, prior?.StrongETag, headersDeadline.Token).ConfigureAwait(false);
+            var content = response.Content.Headers;
+            var etag = response.Headers.ETag;
+            var resource = response.RequestMessage?.RequestUri?.OriginalString;
+            if (response.StatusCode != HttpStatusCode.OK || !ValidResource(resource)
+                || etag is not { IsWeak: false } || etag.Tag == "*"
+                || content.ContentEncoding.Count != 0 && !content.ContentEncoding.SequenceEqual(["identity"])
+                || content.ContentRange is not null || content.ContentLength is not > 0
+                || content.ContentLength > _limits.MaximumBytes) return false;
+            HttpRepresentation representation;
+            await _gate.WaitAsync(headersDeadline.Token).ConfigureAwait(false);
+            try
+            {
+                var committed = await _store.LoadAsync(headersDeadline.Token).ConfigureAwait(false);
+                if (committed is { Version: not 3 } || committed is not null &&
+                    (committed.EffectiveResource != resource || committed.StrongETag != etag.Tag || committed.Length != content.ContentLength)) return false;
+                representation = committed ?? new HttpRepresentation(3, resource!, etag.Tag, content.ContentLength.Value, "identity");
+                if (committed is null) await _store.SaveBeforeBodyAsync(representation, headersDeadline.Token).ConfigureAwait(false);
+            }
+            finally { _gate.Release(); }
+            using var idle = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+            idle.CancelAfter(_limits.IdleTimeout);
+            await sendHeaders(new(0, representation.Length, representation.Length, representation.StrongETag), idle.Token).ConfigureAwait(false);
+            await using var body = await response.Content.ReadAsStreamAsync(idle.Token).ConfigureAwait(false);
+            var remaining = representation.Length;
+            var buffer = new byte[32768];
+            while (remaining > 0)
+            {
+                idle.CancelAfter(_limits.IdleTimeout);
+                var maximum = (int)Math.Min(buffer.Length, remaining);
+                var reserved = _upstreamLimit is null ? maximum : await _upstreamLimit.ReserveAsync(maximum, idle.Token).ConfigureAwait(false);
+                int read;
+                try { read = await body.ReadAsync(buffer.AsMemory(0, reserved), idle.Token).ConfigureAwait(false); }
+                catch { _upstreamLimit?.Refund(reserved); throw; }
+                _upstreamLimit?.Refund(reserved - read);
+                if (read == 0) throw new IOException("Origin body ended early.");
+                await destination.WriteAsync(buffer.AsMemory(0, read), idle.Token).ConfigureAwait(false);
+                await destination.FlushAsync(idle.Token).ConfigureAwait(false);
+                remaining -= read;
+            }
+            idle.CancelAfter(_limits.IdleTimeout);
+            if (await body.ReadAsync(buffer.AsMemory(0, 1), idle.Token).ConfigureAwait(false) != 0)
+                throw new IOException("Origin body exceeded the representation.");
+            return true;
+        }
+        finally { _rangeAdmission.Release(); }
     }
     private static bool ValidResource(string? value) => value is { Length: <= 16384 }
         && Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
