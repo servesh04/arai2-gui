@@ -11,11 +11,9 @@ public sealed class Win32TrayIcon : IDisposable
     private readonly DispatcherQueue _dispatcher;
     private readonly SubclassProc _callback;
     private readonly uint _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
-    private readonly uint _openMessage = RegisterWindowMessage(OpenMessageName);
     private readonly nint _icon;
     private bool _added, _disposed;
     public event Action? OpenRequested, ExitRequested, Unavailable, Suspending, Resuming, ClockChanged;
-    private static string OpenMessageName => "AriaGUI.Open." + System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
 
     public Win32TrayIcon(nint window, DispatcherQueue dispatcher, string iconPath)
     {
@@ -24,7 +22,6 @@ public sealed class Win32TrayIcon : IDisposable
         if (_icon == 0) throw new InvalidOperationException("The tray icon could not be loaded.");
         if (!SetWindowSubclass(window, _callback, 1, 0)) { DestroyIcon(_icon); throw new InvalidOperationException("The tray callback could not be installed."); }
     }
-    public static void RequestExistingWindow() => PostMessage(0xffff, RegisterWindowMessage(OpenMessageName), 0, 0);
     public bool EnsureRegistered()
     {
         if (_disposed) return false;
@@ -48,7 +45,6 @@ public sealed class Win32TrayIcon : IDisposable
                 _added = false;
                 if (!EnsureRegistered()) Queue(() => Unavailable?.Invoke());
             }
-            else if (message == _openMessage) Queue(() => OpenRequested?.Invoke());
             else if (message == 0x218)
             {
                 if (wParam == 4) Queue(() => Suspending?.Invoke());

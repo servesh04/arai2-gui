@@ -29,6 +29,8 @@ try {
     }
     [xml]$manifest = Read-PackageText 'AppxManifest.xml'
     [xml]$sourceManifest = Get-Content -LiteralPath (Join-Path $projectRoot 'src/AriaGui.App/Package.appxmanifest') -Raw
+    $protocols=@($manifest.SelectNodes('//*[local-name()="Extension" and @Category="windows.protocol"]/*[local-name()="Protocol"]'))
+    if($protocols.Count -ne 1 -or $protocols[0].GetAttribute('Name') -cne 'ariagui'){throw 'Package must declare only the ariagui scheme; the app enforces open-only actions.'}
     $identity = $manifest.Package.Identity
     if ($identity.Name -ne $sourceManifest.Package.Identity.Name -or $identity.Publisher -ne $sourceManifest.Package.Identity.Publisher -or
         $identity.Version -ne $sourceManifest.Package.Identity.Version -or $identity.ProcessorArchitecture -ne 'x64') { throw 'Package identity/version/architecture differs from the reviewed manifest.' }

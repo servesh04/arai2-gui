@@ -44,7 +44,7 @@ public sealed record InstallationDescriptor(int SchemaVersion, string Mode, Guid
             || FirefoxAddonIds.Distinct(StringComparer.Ordinal).Count() != FirefoxAddonIds.Length) throw new InvalidDataException();
         if (Mode == "installed")
         {
-            if (Channel != "release" || PackageModel != "unpackaged" || !LaunchArguments.SequenceEqual(new[] { "--browser-wakeup" })) throw new InvalidDataException();
+            if (Channel != "release" || PackageModel != "unpackaged" || !AriaGui.Browser.Contracts.GuiLaunchContract.IsBrowserWake(LaunchArguments)) throw new InvalidDataException();
         }
         else if (!File.Exists(Path.Combine(RuntimeDirectory, "synthetic-browser-bridge")) || Channel != "fixture"
             || LaunchArguments.Length != 3 || LaunchArguments[0] != "--bridge-auto-host" || LaunchArguments[1] != RuntimeDirectory || LaunchArguments[2] != HostExecutable)

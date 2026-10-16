@@ -1,6 +1,6 @@
 # Browser handoff protocol, state machines and acceptance matrix
 
-Status: v1 contract reference and later-phase design constraints first written 2026-10-11. Package 8 has a disabled domain reservation implementation, not an accepted browser takeover protocol. Phase B direct-header feasibility is blocked; Phase C is deferred. Apply the current [Phase A/B review](BROWSER_HANDOFF_PHASE_AB_REVIEW.md) and [Sol handoff](BROWSER_HANDOFF_PHASE_AB_SOL_HANDOFF.md) before turning later-phase sketches below into wire actions. Numeric limits below are product choices, not browser limits; change both endpoints and tests together.
+Status: v1 contract reference and later-phase design constraints first written 2026-10-11. Package 8 has a disabled domain reservation implementation, not an accepted browser takeover protocol. Phase B direct-header feasibility is blocked. The first Phase C open-only slice is implemented locally; deployment acceptance remains pending (see [Phase C evidence](BROWSER_HANDOFF_PHASE_C_EVIDENCE.md)). Apply the current [Phase A/B review](BROWSER_HANDOFF_PHASE_AB_REVIEW.md) and [Sol handoff](BROWSER_HANDOFF_PHASE_AB_SOL_HANDOFF.md) before turning later-phase sketches below into wire actions. Numeric limits below are product choices, not browser limits; change both endpoints and tests together.
 
 ## 1. Transport rules
 

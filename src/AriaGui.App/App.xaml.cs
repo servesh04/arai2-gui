@@ -30,17 +30,30 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     private DesktopLifetimeController? _desktop;
     private BrowserBridgeServer? _browserBridge;
     private Task? _browserStart = null;
+    private OpenActivationController? _openActivation;
+    private Win32OpenActivation? _openReceiver;
+    private readonly Microsoft.Windows.AppLifecycle.AppInstance _activationInstance;
 
-    public App() => InitializeComponent();
+    public App()
+    {
+        InitializeComponent();
+        // Argument inspection/events only. GUI ownership continues to use SingleInstanceLease.
+        _activationInstance = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent();
+        _activationInstance.Activated += OnProtocolActivated;
+    }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var activation = _activationInstance.GetActivatedEventArgs();
+        var supported = IsSupportedActivation(activation);
+        WriteSyntheticActivationReceipt(activation, supported);
+        if (!supported) { Exit(); return; }
         var runtimeDirectory = AppDataPaths.RuntimeDirectory;
         EngineException? storageFailure = null;
         try
         {
             _instance = new SingleInstanceLease(runtimeDirectory);
-            if (!_instance.IsPrimary) { Win32TrayIcon.RequestExistingWindow(); _instance.Dispose(); Exit(); return; }
+            if (!_instance.IsPrimary) { Win32OpenActivation.RequestExistingWindow(runtimeDirectory); _instance.Dispose(); Exit(); return; }
         }
         catch (EngineException ex) { storageFailure = ex; }
 
@@ -65,7 +78,12 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             new EngineDispatchReadiness(services.GetRequiredService<EngineStateStore>())));
         registrations.AddSingleton<DownloadsViewModel>();
         registrations.AddSingleton<DownloadSummaryViewModel>();
-        registrations.AddSingleton(Aria2ProcessOptions.ForApplication(AppDataPaths.EngineExecutable, runtimeDirectory));
+        var engineOptions = Aria2ProcessOptions.ForApplication(AppDataPaths.EngineExecutable, runtimeDirectory);
+#if DEBUG || ARIAGUI_VERIFICATION
+        if (AppDataPaths.VerificationDirectory is { } engineFixture)
+            engineOptions = engineOptions with { RpcPort = SyntheticEngineFixturePort.Read(engineFixture) };
+#endif
+        registrations.AddSingleton(engineOptions);
         registrations.AddSingleton<IManagedAria2Engine, Aria2ProcessManager>();
         registrations.AddSingleton<EngineStateStore>();
         registrations.AddSingleton<EngineLifecycleService>();
@@ -74,6 +92,10 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         _services = registrations.BuildServiceProvider();
 
         _window = new MainWindow(_services.GetRequiredService<DownloadsPage>());
+        var dispatcher = DispatcherQueue.GetForCurrentThread();
+        _openActivation = new(TimeProvider.System, action => dispatcher.TryEnqueue(action.Invoke), () => _desktop?.Open());
+        try { if (_instance is { IsPrimary: true }) _openReceiver = new(WinRT.Interop.WindowNative.GetWindowHandle(_window), runtimeDirectory, _openActivation); }
+        catch (Exception) { _window.SetDesktopStatus("Opening an existing window through a link is unavailable; use the tray or taskbar."); }
         var preferences = _services.GetRequiredService<PreferencesViewModel>();
         preferences.Applied += value =>
         {
@@ -85,6 +107,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         folderPicker.WindowId = _window.AppWindow.Id;
         _window.AppWindow.Closing += OnWindowClosing;
         _desktop = new DesktopLifetimeController(this);
+        _openActivation.Ready();
         _window.ExitRequested += RequestExit;
         try
         {
@@ -114,6 +137,38 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
                 _browserStart = StartSyntheticBridgeAsync(runtimeDirectory, File.ReadAllText(peerMarker).Trim());
         }
 #endif
+    }
+
+    private static bool IsSupportedActivation(Microsoft.Windows.AppLifecycle.AppActivationArguments activation)
+    {
+        if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Protocol)
+            return activation.Data is Windows.ApplicationModel.Activation.IProtocolActivatedEventArgs protocol &&
+                OpenProtocolActivation.IsOpen(protocol.Uri.OriginalString);
+        if (activation.Kind != Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Launch) return false;
+        var arguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
+        return OpenProtocolActivation.ClassifyLaunch(arguments) != GuiLaunchKind.Rejected;
+    }
+    private static void WriteSyntheticActivationReceipt(Microsoft.Windows.AppLifecycle.AppActivationArguments activation, bool supported)
+    {
+#if DEBUG || ARIAGUI_VERIFICATION
+        // Test-only reason codes in an explicitly marked copied payload. No URI/argument data.
+        var marker = Path.Combine(AppContext.BaseDirectory, "r1-fixture-profile.txt");
+        if (!File.Exists(marker)) return;
+        try
+        {
+            var profile = Path.GetFullPath(File.ReadAllText(marker).Trim());
+            if (!File.Exists(Path.Combine(profile, "synthetic-r1-fixture"))) return;
+            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "activation-fixture.receipt.json"),
+                System.Text.Json.JsonSerializer.Serialize(new { ProcessId = Environment.ProcessId, Kind = activation.Kind.ToString(), Supported = supported }));
+        }
+        catch (IOException) { } // Receipt capability is asserted by the fixture, never admission.
+        catch (UnauthorizedAccessException) { }
+#endif
+    }
+    private void OnProtocolActivated(object? sender, Microsoft.Windows.AppLifecycle.AppActivationArguments activation)
+    {
+        if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Protocol && IsSupportedActivation(activation))
+            _openActivation?.RequestOpen();
     }
 
     private async Task StartSyntheticBridgeAsync(string runtime, string peerExecutable)
@@ -205,7 +260,6 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             if (!_closing) await _services.GetRequiredService<DownloadCoordinator>().ReportFailureAsync("Resume reconnection is pending; the engine monitor will retry safely.");
         }
     }
-
     private async void OnClockChanged()
     {
         if (_closing || _services is null) return;
@@ -219,10 +273,23 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     {
         if (_closing) return;
         _closing = true;
+        _openActivation?.Stop();
         _browserBridge?.StopAdmission();
         _window?.DisableInput();
         try
         {
+#if DEBUG || ARIAGUI_VERIFICATION
+        // Bounded owned-fixture interleave: admission is stopped, ownership remains held.
+        if (AppDataPaths.VerificationDirectory is { } fixture)
+        {
+            var hold = Path.Combine(fixture, "phase-c-hold-exit");
+            if (File.Exists(hold))
+            {
+                File.WriteAllText(Path.Combine(fixture, "phase-c-exit-started"), "closing");
+                for (var i = 0; i < 50 && File.Exists(hold); i++) await Task.Delay(100);
+            }
+        }
+#endif
             var engineViewModel = _services?.GetRequiredService<EngineViewModel>();
             engineViewModel?.CancelOperations();
             var downloadViewModel = _services?.GetRequiredService<DownloadsViewModel>();
@@ -272,6 +339,8 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         catch (Exception) { _window?.SetDesktopStatus("Exit cleanup could not finish. Preserved ownership and checkpoints will be reviewed on the next launch."); }
         finally
         {
+            _activationInstance.Activated -= OnProtocolActivated;
+            _openReceiver?.Dispose();
             _tray?.Dispose();
             _instance?.Dispose();
             _lifetime.Dispose();

@@ -17,6 +17,8 @@
     <Project Path="tests/AriaGui.Core.Tests/AriaGui.Core.Tests.csproj" />
     <Project Path="tests/AriaGui.Browser.Contracts.Tests/AriaGui.Browser.Contracts.Tests.csproj" />
     <Project Path="tests/AriaGui.EngineFixture/AriaGui.EngineFixture.csproj" />
+    <Project Path="tests/AriaGui.OpenActivationFixture/AriaGui.OpenActivationFixture.csproj" />
+    <Project Path="tests/AriaGui.UiFixture/AriaGui.UiFixture.csproj" />
     <Project Path="tests/AriaGui.Infrastructure.Tests/AriaGui.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>
