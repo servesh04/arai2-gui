@@ -1,30 +1,44 @@
-# AriaGUI 0.7.0 preview candidate
+# AriaGUI 0.8.0 Beta 1
 
-Prepared 6 October 2026. Local test distribution only; this is not a completed public release.
+Prepared 16 October 2026. This is an unsigned public beta for Windows 11 x64.
 
-## Local EXE responsive refresh,11 October 2026
+## Install and run
 
-Published `artifacts/exe/AriaGui.App.exe` as an unpackaged self-contained local preview; no new MSIX/external release. Shared Fit/Manual columns, adaptive shell/panes/dialogs, work-area clamp, saved-width normalization and keyboard-grip accessible dimensions are included. 184/184 tests and isolated optimized Release UI/Exit smoke pass; user reports 150%/200% scaling passes. Prior folder preserved at `artifacts/exe-before-responsive-20261011`. Exit old test fixtures before launch because they share the RPC port. Narrator speech, mixed-DPI and clean-machine installer conditions remain untested; see R4_VERIFICATION.md.
+Download `AriaGUI-0.8.0-beta.1-win-x64.zip`, verify its SHA-256 value against `SHA256SUMS.txt`, and extract the complete archive. Keep all files and subdirectories together, then run `AriaGui.App.exe`.
 
-## Included
+The portable build contains the required .NET, Windows App SDK, and pinned aria2 runtime. Close hides AriaGUI in the notification area; use **File > Exit** to stop the app and its managed aria2 process.
 
-- HTTP/HTTPS downloads through pinned aria2 1.37.0, queue control, pause/resume, retries, durable history, and interruption recovery.
-- Search/status filters, 50-record history pages, theme/default-folder preferences, and Open file/Open folder.
-- A Windows 11 x64 MSIX containing .NET 10.0.9 and the Windows App SDK runtime. Development SDKs and a separate aria2 installation are not intended prerequisites.
-- Protected per-user data, verified backups before schema upgrades, and rejection of schemas written by newer versions.
-- Reproducible package-content checks and file-only development signing. A development signature needs explicit trust on the chosen test machine.
+## Highlights
 
-## Supported target and current evidence
+- Download management through the bundled aria2 1.37.0 engine, including queue control, pause and resume, retry, durable history, and interruption recovery.
+- Responsive WinUI 3 interface with resizable panes and columns, compact layouts, search and status filters, transfer details, and tray operation.
+- Saved aggregate upload/download bandwidth profiles, per-download caps, recurring weekly schedules, temporary overrides, and policy holds.
+- Optional expected SHA-256 verification. A successful transfer is published only after its staged file matches the supplied digest.
+- Guarded parallel HTTP downloading with fixed 2- or 4-connection choices. Parallel mode requires an expected SHA-256 and a compatible HTTP origin.
+- Browser handoff foundations, including an open-only protocol path and native messaging components. Automatic browser interception is not part of this beta distribution.
 
-Windows 11 x64, build 22000 or later is the declared target. Only development-machine builds and automated isolated tests have been exercised so far. Other Windows builds, ARM64, and clean-machine installation are not certified.
+## Verification completed
 
-## Known limitations / release gates
+- The application test project passed 164/164 tests on the final M3 implementation.
+- Partitioned Infrastructure runs cover every test class, including guarded downloads, recovery, bandwidth controls, browser handoff, checksum publication, and parallel range handling.
+- Manual M3 checks completed byte-identical 8 MiB downloads using both 2 and 4 HTTP connections; the output SHA-256 values matched the source fixture.
+- Manual 150% and 200% display-scaling checks, larger-text checks, high-contrast checks, and the responsive Add dialog check passed.
 
-- Clean-machine install/launch/download/pause/resume/recovery/upgrade/uninstall acceptance remains pending.
-- Native keyboard, accessibility, scrolling, tray, sleep/resume, and actual disk-full checks remain pending.
-- This engine's Windows build documents no TLS 1.3 support. HTTPS compatibility depends on the server; the GUI currently targets single-file HTTP/HTTPS downloads.
-- Signing uses a development publisher. A public publisher, production certificate/timestamp policy, and full third-party redistribution/source deliverables are not yet selected.
-- The package has separate LocalState from an unpackaged preview. It does not import the preview automatically. Do not run both concurrently: they use the same loopback RPC port.
-- Exit before installing an upgrade or uninstalling. Windows uninstall removes package-managed data, including its history/settings/session backups. Completed and partial downloads outside the package data folder remain on disk. Export private data before uninstall if recovery is needed.
+## Beta limitations
 
-See [Phase 7](PHASE_7.md) for the learning guide and [release acceptance](RELEASE_ACCEPTANCE.md) for the pending matrix.
+- The ZIP and executable are unsigned. Windows may display an unknown-publisher warning.
+- Clean-machine installer/MSIX acceptance and production code signing are not complete. This beta is distributed as a portable ZIP.
+- Parallel HTTP mode supports eligible single-file HTTP/HTTPS downloads with a stable representation, byte ranges, and a known expected SHA-256. Unsupported servers must use one connection.
+- Narrator speech, mixed-DPI movement between monitors, ARM64, and Windows versions earlier than Windows 11 build 22000 are not certified.
+- The browser extension and automatic browser-download interception are not included in this release.
+- A single monolithic Infrastructure test invocation was not completed because of testhost/runtime duration issues; all Infrastructure test classes passed in bounded partitions.
+
+## Data and compatibility
+
+The default download directory is `Downloads\AriaGUI`. Application settings, history, sessions, and private recovery state are stored under the current user's local application data. Removing the portable folder does not remove those per-user files or completed downloads.
+
+Do not run packaged and portable AriaGUI builds at the same time because both use the same private aria2 RPC port. Back up important partial downloads and application data before moving between prerelease builds.
+
+## Integrity
+
+The release includes `SHA256SUMS.txt` with hashes for the ZIP and primary executable. GitHub also publishes source archives for the tagged source commit.

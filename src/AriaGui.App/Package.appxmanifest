@@ -11,12 +11,12 @@
   <Identity
     Name="BC1C2CFD-F4A5-45B7-82AD-26C6210B635D"
     Publisher="CN=AriaGUI.Development"
-    Version="0.7.0.0" />
+    Version="0.8.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="BC1C2CFD-F4A5-45B7-82AD-26C6210B635D" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>AriaGUI Preview</DisplayName>
+    <DisplayName>AriaGUI Beta</DisplayName>
     <PublisherDisplayName>AriaGUI</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <uap10:PackageIntegrity>
@@ -37,7 +37,7 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="AriaGUI Preview"
+        DisplayName="AriaGUI Beta"
         Description="HTTP and HTTPS downloads with queue control and recovery"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
