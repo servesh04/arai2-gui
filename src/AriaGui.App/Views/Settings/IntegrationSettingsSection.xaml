@@ -1,0 +1,14 @@
+<UserControl x:Class="AriaGui.App.Views.Settings.IntegrationSettingsSection" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Loaded="OnLoaded">
+    <StackPanel Spacing="16">
+        <Border x:Name="ComingSoon" Style="{StaticResource AriaCardStyle}"><StackPanel><TextBlock Text="Browser integration" FontWeight="SemiBold" /><TextBlock Text="Coming soon" Foreground="{ThemeResource AriaTextSecondaryBrush}" /></StackPanel></Border>
+        <StackPanel x:Name="IntegrationContent" Spacing="16" Visibility="Collapsed">
+            <Border Style="{StaticResource AriaCardStyle}"><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><FontIcon Glyph="&#xE73E;" FontFamily="Segoe Fluent Icons" Foreground="{ThemeResource AriaSuccessBrush}" /><TextBlock Grid.Column="1" Text="{Binding BrowserStatus}" TextWrapping="Wrap" /><Button Grid.Column="2" Content="Reconnect" Click="ReconnectClick" Style="{StaticResource AriaSecondaryButtonStyle}" /></Grid></Border>
+            <ToggleSwitch Header="Capture browser downloads" IsOn="{Binding BrowserEnabled, Mode=TwoWay}" OffContent="Off" OnContent="On" />
+            <ToggleSwitch Header="Hold Alt to bypass capture" IsEnabled="False" ToolTipService.ToolTip="Not available yet" OffContent="Off" OnContent="On" />
+            <ToggleSwitch Header="Allow per-site control in the extension popup" IsEnabled="False" ToolTipService.ToolTip="Not available yet" OffContent="Off" OnContent="On" />
+            <NumberBox Header="Minimum download size (MB; 0 captures all)" Minimum="0" IsEnabled="False" ToolTipService.ToolTip="Not available yet" />
+            <TextBlock Text="Cookies are passed to this download only and aren't saved." FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
+            <HyperlinkButton Content="Reset this section to defaults" Click="ResetClick" HorizontalAlignment="Left" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

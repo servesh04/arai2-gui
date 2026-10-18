@@ -65,7 +65,8 @@ public sealed partial class DownloadsPage : Page
     private DownloadItemViewModel? _observedSelected;
     private readonly DispatcherTimer _layoutSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
 
-    public DownloadsPage(DownloadsViewModel viewModel, DownloadSummaryViewModel summary, EngineViewModel engine, PreferencesViewModel preferences, FeatureFlags features)
+    public DownloadsPage(DownloadsViewModel viewModel, DownloadSummaryViewModel summary, EngineViewModel engine, PreferencesViewModel preferences,
+        FeatureFlags features, IHandoffNotifier handoffNotifier)
     {
         ViewModel = viewModel;
         Summary = summary;
@@ -91,6 +92,14 @@ public sealed partial class DownloadsPage : Page
         DownloadsTableControl.RowCheckReady += DownloadTableRowCheckReady;
         DownloadsTableControl.RealizedContainersChanged += (_, _) => RefreshRowChecks();
         StatusBarControl.ApplyFeatures(features);
+        HandoffToastControl.Initialize(handoffNotifier, features);
+        HandoffToastControl.ShowRequested += ShowHandoffItem;
+        FiltersRailControl.ViewChanged += (_, _) => ShowDownloads();
+#if DEBUG
+        var debugHandoff = new MenuFlyoutItem { Text = "Show browser handoff toast" };
+        debugHandoff.Click += (_, _) => HandoffToastControl.TriggerDebug();
+        HelpMenu.Items.Add(debugHandoff);
+#endif
         // Thumb handles pointer presses internally; receive handled presses too so
         // subsequent keyboard arrows act on the grip the user just selected.
         SidebarSplitter.AddHandler(PointerPressedEvent, new PointerEventHandler(GripPointerPressed), true);
@@ -177,9 +186,39 @@ public sealed partial class DownloadsPage : Page
     private void FindInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     { _filtersFlyout.Hide(); SearchBox.Focus(FocusState.Keyboard); args.Handled = true; }
     private async void AddInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-    { args.Handled = true; await ShowDialogAsync(new AddDownloadDialog(ViewModel)); }
-    private async void AddClick(object sender, RoutedEventArgs args) => await ShowDialogAsync(new AddDownloadDialog(ViewModel));
-    private async void PreferencesClick(object sender, RoutedEventArgs args) => await ShowDialogAsync(new PreferencesDialog(Preferences, ViewModel));
+    { args.Handled = true; await ShowDialogAsync(new Downloads.AddDownloadDialog(ViewModel)); }
+    private async void AddClick(object sender, RoutedEventArgs args) => await ShowDialogAsync(new Downloads.AddDownloadDialog(ViewModel));
+    private void PreferencesClick(object sender, RoutedEventArgs args)
+    {
+        SettingsHost.Content ??= new Settings.SettingsPage(Preferences, Features);
+        DownloadsContent.Visibility = Visibility.Collapsed;
+        HandoffToastControl.Visibility = Visibility.Collapsed;
+        SettingsHost.Visibility = Visibility.Visible;
+        FiltersRailControl.SetSettingsSelected(true);
+    }
+    private void ShowDownloads()
+    {
+        SettingsHost.Visibility = Visibility.Collapsed;
+        DownloadsContent.Visibility = Visibility.Visible;
+        HandoffToastControl.Visibility = Visibility.Visible;
+        FiltersRailControl.SetSettingsSelected(false);
+    }
+    private void ShowHandoffItem(object? sender, Guid itemId)
+    {
+        ShowDownloads();
+        ViewModel.IsHistoryView = false;
+        ViewModel.FilterIndex = 0;
+        ViewModel.SearchText = string.Empty;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var item = ViewModel.Downloads.FirstOrDefault(row => row.Id == itemId);
+            if (item is null) return;
+            TransferList.SelectedItems.Clear();
+            TransferList.SelectedItems.Add(item);
+            TransferList.ScrollIntoView(item, ScrollIntoViewAlignment.Leading);
+            TransferList.Focus(FocusState.Programmatic);
+        });
+    }
     private void ExitClick(object sender, RoutedEventArgs args) => ExitRequested?.Invoke();
 
     private async Task ShowDialogAsync(ContentDialog dialog)

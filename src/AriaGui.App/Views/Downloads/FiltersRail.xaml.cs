@@ -27,7 +27,16 @@ public sealed partial class FiltersRail : UserControl
         TransferFilters.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
         HistoryButton.IsChecked = history;
         DownloadsButton.IsEnabled = history;
+        SettingsButton.IsChecked = false;
         RefreshCounts();
+    }
+    public void SetSettingsSelected(bool selected)
+    {
+        SettingsButton.IsChecked = selected;
+        if (!selected) return;
+        TransferFilters.Visibility = Visibility.Collapsed;
+        HistoryButton.IsChecked = false;
+        DownloadsButton.IsEnabled = true;
     }
     private void DownloadsClick(object sender, RoutedEventArgs args)
     {

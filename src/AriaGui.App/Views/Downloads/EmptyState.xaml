@@ -1,8 +1,13 @@
 <UserControl x:Class="AriaGui.App.Views.Downloads.EmptyState"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel x:Name="EmptyRoot" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6" IsHitTestVisible="False" Visibility="Collapsed">
-        <TextBlock Text="{Binding ViewModel.EmptyTitle}" FontSize="16" HorizontalAlignment="Center" />
-        <TextBlock Text="{Binding ViewModel.EmptyMessage}" FontSize="{StaticResource AriaMinimumFontSize}" HorizontalAlignment="Center" />
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
+    <StackPanel x:Name="EmptyRoot" MaxWidth="520" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Visibility="Collapsed">
+        <FontIcon x:Name="StateIcon" FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" FontSize="36" HorizontalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+        <TextBlock x:Name="TitleText" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+        <TextBlock x:Name="MessageText" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaTextSecondaryBrush}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+        <Button x:Name="AddButton" Content="Add download" Style="{StaticResource AriaPrimaryButtonStyle}" HorizontalAlignment="Center" Click="AddClick" AutomationProperties.Name="Add a download" />
+        <Button x:Name="ClearButton" Content="Clear search" Style="{StaticResource AriaSecondaryButtonStyle}" HorizontalAlignment="Center" Click="ClearClick" AutomationProperties.Name="Clear download search" Visibility="Collapsed" />
+        <HyperlinkButton x:Name="BrowserSetup" Content="Set up browser extension" HorizontalAlignment="Center" IsEnabled="False" Visibility="Collapsed" ToolTipService.ToolTip="Not available yet" />
     </StackPanel>
 </UserControl>

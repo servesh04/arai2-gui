@@ -17,6 +17,7 @@
         </Thumb>
         <Border x:Name="ContentSurface" Grid.Column="2" Margin="0,8,8,0" Background="{ThemeResource AriaSurfaceBrush}" BorderBrush="{ThemeResource AriaBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource AriaOuterCornerRadius}">
             <Grid>
+            <Grid x:Name="DownloadsContent">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <MenuBar Padding="4,0" Background="{ThemeResource AriaSurfaceRaisedBrush}">
                     <MenuBarItem Title="File"><MenuFlyoutItem Text="Add download…" Click="AddClick" /><MenuFlyoutSeparator /><MenuFlyoutItem Text="Exit" Click="ExitClick" /></MenuBarItem>
@@ -30,7 +31,7 @@
                     </MenuBarItem>
                     <MenuBarItem Title="View"><ToggleMenuFlyoutItem x:Name="DetailsToggle" Text="Details pane" IsChecked="True" Click="DetailsClick" /><MenuFlyoutItem x:Name="InspectorDetailsMenu" Text="Transfer details…" IsEnabled="False" Click="InspectorDetailsClick" /><MenuFlyoutItem Text="Columns..." Click="ColumnsClick" /><MenuFlyoutItem Text="Reset pane sizes" Click="ResetPanesClick" /></MenuBarItem>
                     <MenuBarItem Title="Tools"><MenuFlyoutItem Text="Preferences…" Click="PreferencesClick" /><MenuFlyoutItem Text="Download engine…" Click="EngineClick" /></MenuBarItem>
-                    <MenuBarItem Title="Help"><MenuFlyoutItem Text="Keyboard shortcuts" Click="HelpClick" /></MenuBarItem>
+                    <MenuBarItem x:Name="HelpMenu" Title="Help"><MenuFlyoutItem Text="Keyboard shortcuts" Click="HelpClick" /></MenuBarItem>
                 </MenuBar>
                 <downloads:DownloadsToolbar x:Name="DownloadsToolbarControl" Grid.Row="1" AddRequested="AddClick" FiltersRequested="FiltersClick" SizeChanged="ShellSizeChanged" />
                 <downloads:SelectionBar x:Name="SelectionBarControl" Grid.Row="2" Visibility="Collapsed" SingleActionRequested="SingleActionClick" />
@@ -59,6 +60,9 @@
                     <downloads:DetailsPane x:Name="DetailsPaneControl" Grid.Row="3" SingleActionRequested="SingleActionClick" />
                 </Grid>
                 <downloads:StatusBar x:Name="StatusBarControl" Grid.Row="6" EngineRequested="EngineClick" />
+            </Grid>
+            <downloads:HandoffToast x:Name="HandoffToastControl" VerticalAlignment="Bottom" HorizontalAlignment="Left" />
+            <ContentControl x:Name="SettingsHost" Visibility="Collapsed" />
             </Grid>
         </Border>
     </Grid>

@@ -74,8 +74,8 @@
                 </Button>
             </StackPanel>
         </ScrollViewer>
-        <Button Grid.Row="2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="SettingsClick" AutomationProperties.Name="Settings">
+        <ToggleButton x:Name="SettingsButton" Grid.Row="2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="SettingsClick" AutomationProperties.Name="Settings">
             <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="Settings" /><TextBlock Text="Settings" /></StackPanel>
-        </Button>
+        </ToggleButton>
     </Grid>
 </UserControl>

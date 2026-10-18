@@ -1,0 +1,24 @@
+<UserControl x:Class="AriaGui.App.Views.Downloads.HandoffToast"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AriaGui.App.Views.Downloads"
+    HorizontalAlignment="Left" VerticalAlignment="Bottom">
+    <ItemsControl x:Name="ToastItems" AutomationProperties.LiveSetting="Polite" AutomationProperties.Name="Browser download notifications">
+        <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:HandoffToastItem">
+                <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace1}"
+                        PointerEntered="ToastPointerEntered" PointerExited="ToastPointerExited"
+                        GotFocus="ToastGotFocus" LostFocus="ToastLostFocus">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind Message}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="{StaticResource AriaMinimumFontSize}" />
+                        <Button Grid.Column="1" Content="Show" Tag="{x:Bind}" Click="ShowClick" Style="{StaticResource AriaSecondaryButtonStyle}" />
+                        <Button Grid.Column="2" Content="Undo" Tag="{x:Bind}" Click="UndoClick" Style="{StaticResource AriaSecondaryButtonStyle}" />
+                        <Button Grid.Column="3" Content="×" Tag="{x:Bind}" Click="CloseClick" Style="{StaticResource AriaToolbarButtonStyle}"
+                                ToolTipService.ToolTip="Dismiss" AutomationProperties.Name="Dismiss browser download notification" />
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl>

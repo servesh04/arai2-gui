@@ -1,0 +1,36 @@
+<ContentDialog x:Class="AriaGui.App.Views.Downloads.AddDownloadDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Add download" PrimaryButtonText="Add download" SecondaryButtonText="Cancel"
+    DefaultButton="Primary" Opened="DialogOpened" PrimaryButtonClick="AddClick">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="560">
+        <StackPanel Spacing="12" Padding="{StaticResource AriaSpace1}">
+            <TextBox x:Name="UrlsBox" Header="URL(s)" AcceptsReturn="True" MinHeight="88" TextWrapping="Wrap"
+                     PlaceholderText="One http, https, or ftp link per line" TextChanged="UrlsChanged"
+                     AutomationProperties.Name="Download URLs" />
+            <TextBlock x:Name="UrlError" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+            <TextBox x:Name="FileNameBox" Header="File name" Text="{x:Bind ViewModel.FileName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     AutomationProperties.Name="Output file name" />
+            <TextBlock x:Name="FileNameHint" Text="Available when adding one URL." Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" Visibility="Collapsed" />
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBox x:Name="FolderBox" Header="Save folder" Text="{x:Bind ViewModel.DirectoryPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         TextChanged="FolderChanged" AutomationProperties.Name="Save folder" />
+                <Button Grid.Column="1" Content="Browse…" Command="{x:Bind ViewModel.BrowseCommand}" VerticalAlignment="Bottom"
+                        Style="{StaticResource AriaSecondaryButtonStyle}" AutomationProperties.Name="Browse for save folder" />
+            </Grid>
+            <TextBlock x:Name="FolderStatus" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaTextSecondaryBrush}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+            <ToggleSwitch Header="Start paused" OffContent="Off" OnContent="On" IsEnabled="False"
+                          ToolTipService.ToolTip="Not available yet" AutomationProperties.Name="Start download paused" />
+            <TextBlock Text="Adds the transfer without starting it. Not available yet." Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
+            <Expander Header="Advanced">
+                <StackPanel Spacing="12" Padding="{StaticResource AriaSpace2}">
+                    <TextBox Header="Referrer" IsEnabled="False" ToolTipService.ToolTip="Not available yet" />
+                    <TextBox Header="Cookies" IsEnabled="False" ToolTipService.ToolTip="Not available yet" />
+                    <TextBlock Text="Sent only to this download's server. Never saved to history." FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
+                    <TextBox Header="Headers" AcceptsReturn="True" IsEnabled="False" ToolTipService.ToolTip="Not available yet" />
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</ContentDialog>

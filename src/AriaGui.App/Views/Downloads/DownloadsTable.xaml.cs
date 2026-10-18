@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
@@ -17,6 +18,10 @@ namespace AriaGui.App.Views.Downloads;
 
 public sealed partial class DownloadsTable : UserControl
 {
+    public static readonly DependencyProperty IsEngineReadyProperty = DependencyProperty.Register(
+        nameof(IsEngineReady), typeof(bool), typeof(DownloadsTable), new PropertyMetadata(true, OnEngineReadyChanged));
+    public bool IsEngineReady { get => (bool)GetValue(IsEngineReadyProperty); set => SetValue(IsEngineReadyProperty, value); }
+
     private const int DateColumnKey = 100;
     private const double DateColumnWidth = 132;
     private DownloadsViewModel ViewModel = null!;
@@ -41,6 +46,7 @@ public sealed partial class DownloadsTable : UserControl
     private bool _contextChangedSelection;
     private bool _dateSortActive;
     private bool _dateSortDescending = true;
+    private bool _engineReady = true;
     private IReadOnlyList<Guid> _selectionBeforeContext = [];
     private MenuFlyout? _openContextMenu;
     private ListViewItem? _contextContainer;
@@ -63,6 +69,16 @@ public sealed partial class DownloadsTable : UserControl
     public event RightTappedEventHandler? RowRightTapped { add { } remove { } }
     public event EventHandler<CheckBox>? RowCheckReady;
     public event EventHandler? RealizedContainersChanged;
+
+    private static void OnEngineReadyChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
+    {
+        var table = (DownloadsTable)sender;
+        var ready = (bool)args.NewValue;
+        table._engineReady = ready;
+        table.TransferList.IsEnabled = ready;
+        table.TransferList.Opacity = ready ? 1 : 0.62;
+        foreach (var row in table._cellColumns.Keys) table.ApplyEngineVisualState(row);
+    }
 
     public void Initialize(DownloadsViewModel viewModel, PreferencesViewModel preferences, Action scheduleLayoutSave, Action refreshSelectionChecks)
     {
@@ -340,6 +356,7 @@ public sealed partial class DownloadsTable : UserControl
         {
             grid.Width = Math.Max(0, TableCanvas.Width - _tableLeadingInset - _tableTrailingInset);
             if (root is not null) root.MinHeight = root.DataContext is DownloadItemViewModel narrowItem && narrowItem.RawStatus == DownloadStatus.Failed ? 66 : 56;
+            ApplyEngineVisualState(grid);
             return;
         }
 
@@ -356,6 +373,14 @@ public sealed partial class DownloadsTable : UserControl
         var item = grid.DataContext as DownloadItemViewModel;
         grid.MinHeight = item is not null ? RowHeight(item) : Preferences.CompactRows ? 32 : 40;
         if (root is not null) root.MinHeight = grid.MinHeight;
+        ApplyEngineVisualState(grid);
+    }
+
+    private void ApplyEngineVisualState(Grid grid)
+    {
+        if (grid.Children.OfType<TextBlock>().FirstOrDefault(element => element.Tag is "5") is not { } speed) return;
+        if (!_engineReady) speed.Text = "—";
+        else speed.SetBinding(TextBlock.TextProperty, new Binding { Path = new PropertyPath(nameof(DownloadItemViewModel.SpeedLabel)) });
     }
 
     private double RowHeight(DownloadItemViewModel item) => item.RawStatus == DownloadStatus.Failed
