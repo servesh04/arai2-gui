@@ -1,16 +1,140 @@
 <UserControl x:Class="AriaGui.App.Views.Downloads.DetailsPane"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid x:Name="Inspector" Padding="12,8" Background="{ThemeResource AriaSurfaceRaisedBrush}">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AriaGui.App.Views.Downloads">
+    <UserControl.Resources>
+        <local:DetailsFileGlyphConverter x:Key="DetailsFileGlyph" />
+        <local:ProtocolLabelConverter x:Key="ProtocolLabel" />
+        <local:FailureCardVisibilityConverter x:Key="FailureVisibility" />
+        <local:FailureReasonVisibilityConverter x:Key="FailureReasonVisibility" />
+        <local:HttpStatusVisibilityConverter x:Key="HttpStatusVisibility" />
+        <local:HttpStatusLabelConverter x:Key="HttpStatusLabel" />
+        <local:DownloadTypeLabelConverter x:Key="DownloadType" />
+        <local:DetailsDateConverter x:Key="DetailsDate" />
+        <Style x:Key="DetailLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource AriaTextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" />
+        </Style>
+        <Style x:Key="DetailValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Resources>
+    <Grid x:Name="Inspector" Padding="{StaticResource AriaSpace3}" Background="{ThemeResource AriaSurfaceRaisedBrush}">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-        <TextBlock Text="TRANSFER DETAILS" FontWeight="SemiBold" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" />
-        <TextBlock x:Name="SelectionHint" Grid.Row="1" Text="Select a transfer to inspect its progress, destination and available actions." TextWrapping="Wrap" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" />
-        <ScrollViewer x:Name="DetailsHost" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0">
-            <StackPanel Spacing="7">
-                <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                <StackPanel x:Name="InspectorMetadata" Spacing="6"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" /><TextBlock Text="{Binding VerificationLabel}" TextWrapping="Wrap" /><TextBlock Text="{Binding SizeLabel}" TextWrapping="Wrap" /><TextBlock Text="{Binding QueueLabel}" TextWrapping="Wrap" /></StackPanel>
-                <TextBlock Text="{Binding Source}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /><TextBlock Text="{Binding Destination}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /><TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
-                <StackPanel Orientation="Horizontal" Spacing="6"><Button x:Name="InspectorOpenFile" Content="Open file" Click="SingleActionClick" Tag="OpenFile" Style="{StaticResource AriaSecondaryButtonStyle}" /><Button x:Name="InspectorOpenFolder" Content="Open folder" Click="SingleActionClick" Tag="OpenFolder" Style="{StaticResource AriaSecondaryButtonStyle}" /></StackPanel>
+        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="DETAILS" FontWeight="SemiBold" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" />
+            <Button x:Name="InspectorOpenFile" Grid.Column="1" Click="SingleActionClick" Tag="OpenFile" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Open file" AutomationProperties.Name="Open downloaded file">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8E5;" FontSize="{StaticResource AriaMinimumFontSize}" />
+            </Button>
+            <Button x:Name="InspectorOpenFolder" Grid.Column="2" Click="SingleActionClick" Tag="OpenFolder" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Open folder" AutomationProperties.Name="Open download folder">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE838;" FontSize="{StaticResource AriaMinimumFontSize}" />
+            </Button>
+            <Button Grid.Column="3" Click="CopyUrlClick" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Copy URL" AutomationProperties.Name="Copy download URL">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;" FontSize="{StaticResource AriaMinimumFontSize}" />
+            </Button>
+            <DropDownButton Grid.Column="4" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="More actions" AutomationProperties.Name="More download actions">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE712;" FontSize="{StaticResource AriaMinimumFontSize}" />
+                <DropDownButton.Flyout>
+                    <MenuFlyout Opening="DetailsMenuOpening" Closed="DetailsMenuClosed">
+                        <MenuFlyoutItem Text="Remove from list…" Click="RemoveClick" Foreground="{ThemeResource AriaDangerBrush}" />
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+            <Button Grid.Column="5" Click="CloseClick" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Close details" AutomationProperties.Name="Close details pane">
+                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="{StaticResource AriaMinimumFontSize}" />
+            </Button>
+        </Grid>
+        <TextBlock x:Name="SelectionHint" Grid.Row="1" Text="Select a transfer to see its details." TextWrapping="Wrap" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+        <ScrollViewer x:Name="DetailsHost" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0" SizeChanged="DetailsHostSizeChanged">
+            <StackPanel Spacing="{StaticResource AriaRadiusControl}">
+                <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding FileName, Converter={StaticResource DetailsFileGlyph}}" FontSize="20" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+                    <TextBlock Grid.Column="1" Text="{Binding FileName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding FileName}" />
+                    <Border Grid.Column="2" Style="{StaticResource AriaStatusPillStyle}" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SourceUrl, Converter={StaticResource ProtocolLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" FontWeight="SemiBold" />
+                    </Border>
+                </Grid>
+                <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding Destination}" IsReadOnly="True" HorizontalAlignment="Stretch" AutomationProperties.Name="Download save path" />
+                    <Button Grid.Column="1" Click="CopyPathClick" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Copy path" AutomationProperties.Name="Copy download save path">
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;" FontSize="{StaticResource AriaMinimumFontSize}" />
+                    </Button>
+                </Grid>
+                <Border Style="{StaticResource AriaCardStyle}" BorderBrush="{ThemeResource AriaDangerBrush}" Visibility="{Binding Converter={StaticResource FailureVisibility}}">
+                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" Foreground="{ThemeResource AriaDangerBrush}" FontSize="20" AutomationProperties.AccessibilityView="Raw" />
+                        <StackPanel Grid.Column="1" Spacing="{StaticResource AriaRadiusControl}">
+                            <TextBlock Text="Download failed" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding FailureReason}" TextWrapping="Wrap" Visibility="{Binding Converter={StaticResource FailureReasonVisibility}}" />
+                            <TextBlock Text="{Binding HttpStatus, Converter={StaticResource HttpStatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" Visibility="{Binding Converter={StaticResource HttpStatusVisibility}}" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Content="Retry" Command="{Binding RetryCommand}" Style="{StaticResource AriaSecondaryButtonStyle}" VerticalAlignment="Top" />
+                    </Grid>
+                </Border>
+                <TabView x:Name="DetailsTabs" IsAddTabButtonVisible="False" TabWidthMode="SizeToContent">
+                    <TabViewItem Header="Overview">
+                        <Grid x:Name="OverviewCards" ColumnSpacing="{StaticResource AriaRadiusControl}" RowSpacing="{StaticResource AriaRadiusControl}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Border x:Name="TransferCard" Style="{StaticResource AriaCardStyle}">
+                                <StackPanel Spacing="{StaticResource AriaRadiusControl}">
+                                    <TextBlock Text="Transfer" FontWeight="SemiBold" />
+                                    <TextBlock Text="Speed" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding SpeedLabel}" Style="{StaticResource DetailValue}" />
+                                    <TextBlock Text="Downloaded" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding SizeLabel}" Style="{StaticResource DetailValue}" />
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="ProgressCard" Grid.Column="1" Style="{StaticResource AriaCardStyle}">
+                                <StackPanel Spacing="{StaticResource AriaRadiusControl}">
+                                    <TextBlock Text="Progress" FontWeight="SemiBold" />
+                                    <TextBlock Text="Total" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding TotalSizeLabel}" Style="{StaticResource DetailValue}" />
+                                    <TextBlock Text="Complete" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding ProgressLabel}" Style="{StaticResource DetailValue}" />
+                                    <TextBlock Text="ETA" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding EtaLabel}" Style="{StaticResource DetailValue}" />
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="NetworkCard" Grid.Column="2" Style="{StaticResource AriaCardStyle}">
+                                <StackPanel Spacing="{StaticResource AriaRadiusControl}">
+                                    <TextBlock Text="Network" FontWeight="SemiBold" />
+                                    <TextBlock Text="Connections" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Entry.Attempt.HttpConnections}" Style="{StaticResource DetailValue}" />
+                                    <TextBlock Text="Server" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Source}" Style="{StaticResource DetailValue}" />
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="GeneralCard" Grid.Column="3" Style="{StaticResource AriaCardStyle}">
+                                <StackPanel Spacing="{StaticResource AriaRadiusControl}">
+                                    <TextBlock Text="General" FontWeight="SemiBold" />
+                                    <TextBlock Text="Type" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding FileName, Converter={StaticResource DownloadType}}" Style="{StaticResource DetailValue}" />
+                                    <TextBlock Text="Created" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Entry.Job.CreatedAt, Converter={StaticResource DetailsDate}}" Style="{StaticResource DetailValue}" />
+                                    <TextBlock Text="Completed" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Entry.ObservedAt, Converter={StaticResource DetailsDate}}" Style="{StaticResource DetailValue}" />
+                                    <TextBlock Text="Save path" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Destination}" Style="{StaticResource DetailValue}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </TabViewItem>
+                    <TabViewItem Header="Options">
+                        <StackPanel Spacing="{StaticResource AriaRadiusControl}" Padding="{StaticResource AriaSpace2}">
+                            <TextBlock Text="Source URL" Style="{StaticResource DetailLabel}" />
+                            <TextBlock Text="{Binding SourceUrl}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                            <TextBlock Text="Verification" Style="{StaticResource DetailLabel}" />
+                            <TextBlock Text="{Binding VerificationLabel}" TextWrapping="Wrap" />
+                            <TextBlock Text="Queue" Style="{StaticResource DetailLabel}" />
+                            <TextBlock Text="{Binding QueueLabel}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </TabViewItem>
+                </TabView>
+                <StackPanel x:Name="InspectorMetadata" Visibility="Collapsed" />
             </StackPanel>
         </ScrollViewer>
     </Grid>
