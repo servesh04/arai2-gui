@@ -1,0 +1,43 @@
+<UserControl x:Class="AriaGui.App.Views.Downloads.FiltersRail"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:icons="using:AriaGui.App.Icons">
+    <Grid Background="{ThemeResource AriaBackgroundBrush}" Padding="{StaticResource AriaSpace2}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="{StaticResource AriaSpace2}">
+                <icons:FluentIcon IconName="Download" FontSize="20" Foreground="{ThemeResource AriaAccentBrush}" />
+                <TextBlock Text="AriaGUI" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button x:Name="DownloadsButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="DownloadsClick" AutomationProperties.Name="Downloads">
+                <StackPanel Orientation="Horizontal" Spacing="8"><icons:FluentIcon IconName="Download" /><TextBlock Text="Downloads" /></StackPanel>
+            </Button>
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="TransferFilters" Spacing="8" Margin="12,4,0,0">
+                <TextBlock Text="TRANSFERS" FontWeight="SemiBold" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" />
+                <ListView x:Name="StatusFilters" SelectedIndex="{Binding ViewModel.FilterIndex, Mode=TwoWay}" SelectionMode="Single" AutomationProperties.Name="Download status filter">
+                    <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="MinHeight" Value="{StaticResource AriaRowHeightCompact}" /><Setter Property="Padding" Value="8,4" /><Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style></ListView.ItemContainerStyle>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="All transfers" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="All transfers" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Downloading" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="Downloading" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Waiting" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="Waiting" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Paused" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="Paused" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Needs recovery" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="Needs recovery" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Completed" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="Completed" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Failed" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="Failed" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                    <Grid ColumnSpacing="6"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Stopped" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="Stopped" /><TextBlock Grid.Column="1" HorizontalAlignment="Right" /></Grid>
+                </ListView>
+                <Border Style="{StaticResource AriaDividerStyle}" Margin="{StaticResource AriaSpace2}" />
+                <ToggleButton x:Name="HistoryButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="HistoryClick" AutomationProperties.Name="History">
+                    <StackPanel Orientation="Horizontal" Spacing="8"><icons:FluentIcon IconName="History" /><TextBlock Text="History" /></StackPanel>
+                </ToggleButton>
+                <Button IsEnabled="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" ToolTipService.ToolTip="Notifications are not available in this build." AutomationProperties.Name="Notifications, unavailable">
+                    <StackPanel Orientation="Horizontal" Spacing="8"><icons:FluentIcon IconName="Notifications" /><TextBlock Text="Notifications" /></StackPanel>
+                </Button>
+            </StackPanel>
+        </ScrollViewer>
+        <Button Grid.Row="2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="SettingsClick" AutomationProperties.Name="Settings">
+            <StackPanel Orientation="Horizontal" Spacing="8"><icons:FluentIcon IconName="Settings" /><TextBlock Text="Settings" /></StackPanel>
+        </Button>
+    </Grid>
+</UserControl>

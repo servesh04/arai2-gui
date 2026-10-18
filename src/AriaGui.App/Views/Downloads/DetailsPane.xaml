@@ -1,0 +1,17 @@
+<UserControl x:Class="AriaGui.App.Views.Downloads.DetailsPane"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="Inspector" Padding="12,8" Background="{ThemeResource AriaSurfaceRaisedBrush}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <TextBlock Text="TRANSFER DETAILS" FontWeight="SemiBold" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" />
+        <TextBlock x:Name="SelectionHint" Grid.Row="1" Text="Select a transfer to inspect its progress, destination and available actions." TextWrapping="Wrap" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" />
+        <ScrollViewer x:Name="DetailsHost" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0">
+            <StackPanel Spacing="7">
+                <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <StackPanel x:Name="InspectorMetadata" Spacing="6"><TextBlock Text="{Binding Status}" TextWrapping="Wrap" /><TextBlock Text="{Binding VerificationLabel}" TextWrapping="Wrap" /><TextBlock Text="{Binding SizeLabel}" TextWrapping="Wrap" /><TextBlock Text="{Binding QueueLabel}" TextWrapping="Wrap" /></StackPanel>
+                <TextBlock Text="{Binding Source}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /><TextBlock Text="{Binding Destination}" IsTextSelectionEnabled="True" TextWrapping="Wrap" /><TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="6"><Button x:Name="InspectorOpenFile" Content="Open file" Click="SingleActionClick" Tag="OpenFile" Style="{StaticResource AriaSecondaryButtonStyle}" /><Button x:Name="InspectorOpenFolder" Content="Open folder" Click="SingleActionClick" Tag="OpenFolder" Style="{StaticResource AriaSecondaryButtonStyle}" /></StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

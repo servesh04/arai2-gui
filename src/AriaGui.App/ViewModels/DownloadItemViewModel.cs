@@ -78,6 +78,8 @@ public sealed class DownloadItemViewModel : ObservableObject
     public bool ShowQueue => _entry.Progress.Status == DownloadStatus.Queued;
     public bool ShowOpenFile => _entry.Progress.Status == DownloadStatus.Completed;
     public string ErrorMessage => _entry.ErrorMessage ?? "";
+    public string? FailureReason => _entry.ErrorMessage;
+    public int? HttpStatus => null;
     public double Progress => _entry.Progress.Percentage ?? 0;
     public bool IsIndeterminate => _entry.Progress.Percentage is null
         && _entry.Progress.Status is DownloadStatus.Downloading or DownloadStatus.Queued;
@@ -111,6 +113,8 @@ public sealed class DownloadItemViewModel : ObservableObject
         OnPropertyChanged(nameof(SpeedLabel));
         OnPropertyChanged(nameof(EtaLabel));
         OnPropertyChanged(nameof(ErrorMessage));
+        OnPropertyChanged(nameof(FailureReason));
+        OnPropertyChanged(nameof(HttpStatus));
         OnPropertyChanged(nameof(VerificationLabel));
         OnPropertyChanged(nameof(QueueLabel));
         OnPropertyChanged(nameof(FileName)); OnPropertyChanged(nameof(Source)); OnPropertyChanged(nameof(Destination));

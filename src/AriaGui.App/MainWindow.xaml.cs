@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
     private const string FullSubtitle = "Close to tray · Exit to stop";
     private const string ShortSubtitle = "Close to tray";
     private bool _titleRootSubscribed;
+    private bool _enforcingMinimumSize;
     public event Action? ExitRequested;
     public void SetDesktopStatus(string message) { DesktopStatus.Text = message; DesktopStatus.Visibility = Visibility.Visible; }
     public void SetTheme(AppTheme theme) => ((FrameworkElement)Content).RequestedTheme = theme switch
@@ -32,7 +33,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        WindowRoot.SizeChanged += (_, _) => UpdateTitleSubtitle();
+        WindowRoot.SizeChanged += (_, _) => { UpdateTitleSubtitle(); EnsureMinimumWindowSize(); };
         WindowRoot.Loaded += (_, _) =>
         {
             UpdateTitleSubtitle();
@@ -43,7 +44,7 @@ public sealed partial class MainWindow : Window
             }
         };
         var workArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        AppWindow.Resize(new SizeInt32(Math.Min(1220, Math.Max(1, workArea.Width - 48)), Math.Min(960, Math.Max(1, workArea.Height - 48))));
+        AppWindow.Resize(new SizeInt32(Math.Min(1280, Math.Max(1, workArea.Width - 48)), Math.Min(800, Math.Max(1, workArea.Height - 48))));
         ClampRestoredWindow();
 #if DEBUG
         // A copied synthetic-profile build may request physical startup dimensions for
@@ -84,6 +85,18 @@ public sealed partial class MainWindow : Window
             new(workArea.X, workArea.Y, workArea.Width, workArea.Height));
         if (bounds != new WindowRectangle(position.X, position.Y, size.Width, size.Height))
             AppWindow.MoveAndResize(new RectInt32(bounds.X, bounds.Y, bounds.Width, bounds.Height));
+    }
+    private void EnsureMinimumWindowSize()
+    {
+        if (_enforcingMinimumSize) return;
+        var scale = WindowRoot.XamlRoot?.RasterizationScale ?? 1;
+        var minimumWidth = (int)Math.Ceiling(560 * scale);
+        var minimumHeight = (int)Math.Ceiling(420 * scale);
+        var size = AppWindow.Size;
+        if (size.Width >= minimumWidth && size.Height >= minimumHeight) return;
+        _enforcingMinimumSize = true;
+        AppWindow.Resize(new SizeInt32(Math.Max(size.Width, minimumWidth), Math.Max(size.Height, minimumHeight)));
+        _enforcingMinimumSize = false;
     }
     private void UpdateTitleSubtitle()
     {

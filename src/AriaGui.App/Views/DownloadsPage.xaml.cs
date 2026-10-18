@@ -1,4 +1,4 @@
-﻿using AriaGui.App.ViewModels;
+using AriaGui.App.ViewModels;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Media;
 using System.Windows.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI.ViewManagement;
+using AriaGui.App.Features;
 
 namespace AriaGui.App.Views;
 
@@ -21,6 +22,31 @@ public sealed partial class DownloadsPage : Page
     public DownloadSummaryViewModel Summary { get; }
     public EngineViewModel Engine { get; }
     public PreferencesViewModel Preferences { get; }
+    public FeatureFlags Features { get; }
+    private Grid Toolbar => DownloadsToolbarControl.LayoutRoot;
+    private StackPanel PrimaryActions => DownloadsToolbarControl.Primary;
+    private StackPanel SelectedActions => SelectionBarControl.Actions;
+    private Button AddButton => DownloadsToolbarControl.Add;
+    private Button FiltersButton => DownloadsToolbarControl.Filters;
+    private TextBlock FilterCaption => DownloadsToolbarControl.FilterText;
+    private TextBox SearchBox => DownloadsToolbarControl.Search;
+    private Button RetryButton => SelectionBarControl.Retry;
+    private MenuFlyout MoreMenu => SelectionBarControl.Menu;
+    private MenuFlyoutItem OverflowRetry => SelectionBarControl.OverflowRetryItem;
+    private ListView StatusFilters => FiltersRailControl.Filters;
+    private ListView TransferList => DownloadsTableControl.List;
+    private ScrollViewer TableScroller => DownloadsTableControl.Scroller;
+    private Grid TableCanvas => DownloadsTableControl.Canvas;
+    private Grid TableHeader => DownloadsTableControl.Header;
+    private Grid Inspector => DetailsPaneControl.Root;
+    private ScrollViewer DetailsHost => DetailsPaneControl.Host;
+    private TextBlock SelectionHint => DetailsPaneControl.Hint;
+    private StackPanel InspectorMetadata => DetailsPaneControl.Metadata;
+    private Button InspectorOpenFile => DetailsPaneControl.OpenFile;
+    private Button InspectorOpenFolder => DetailsPaneControl.OpenFolder;
+    private DropDownButton FooterStatus => StatusBarControl.CompactStatus;
+    private TextBlock ConnectionText => StatusBarControl.Connection;
+    private TextBlock TotalText => StatusBarControl.Total;
     public event Action? ExitRequested;
     private bool _dialogOpen;
     private bool _shellUpdatePending;
@@ -35,22 +61,17 @@ public sealed partial class DownloadsPage : Page
     private bool _restoringSelection;
     private readonly HashSet<Guid> _selection = [];
     private readonly HashSet<CheckBox> _rowChecks = [];
-    private readonly Dictionary<Grid, int[]> _cellColumns = [];
-    private string _headerLayout = "";
-    private DownloadTableSizingMode _tableSizingMode = DownloadTableSizingMode.Fit;
-    private IReadOnlyList<DownloadColumnLayout> _resolvedColumns = [];
-    private double _tableLeadingInset = 32; // Selection column, refined from the realized template.
-    private double _tableTrailingInset;
     private bool _exiting;
     private DownloadItemViewModel? _observedSelected;
     private readonly DispatcherTimer _layoutSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
 
-    public DownloadsPage(DownloadsViewModel viewModel, DownloadSummaryViewModel summary, EngineViewModel engine, PreferencesViewModel preferences)
+    public DownloadsPage(DownloadsViewModel viewModel, DownloadSummaryViewModel summary, EngineViewModel engine, PreferencesViewModel preferences, FeatureFlags features)
     {
         ViewModel = viewModel;
         Summary = summary;
         Engine = engine;
         Preferences = preferences;
+        Features = features;
 #if DEBUG
         if (AriaGui.App.Services.AppDataPaths.VerificationDirectory is not null)
         {
@@ -63,6 +84,13 @@ public sealed partial class DownloadsPage : Page
         }
 #endif
         InitializeComponent();
+        DataContext = this;
+        DownloadsTableControl.Initialize(ViewModel, Preferences, ScheduleLayoutSave, RefreshRowChecks);
+        DownloadsTableControl.SelectionChanged += TransferSelectionChanged;
+        DownloadsTableControl.RowRightTapped += TransferRightTapped;
+        DownloadsTableControl.RowCheckReady += DownloadTableRowCheckReady;
+        DownloadsTableControl.RealizedContainersChanged += (_, _) => RefreshRowChecks();
+        StatusBarControl.ApplyFeatures(features);
         // Thumb handles pointer presses internally; receive handled presses too so
         // subsequent keyboard arrows act on the grip the user just selected.
         SidebarSplitter.AddHandler(PointerPressedEvent, new PointerEventHandler(GripPointerPressed), true);
@@ -106,7 +134,7 @@ public sealed partial class DownloadsPage : Page
                     PreferenceColumns = Preferences.Columns,
                     HeaderWidths = TableHeader.ColumnDefinitions.Select(c => c.ActualWidth).ToArray(),
                     SelectedJobIds = _selection.ToArray(), SelectedCount = TransferList.SelectedItems.Count,
-                    Rows = _cellColumns.Keys.Select(g => new { GridId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(g), BoundJobId = (g.DataContext as DownloadItemViewModel)?.Id, Bounds = Bounds(g), Widths = g.ColumnDefinitions.Select(c => c.ActualWidth).ToArray() }).ToArray()
+                    Rows = DownloadsTableControl.RegisteredRows.Keys.Select(g => new { GridId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(g), BoundJobId = (g.DataContext as DownloadItemViewModel)?.Id, Bounds = Bounds(g), Widths = g.ColumnDefinitions.Select(c => c.ActualWidth).ToArray() }).ToArray()
                 });
                 if (snapshot == lastGeometry) return;
                 lastGeometry = snapshot;
@@ -127,7 +155,7 @@ public sealed partial class DownloadsPage : Page
         };
         SizeChanged += ShellSizeChanged;
         StatusFilters.SelectionChanged += (_, _) => UpdateFilterCaption();
-        LayoutUpdated += (_, _) => { MeasureTableInsets(); UpdatePaneLayout(); };
+        LayoutUpdated += (_, _) => UpdatePaneLayout();
         Preferences.PropertyChanged += PreferencesChanged;
         ViewModel.Downloads.CollectionChanged += (_, _) => DispatcherQueue.TryEnqueue(RestoreSelection);
         _layoutSaveTimer.Tick += async (_, _) => { _layoutSaveTimer.Stop(); await Preferences.SaveLayoutAsync(); };
@@ -137,6 +165,7 @@ public sealed partial class DownloadsPage : Page
             if (e.PropertyName == nameof(ViewModel.IsHistoryView)) UpdateFilterCaption();
             if (e.PropertyName == nameof(ViewModel.BatchMessage)) UpdateBatchNotice();
             if (e.PropertyName == nameof(ViewModel.BatchResults)) BatchDetailsButton.Visibility = ViewModel.BatchResults.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (e.PropertyName == nameof(ViewModel.IsEmpty)) EmptyStateControl.SetVisible(ViewModel.IsEmpty);
         };
     }
     private static ScrollViewer? FindAncestorScrollViewer(DependencyObject element)
@@ -265,7 +294,6 @@ public sealed partial class DownloadsPage : Page
     {
         RefreshRowChecks();
         var selected = TransferList.SelectedItem as DownloadItemViewModel;
-        SelectedActions.DataContext = selected;
         TransferMenu.IsEnabled = selected is not null;
         foreach (var item in TransferMenu.Items) item.DataContext = selected;
         foreach (var item in MoreMenu.Items) item.DataContext = selected;
@@ -283,6 +311,7 @@ public sealed partial class DownloadsPage : Page
         }
         DetailsHost.Visibility = selected is null ? Visibility.Collapsed : Visibility.Visible;
         SelectionHint.Visibility = selected is null ? Visibility.Visible : Visibility.Collapsed;
+        SelectionBarControl.Visibility = _selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdatePaneLayout();
     }
     private void SelectedCommandChanged(object? sender, EventArgs args) => RefreshSelectionPresentation();
@@ -290,6 +319,7 @@ public sealed partial class DownloadsPage : Page
     {
         RegisterRowCheck((CheckBox)sender);
     }
+    private void DownloadTableRowCheckReady(object? sender, CheckBox check) => RegisterRowCheck(check);
     private void RegisterRowCheck(CheckBox check)
     {
         if (_rowChecks.Add(check)) { check.DataContextChanged += RowCheckDataContextChanged; check.Unloaded += RowCheckUnloaded; }
@@ -346,6 +376,7 @@ public sealed partial class DownloadsPage : Page
     {
         if (FiltersButton is null) return;
         var index = Math.Clamp(ViewModel.FilterIndex, 0, FilterLabels.Length - 1);
+        FiltersRailControl.UpdateSelection(ViewModel.IsHistoryView);
         FilterCaption.Text = $"Filters: {FilterLabels[index]}";
         ToolTipService.SetToolTip(FiltersButton, $"{FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");
         AutomationProperties.SetName(FiltersButton, $"Filters: {FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");
@@ -366,7 +397,6 @@ public sealed partial class DownloadsPage : Page
     {
         if (Toolbar is null || ActualWidth <= 0) return;
         // Page ActualWidth is the client area in DIPs; never infer it from physical window bounds.
-        AddButton.Content = "＋ Add download";
         FiltersButton.Visibility = Visibility.Visible;
         RetryButton.Visibility = Visibility.Visible;
         var commands = NaturalWidth(PrimaryActions) + NaturalWidth(SelectedActions) + 40;
@@ -375,12 +405,12 @@ public sealed partial class DownloadsPage : Page
         var compact = _shellMode == ShellLayoutMode.Compact;
         RetryButton.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
         OverflowRetry.Visibility = wide ? Visibility.Collapsed : Visibility.Visible;
-        Grid.SetRow(SearchBox, wide ? 0 : 1); Grid.SetColumn(SearchBox, wide ? 2 : 0);
-        Grid.SetColumnSpan(SearchBox, wide ? 1 : 3);
+        Grid.SetRow(SearchBox, wide ? 0 : 1); Grid.SetColumn(SearchBox, wide ? 1 : 0);
+        Grid.SetColumnSpan(SearchBox, wide ? 1 : 2);
         SearchBox.Width = wide ? Math.Clamp(ActualWidth - commands, 240, 420) : double.NaN;
         SearchBox.HorizontalAlignment = wide ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
         SearchBox.Margin = new Thickness(0, wide ? 0 : 6, 0, 0);
-        AddButton.Content = compact ? "＋ Add" : "＋ Add download";
+        DownloadsToolbarControl.SetCompact(compact);
         FiltersButton.Visibility = compact || !Preferences.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
         var docked = !compact && Preferences.SidebarVisible;
         if (docked) RestoreDockedFilters();
@@ -397,11 +427,7 @@ public sealed partial class DownloadsPage : Page
         ConnectionText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         FooterStatus.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
         TotalText.MaxWidth = compact ? 90 : 180;
-        var splitCommands = NaturalWidth(PrimaryActions) + NaturalWidth(SelectedActions) + 30 > ActualWidth;
-        Grid.SetRow(SelectedActions, splitCommands ? 1 : 0);
-        Grid.SetColumn(SelectedActions, splitCommands ? 0 : 1);
-        Grid.SetColumnSpan(SelectedActions, splitCommands ? 3 : 1);
-        if (splitCommands) Grid.SetRow(SearchBox, 2);
+        SelectionBarControl.Visibility = _selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateFilterCaption();
         UpdatePaneLayout();
         SizeActiveDialog();
@@ -450,8 +476,8 @@ public sealed partial class DownloadsPage : Page
     private void UpdatePaneLayout()
     {
         if (Workspace is null || Workspace.ActualHeight <= 0) return;
-        SetGripAutomation(SidebarSplitter, "sidebar width", Preferences.SidebarWidth, 120, 400, "left and right");
-        SetGripAutomation(DetailsSplitter, "details pane height", Preferences.DetailsHeight, 120, 600, "up and down");
+        Downloads.DownloadsTable.SetGripAutomation(SidebarSplitter, "sidebar width", Preferences.SidebarWidth, 120, 400, "left and right");
+        Downloads.DownloadsTable.SetGripAutomation(DetailsSplitter, "details pane height", Preferences.DetailsHeight, 120, 600, "up and down");
         var layout = ResponsivePaneLayoutPolicy.Resolve(Workspace.ActualHeight + NoticeScroller.ActualHeight,
             HistoryBar.ActualHeight, Workspace.ActualWidth, Preferences.DetailsHeight, Preferences.SidebarWidth,
             Preferences.DetailsVisible, TransferList.SelectedItem is not null,
@@ -498,13 +524,6 @@ public sealed partial class DownloadsPage : Page
         ScheduleLayoutSave();
     }
     private void ResetPanesClick(object sender, RoutedEventArgs args) { SetSidebarWidth(160); SetDetailsHeight(180); SavePaneLayout(); }
-    private void DownloadContainerChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
-    {
-        AutomationProperties.SetName(args.ItemContainer, args.InRecycleQueue ? "" : (args.Item as DownloadItemViewModel)?.FileName ?? "Download");
-        args.ItemContainer.MinHeight = Preferences.CompactRows ? 31 : 39;
-        if (!args.InRecycleQueue) DispatcherQueue.TryEnqueue(() => { RefreshRealizedRows(); RefreshRowChecks(); });
-    }
-
     private void RestoreSelection()
     {
         _selection.IntersectWith(ViewModel.Downloads.Select(item => item.Id));
@@ -561,9 +580,9 @@ public sealed partial class DownloadsPage : Page
     {
         if (TableHeader is null) return;
         RefreshSidebarCounts();
+        EmptyStateControl.SetVisible(ViewModel.IsEmpty);
         DetailsToggle.IsChecked = Preferences.DetailsVisible;
         _detailsHeight = Preferences.DetailsHeight;
-        _tableSizingMode = Preferences.Layout.TableSizingMode;
         SidebarColumn.Width = new GridLength(Preferences.SidebarVisible ? Preferences.SidebarWidth : 0);
         SidebarHost.Visibility = Preferences.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
         Workspace.ColumnDefinitions[1].Width = new GridLength(Preferences.SidebarVisible ? 6 : 0);
@@ -572,187 +591,8 @@ public sealed partial class DownloadsPage : Page
         DetailsGripRow.Height = new GridLength(Preferences.DetailsVisible ? 6 : 0);
         DetailsRow.Height = new GridLength(Preferences.DetailsVisible ? _detailsHeight : 0);
         UpdateShellLayout();
-        var signature = string.Join(";", Preferences.Columns.Select(c => $"{c.Column}:{c.Visible}"));
-        if (_headerLayout != signature) { _headerLayout = signature; BuildHeader(); }
-        // Width-only edits keep existing grips so keyboard/drag focus survives.
-        foreach (var grip in TableHeader.Children.OfType<Thumb>())
-            if (grip.Tag is DownloadSortColumn column)
-                SetGripAutomation(grip, $"{ColumnLabel(column)} column width", Preferences.Columns.First(c => c.Column == column).Width,
-                    DesktopLayout.MinimumColumnWidth, DesktopLayout.MaximumColumnWidth, "left and right");
-        ResolveTableWidths();
-        foreach (var grid in _cellColumns.Keys.ToArray()) ConfigureRow(grid);
-        foreach (var item in ViewModel.Downloads)
-            if (TransferList.ContainerFromItem(item) is ListViewItem container) container.MinHeight = Preferences.CompactRows ? 31 : 39;
+        DownloadsTableControl.ApplyLayout();
     }
-    private void TableViewportChanged(object sender, SizeChangedEventArgs args) => ResolveTableWidths();
-    private void TableViewportViewChanged(object sender, ScrollViewerViewChangedEventArgs args) => ResolveTableWidths();
-    private void MeasureTableInsets()
-    {
-        if (TableCanvas.ActualWidth <= 0 || TransferList.ActualHeight <= 0) return;
-        // Kept-alive selected/recycled containers can be parked far outside the viewport.
-        // Their global transforms are not measurements of native item chrome.
-        var row = _cellColumns.Keys.FirstOrDefault(g =>
-        {
-            if (!g.IsLoaded || g.ActualHeight <= 0 || g.DataContext is not DownloadItemViewModel item
-                || TransferList.ContainerFromItem(item) is not ListViewItem) return false;
-            var position = g.TransformToVisual(TransferList).TransformPoint(new Windows.Foundation.Point());
-            return position.Y + g.ActualHeight > 0 && position.Y < TransferList.ActualHeight
-                && position.X >= 0 && position.X <= 128;
-        });
-        if (row is null) return;
-        var leading = row.TransformToVisual(TableCanvas).TransformPoint(new Windows.Foundation.Point()).X;
-        var nativeScroller = FindAncestorScrollViewer(row);
-        if (nativeScroller is null || ReferenceEquals(nativeScroller, TableScroller) || nativeScroller.ViewportWidth <= 0) return;
-        // The native scrolling viewport owns reserved scrollbar space. Unused row extent
-        // and TableCanvas.Width must never feed back into the chrome budget.
-        var trailing = Math.Max(0, TransferList.ActualWidth - nativeScroller.ViewportWidth);
-        if (!double.IsFinite(leading) || !double.IsFinite(trailing)
-            || leading < 0 || leading > 128 || trailing > 64) return;
-        if (Math.Abs(leading - _tableLeadingInset) < .25 && Math.Abs(trailing - _tableTrailingInset) < .25) return;
-        _tableLeadingInset = leading;
-        _tableTrailingInset = trailing;
-        ResolveTableWidths();
-    }
-    private void ResolveTableWidths()
-    {
-        if (TableScroller is null || TableHeader is null) return;
-        var viewport = TableScroller.ViewportWidth > 0 ? TableScroller.ViewportWidth : TableScroller.ActualWidth;
-        if (viewport <= 0) return;
-        var resolved = DownloadTableWidthResolver.Resolve(Preferences.Columns, viewport,
-            _tableLeadingInset + _tableTrailingInset, _tableSizingMode);
-        var unchanged = _resolvedColumns.SequenceEqual(resolved.Columns)
-            && Math.Abs(TableCanvas.Width - resolved.CanvasWidth) < .1
-            && Math.Abs(TableHeader.Padding.Left - _tableLeadingInset) < .1
-            && Math.Abs(TableHeader.Padding.Right - _tableTrailingInset) < .1;
-        _resolvedColumns = resolved.Columns;
-        TableCanvas.Width = resolved.CanvasWidth;
-        TableHeader.Padding = new Thickness(_tableLeadingInset, 0, _tableTrailingInset, 0);
-        for (var i = 0; i < TableHeader.ColumnDefinitions.Count; i++)
-            TableHeader.ColumnDefinitions[i].Width = new GridLength(ResolvedWidth(Preferences.Columns[i].Column));
-        RefreshRealizedRows();
-        if (!unchanged) foreach (var grid in _cellColumns.Keys.ToArray()) ConfigureRow(grid);
-    }
-    private double ResolvedWidth(DownloadSortColumn column) => _resolvedColumns.FirstOrDefault(c => c.Column == column)?.Width ?? 0;
-    private void RowLoaded(object sender, RoutedEventArgs args)
-    {
-        RegisterRowGrid((Grid)sender);
-    }
-    private void RegisterRowGrid(Grid grid)
-    {
-        if (!_cellColumns.ContainsKey(grid))
-        {
-            _cellColumns[grid] = grid.Children.Cast<FrameworkElement>().Select(cell => Convert.ToInt32(cell.Tag)).ToArray();
-            grid.Unloaded += RowUnloaded;
-        }
-        ConfigureRow(grid);
-    }
-    private void RowUnloaded(object sender, RoutedEventArgs args)
-    {
-        var grid = (Grid)sender;
-        _cellColumns.Remove(grid);
-        grid.Unloaded -= RowUnloaded;
-    }
-    private void RefreshRealizedRows()
-    {
-        // History/filter collection changes can reattach a cached template without Loaded.
-        // Discover the native realized tree so every displayed row receives shared widths.
-        void Visit(DependencyObject parent)
-        {
-            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is Grid grid && grid.Tag is "TransferDataGrid")
-                {
-                    if (!_cellColumns.ContainsKey(grid)) RegisterRowGrid(grid);
-                }
-                else Visit(child);
-            }
-        }
-        Visit(TransferList);
-    }
-    private void ConfigureRow(Grid grid)
-    {
-        if (!_cellColumns.TryGetValue(grid, out var original)) return;
-        grid.ColumnDefinitions.Clear();
-        foreach (var column in Preferences.Columns) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ResolvedWidth(column.Column)) });
-        grid.Width = _resolvedColumns.Sum(c => c.Width);
-        for (var i = 0; i < grid.Children.Count; i++)
-        {
-            var column = (DownloadSortColumn)(original[i] + 1);
-            var index = Preferences.Columns.ToList().FindIndex(c => c.Column == column);
-            if (index < 0) continue;
-            Grid.SetColumn((FrameworkElement)grid.Children[i], index);
-            ((FrameworkElement)grid.Children[i]).Visibility = Preferences.Columns[index].Visible ? Visibility.Visible : Visibility.Collapsed;
-        }
-        grid.MinHeight = Preferences.CompactRows ? 31 : 39;
-    }
-    private static string ColumnLabel(DownloadSortColumn column) => column == DownloadSortColumn.Speed ? "Down speed" : column.ToString();
-    private void BuildHeader()
-    {
-        TableHeader.Children.Clear(); TableHeader.ColumnDefinitions.Clear();
-        for (var i = 0; i < Preferences.Columns.Count; i++)
-        {
-            var column = Preferences.Columns[i];
-            TableHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ResolvedWidth(column.Column)) });
-            if (!column.Visible) continue;
-            var button = new Button { Content = ColumnLabel(column.Column) + (ViewModel.SortColumn == column.Column ? (ViewModel.SortDescending ? " ↓" : " ↑") : ""),
-                Padding = new Thickness(8, 0, 12, 0), MinHeight = 28, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, BorderThickness = new Thickness(0) };
-            button.Click += (_, _) => { ViewModel.SetSort(column.Column); BuildHeader(); };
-            Grid.SetColumn(button, i); TableHeader.Children.Add(button);
-            var grip = new Thumb { Width = 7, HorizontalAlignment = HorizontalAlignment.Right,
-                IsTabStop = true, UseSystemFocusVisuals = true, Tag = column.Column };
-            grip.AddHandler(PointerPressedEvent, new PointerEventHandler(GripPointerPressed), true);
-            SetGripAutomation(grip, $"{ColumnLabel(column.Column)} column width", column.Width,
-                DesktopLayout.MinimumColumnWidth, DesktopLayout.MaximumColumnWidth, "left and right");
-            grip.DragDelta += (_, e) => ResizeColumn(column.Column, e.HorizontalChange);
-            grip.KeyDown += (_, e) => { if (e.Key is VirtualKey.Left or VirtualKey.Right) { ResizeColumn(column.Column, e.Key == VirtualKey.Right ? 10 : -10); e.Handled = true; } };
-            Grid.SetColumn(grip, i); TableHeader.Children.Add(grip);
-        }
-    }
-    private void ResizeColumn(DownloadSortColumn column, double delta)
-    {
-        var columns = Preferences.Columns.Select(c => c.Visible ? c with { Width = Math.Clamp(ResolvedWidth(c.Column), DesktopLayout.MinimumColumnWidth, DesktopLayout.MaximumColumnWidth) } : c).ToArray();
-        _tableSizingMode = DownloadTableSizingMode.Manual;
-        Preferences.UpdateLayout(Preferences.Layout with { TableSizingMode = DownloadTableSizingMode.Manual, Columns = columns.Select(c => c.Column == column ? c with { Width = Math.Clamp(ResolvedWidth(column) + delta, DesktopLayout.MinimumColumnWidth, DesktopLayout.MaximumColumnWidth) } : c).ToArray() });
-        ScheduleLayoutSave();
-    }
-    private static void SetGripAutomation(Thumb grip, string label, double value, double minimum, double maximum, string keys)
-    {
-        // Thumb is sealed in WinUI. Preserve its native drag/focus behavior and expose
-        // the current preferred value through readable UIA properties, not a fake RangeValue pattern.
-        var name = $"Resize {label}, {value:0.#} device-independent pixels; use {keys} arrows";
-        var status = $"Preferred size {value:0.#}; range {minimum:0.#} to {maximum:0.#} device-independent pixels";
-        if (AutomationProperties.GetName(grip) != name) AutomationProperties.SetName(grip, name);
-        if (AutomationProperties.GetItemStatus(grip) != status) AutomationProperties.SetItemStatus(grip, status);
-    }
-    private async void ColumnsClick(object sender, RoutedEventArgs args)
-    {
-        var panel = new StackPanel { Spacing = 8 };
-        void Refresh()
-        {
-            panel.Children.Clear();
-            var sizing = new ComboBox { Header = "Column sizing", ItemsSource = new[] { "Fit viewport", "Manual widths" }, SelectedIndex = _tableSizingMode == DownloadTableSizingMode.Fit ? 0 : 1, HorizontalAlignment = HorizontalAlignment.Stretch };
-            sizing.SelectionChanged += (_, _) => { Preferences.UpdateLayout(Preferences.Layout with { TableSizingMode = sizing.SelectedIndex == 0 ? DownloadTableSizingMode.Fit : DownloadTableSizingMode.Manual }); ScheduleLayoutSave(); };
-            panel.Children.Add(sizing);
-            foreach (var column in Preferences.Columns)
-            {
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-                var check = new CheckBox { Content = ColumnLabel(column.Column), IsChecked = column.Visible, Width = 160, IsEnabled = column.Column != DownloadSortColumn.Name };
-                check.Click += (_, _) => { if (check.IsChecked != true && Preferences.Columns.Count(c => c.Visible) <= 1) { check.IsChecked = true; return; }
-                    Preferences.UpdateLayout(Preferences.Layout with { Columns = Preferences.Columns.Select(c => c.Column == column.Column ? c with { Visible = check.IsChecked == true } : c).ToArray() }); ScheduleLayoutSave(); };
-                row.Children.Add(check);
-                foreach (var (label, offset) in new[] { ("←", -1), ("→", 1) })
-                {
-                    var button = new Button { Content = label, Padding = new Thickness(8, 3, 8, 3) };
-                    AutomationProperties.SetName(button, $"Move {ColumnLabel(column.Column)} {(offset < 0 ? "earlier" : "later")}");
-                    var index = Preferences.Columns.ToList().FindIndex(c => c.Column == column.Column);
-                    button.IsEnabled = index + offset >= 0 && index + offset < Preferences.Columns.Count;
-                    button.Click += (_, _) => { var columns = Preferences.Columns.ToList(); var old = columns.FindIndex(c => c.Column == column.Column); (columns[old], columns[old + offset]) = (columns[old + offset], columns[old]); Preferences.UpdateLayout(Preferences.Layout with { Columns = columns }); ScheduleLayoutSave(); Refresh(); };
-                    row.Children.Add(button);
-                }
-                panel.Children.Add(row);
-            }
-        }
-        Refresh(); await ShowDialogAsync(new ContentDialog { Title = "Transfer columns", Content = panel, CloseButtonText = "Close" });
-    }
+    private async void ColumnsClick(object sender, RoutedEventArgs args) =>
+        await DownloadsTableControl.ShowColumnsAsync(ShowDialogAsync);
 }

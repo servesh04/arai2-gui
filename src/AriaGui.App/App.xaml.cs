@@ -7,6 +7,7 @@ using AriaGui.Infrastructure.Aria2;
 using AriaGui.Infrastructure.Persistence;
 using AriaGui.Infrastructure.Downloads;
 using AriaGui.Infrastructure.Browser;
+using AriaGui.App.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -68,6 +69,10 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddSingleton<IUserPreferencesRepository>(new JsonUserPreferencesRepository(Path.Combine(runtimeDirectory, "preferences.json")));
         registrations.AddSingleton<IBrowserIntegrationDiagnostics>(new BrowserIntegrationDiagnostics());
         registrations.AddSingleton<PreferencesViewModel>();
+        registrations.AddSingleton(FeatureFlags.Unsupported);
+        registrations.AddSingleton<IEngineControl, UnsupportedEngineControl>();
+        registrations.AddSingleton<ISpeedLimitService, UnsupportedSpeedLimitService>();
+        registrations.AddSingleton<IHandoffNotifier, UnsupportedHandoffNotifier>();
         var folderPicker = new WinUiFolderPicker();
         registrations.AddSingleton<IDownloadFolderPicker>(folderPicker);
         registrations.AddSingleton<DownloadRuntimeStore>();

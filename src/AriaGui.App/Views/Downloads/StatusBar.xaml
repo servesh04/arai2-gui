@@ -1,0 +1,15 @@
+<UserControl x:Class="AriaGui.App.Views.Downloads.StatusBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:icons="using:AriaGui.App.Icons">
+    <Grid x:Name="Footer" Padding="10,5" ColumnSpacing="12" BorderBrush="{ThemeResource AriaBorderBrush}" BorderThickness="0,1,0,0" Background="{ThemeResource AriaSurfaceBrush}">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <Button x:Name="EngineButton" Padding="0" MinHeight="24" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="{Binding Engine.Message}" AutomationProperties.Name="Download engine status" Click="EngineClick"><StackPanel Orientation="Horizontal" Spacing="6"><Ellipse Width="8" Height="8" Fill="{ThemeResource AriaSuccessBrush}" /><TextBlock Text="{Binding Engine.StatusLabel}" FontWeight="SemiBold" /></StackPanel></Button>
+        <DropDownButton x:Name="FooterStatus" Grid.Column="1" Content="Status" Visibility="Collapsed" HorizontalAlignment="Left" Padding="4,0" MinHeight="24" AutomationProperties.Name="Full connection status and transfer count"><DropDownButton.Flyout><Flyout><StackPanel Spacing="8" MaxWidth="320"><TextBlock Text="{Binding ViewModel.ConnectionMessage}" TextWrapping="Wrap" /><TextBlock Text="{Binding Summary.QueueStatus}" TextWrapping="Wrap" /></StackPanel></Flyout></DropDownButton.Flyout></DropDownButton>
+        <TextBlock x:Name="ConnectionText" ToolTipService.ToolTip="{Binding ViewModel.ConnectionMessage}" Grid.Column="1" Text="{Binding ViewModel.ConnectionMessage}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <TextBlock x:Name="TotalText" TextTrimming="CharacterEllipsis" MaxWidth="180" ToolTipService.ToolTip="{Binding Summary.QueueStatus}" Grid.Column="2" Text="{Binding Summary.QueueStatus}" VerticalAlignment="Center" />
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"><icons:FluentIcon IconName="Download" Foreground="{ThemeResource AriaAccentBrush}" /><TextBlock Text="{Binding Summary.Speed}" FontWeight="SemiBold" /></StackPanel>
+        <Button x:Name="SpeedLimitButton" Grid.Column="4" Style="{StaticResource AriaToolbarButtonStyle}" IsEnabled="False" ToolTipService.ToolTip="Speed presets are not available in this build." AutomationProperties.Name="Speed limit, unavailable"><StackPanel Orientation="Horizontal" Spacing="6"><icons:FluentIcon IconName="Speed" /><TextBlock Text="Unlimited" /></StackPanel></Button>
+    </Grid>
+</UserControl>
+
