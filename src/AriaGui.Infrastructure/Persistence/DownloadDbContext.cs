@@ -69,6 +69,7 @@ public sealed class AttemptRow
     public long? TotalBytes { get; set; }
     public long UpdatedAtUtcTicks { get; set; }
     public string? ErrorMessage { get; set; }
+    public int? HttpStatus { get; set; }
     public bool DesiredPaused { get; set; }
     public bool DesiredRemoved { get; set; }
     public bool PolicyHeld { get; set; }

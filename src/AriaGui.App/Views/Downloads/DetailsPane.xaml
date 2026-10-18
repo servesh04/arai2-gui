@@ -77,8 +77,8 @@
                         <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" Foreground="{ThemeResource AriaDangerBrush}" FontSize="20" AutomationProperties.AccessibilityView="Raw" />
                         <StackPanel Grid.Column="1" Spacing="{StaticResource AriaRadiusControl}">
                             <TextBlock Text="Download failed" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding FailureReason}" TextWrapping="Wrap" Visibility="{Binding Converter={StaticResource FailureReasonVisibility}}" />
-                            <TextBlock Text="{Binding HttpStatus, Converter={StaticResource HttpStatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" Visibility="{Binding Converter={StaticResource HttpStatusVisibility}}" />
+                            <TextBlock Text="{Binding FailureReason}" TextWrapping="Wrap" Visibility="{Binding FailureReason, Converter={StaticResource FailureReasonVisibility}}" />
+                            <TextBlock Text="{Binding HttpStatus, Converter={StaticResource HttpStatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" Visibility="{Binding HttpStatus, Converter={StaticResource HttpStatusVisibility}}" />
                         </StackPanel>
                         <Button Grid.Column="2" Content="Retry" Command="{Binding RetryCommand}" Style="{StaticResource AriaSecondaryButtonStyle}" VerticalAlignment="Top" />
                     </Grid>

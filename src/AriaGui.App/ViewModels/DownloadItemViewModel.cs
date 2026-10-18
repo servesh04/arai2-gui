@@ -79,7 +79,7 @@ public sealed class DownloadItemViewModel : ObservableObject
     public bool ShowOpenFile => _entry.Progress.Status == DownloadStatus.Completed;
     public string ErrorMessage => _entry.ErrorMessage ?? "";
     public string? FailureReason => _entry.ErrorMessage;
-    public int? HttpStatus => null;
+    public int? HttpStatus => _entry.HttpStatus;
     public double Progress => _entry.Progress.Percentage ?? 0;
     public bool IsIndeterminate => _entry.Progress.Percentage is null
         && _entry.Progress.Status is DownloadStatus.Downloading or DownloadStatus.Queued;

@@ -9,6 +9,10 @@ namespace AriaGui.Infrastructure.Downloads;
 public sealed record HttpRepresentation(int Version, string EffectiveResource, string StrongETag, long Length, string Encoding, bool Resumable = true);
 public sealed record HttpTransferCompletion(int Version, long Length, string Sha256);
 public sealed record ContinuityResponse(long Offset, long Length, long Total, string StrongETag);
+internal sealed class HttpOriginStatusException(HttpStatusCode statusCode) : IOException
+{
+    public HttpStatusCode StatusCode { get; } = statusCode;
+}
 public sealed record ContinuityResourceLimits
 {
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromSeconds(30);
@@ -154,8 +158,12 @@ public sealed class HttpContinuityRelay
             var etag = response.Headers.ETag;
             var resource = response.RequestMessage?.RequestUri?.OriginalString;
             var encoding = content.ContentEncoding.Count == 0 || content.ContentEncoding.SequenceEqual(["identity"]);
-            if (response.StatusCode != (offset > 0 ? HttpStatusCode.PartialContent : HttpStatusCode.OK)
-                || !encoding || !ValidResource(resource)) return false;
+            if (response.StatusCode != (offset > 0 ? HttpStatusCode.PartialContent : HttpStatusCode.OK))
+            {
+                if (IsSafeFailureStatus(response.StatusCode)) throw new HttpOriginStatusException(response.StatusCode);
+                return false;
+            }
+            if (!encoding || !ValidResource(resource)) return false;
             if (prior is not null && (etag is not { IsWeak: false } || etag.Tag == "*")) return false;
             if (prior is not null && (prior.EffectiveResource != resource || prior.StrongETag != etag!.Tag)) return false;
             if (offset > 0)
@@ -359,4 +367,7 @@ public sealed class HttpContinuityRelay
     private static bool ValidResource(string? value) => value is { Length: <= 16384 }
         && Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
         && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Fragment);
+    private static bool IsSafeFailureStatus(HttpStatusCode status) => status is HttpStatusCode.Unauthorized
+        or HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.ProxyAuthenticationRequired
+        || (int)status is >= 500 and <= 599;
 }

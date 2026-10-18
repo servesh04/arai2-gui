@@ -7,7 +7,7 @@ public sealed record EngineDownloadRequest(string EngineId, Uri Source, bool Sim
     Guid? ContinuityJobId = null, Guid? ContinuityAttemptId = null, bool RequirePublicOrigin = true, string? LegacyParentEngineId = null, bool FreshRestart = false,
     ByteRateLimit? JobDownloadLimit = null, ExpectedChecksum? ExpectedChecksum = null, int HttpConnections = 1);
 public sealed record EngineDownload(string EngineId, DownloadSnapshot Progress, string? ErrorMessage = null,
-    int? QueuePosition = null, VerificationStatus Verification = VerificationStatus.NotSupplied);
+    int? QueuePosition = null, VerificationStatus Verification = VerificationStatus.NotSupplied, int? HttpStatus = null);
 public sealed record EngineObservation(string Generation, IReadOnlyList<EngineDownload> Downloads, int MaxConcurrentDownloads,
     IReadOnlyList<string>? RestoredIds = null, int UnknownTransferCount = 0);
 public sealed record EngineCommandResult(string Generation, EngineDownload? Download);

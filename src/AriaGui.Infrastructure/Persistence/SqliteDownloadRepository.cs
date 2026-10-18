@@ -46,7 +46,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
                 operation is null ? null : new(operation.Id, job.Id, operation.Action, operation.Status, At(operation.RequestedAtUtcTicks), operation.QueuePosition),
                 attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),
                 ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null, PolicyHeld: attempt.PolicyHeld,
-                Verification: attempt.Verification);
+                Verification: attempt.Verification, HttpStatus: attempt.HttpStatus);
         }).ToArray();
     }, token);
 
@@ -99,6 +99,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
             attempt.DownloadedBytes = entry.Progress.DownloadedBytes;
             attempt.TotalBytes = entry.Progress.TotalBytes;
             attempt.ErrorMessage = entry.ErrorMessage;
+            attempt.HttpStatus = entry.HttpStatus;
             attempt.DesiredPaused = entry.DesiredPaused;
             attempt.DesiredRemoved = entry.DesiredRemoved;
             attempt.PolicyHeld = entry.PolicyHeld;

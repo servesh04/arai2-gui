@@ -69,9 +69,10 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddSingleton<IUserPreferencesRepository>(new JsonUserPreferencesRepository(Path.Combine(runtimeDirectory, "preferences.json")));
         registrations.AddSingleton<IBrowserIntegrationDiagnostics>(new BrowserIntegrationDiagnostics());
         registrations.AddSingleton<PreferencesViewModel>();
-        registrations.AddSingleton(FeatureFlags.Unsupported);
-        registrations.AddSingleton<IEngineControl, UnsupportedEngineControl>();
-        registrations.AddSingleton<ISpeedLimitService, UnsupportedSpeedLimitService>();
+        // Features stay gated until private-profile process/RPC verification and the integration-phase UI wiring are complete.
+        registrations.AddSingleton(FeatureFlags.BackendImplemented);
+        registrations.AddSingleton<IEngineControl, EngineControlService>();
+        registrations.AddSingleton<ISpeedLimitService, SpeedLimitService>();
         registrations.AddSingleton<IHandoffNotifier, UnsupportedHandoffNotifier>();
         var folderPicker = new WinUiFolderPicker();
         registrations.AddSingleton<IDownloadFolderPicker>(folderPicker);

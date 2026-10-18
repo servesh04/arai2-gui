@@ -82,7 +82,7 @@ public sealed partial class SqliteDownloadRepository
                 op is null ? null : new(op.Id, job.Id, op.Action, op.Status, At(op.RequestedAtUtcTicks), op.QueuePosition),
                 attempt.ErrorMessage, DesiredPaused: attempt.DesiredPaused, DesiredRemoved: attempt.DesiredRemoved, ObservedAt: At(attempt.UpdatedAtUtcTicks),
                 ExactSourceUrl: externalJobs.Contains(job.Id) ? job.Source : null, PolicyHeld: attempt.PolicyHeld,
-                Verification: attempt.Verification);
+                Verification: attempt.Verification, HttpStatus: attempt.HttpStatus);
         }).ToArray();
     }
 }

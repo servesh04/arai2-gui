@@ -14,7 +14,7 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
 {
     private long _requestId;
     internal string OwnershipFailure { get; private set; } = "none";
-    private static readonly string[] ProgressKeys = ["gid", "status", "totalLength", "completedLength", "downloadSpeed", "errorCode"];
+    private static readonly string[] ProgressKeys = ["gid", "status", "totalLength", "completedLength", "downloadSpeed", "errorCode", "errorMessage"];
 
     public async Task<EngineInfo> GetInfoAsync(CancellationToken cancellationToken = default)
     {
@@ -147,14 +147,8 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
         var speed = Number(transfer.DownloadSpeed);
         long? total = size == 0 && status != DownloadStatus.Completed ? null : size;
         if (total.HasValue && received > total.Value) throw InvalidResponse();
-        var error = status == DownloadStatus.Failed ? transfer.ErrorCode switch
-        {
-            "3" => "The server did not find this file.", "9" => "The destination has insufficient space.",
-            "13" => "A file appeared at the destination. It was not overwritten.",
-            "16" => "The engine could not create or write the destination file.",
-            "24" => "The server requires authentication.", _ => "The engine could not finish this download."
-        } : null;
-        return new(transfer.Gid, new(status, received, total, speed), error);
+        var failure = status == DownloadStatus.Failed ? DownloadFailureMapper.Map(transfer.ErrorCode, transfer.ErrorMessage) : null;
+        return new(transfer.Gid, new(status, received, total, speed), failure?.Reason, HttpStatus: failure?.HttpStatus);
     }
 
     public async Task<IReadOnlyList<string>> GetWaitingAsync(CancellationToken token, int maxCount = int.MaxValue)
@@ -212,7 +206,7 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
     public async Task SetBandwidthAsync(BandwidthProfile profile, CancellationToken token)
     {
         profile.Validate();
-        static string Format(ByteRateLimit cap) => (cap.BytesPerSecond ?? 0).ToString(CultureInfo.InvariantCulture);
+        static string Format(ByteRateLimit cap) => SpeedLimitPresetPolicy.ToAriaOptionValue(cap.BytesPerSecond);
         var result = await CallAsync<string>("aria2.changeGlobalOption", token,
             [new Dictionary<string, string> {
                 ["max-overall-download-limit"] = Format(profile.Download),
@@ -317,5 +311,5 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
     private sealed record SessionResponse(string SessionId);
     private sealed record WaitingResponse(string Gid);
     private sealed record TransferResponse(string Gid, string Status, string TotalLength, string CompletedLength,
-        string DownloadSpeed, string? ErrorCode);
+        string DownloadSpeed, string? ErrorCode, string? ErrorMessage);
 }

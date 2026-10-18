@@ -3,10 +3,12 @@ using System.Text.Json.Serialization;
 namespace AriaGui.Application.Downloads;
 
 public enum AppTheme { System, Light, Dark }
-public sealed record UserPreferences(AppTheme Theme = AppTheme.System, string DefaultFolder = "", DesktopLayout? Layout = null, BrowserIntegrationPreferences? Browser = null)
+public sealed record UserPreferences(AppTheme Theme = AppTheme.System, string DefaultFolder = "", DesktopLayout? Layout = null,
+    BrowserIntegrationPreferences? Browser = null, SpeedLimitPreferences? SpeedLimits = null)
 {
     [JsonIgnore] public DesktopLayout EffectiveLayout => Layout ?? new();
     [JsonIgnore] public BrowserIntegrationPreferences EffectiveBrowser => Browser ?? new();
+    [JsonIgnore] public SpeedLimitPreferences EffectiveSpeedLimits => SpeedLimits ?? new();
     public void Validate()
     {
         if (!Enum.IsDefined(Theme) || DefaultFolder is null || DefaultFolder.Length > 32760 || (!string.IsNullOrEmpty(DefaultFolder)
@@ -14,6 +16,18 @@ public sealed record UserPreferences(AppTheme Theme = AppTheme.System, string De
             throw new DownloadRequestException("Choose a theme and an absolute destination folder.");
         EffectiveLayout.Validate();
         EffectiveBrowser.Validate();
+        EffectiveSpeedLimits.Validate();
+    }
+}
+public sealed record SpeedLimitPreferences(string SelectedPreset = "Standard", long CustomBytesPerSecond = 2_097_152,
+    long? ReducedBytesPerSecond = 1_048_576)
+{
+    public void Validate()
+    {
+        if (SelectedPreset is not ("Unlimited" or "Standard" or "Reduced" or "Custom"))
+            throw new DownloadRequestException("Choose a valid speed preset.");
+        SpeedLimitPresetPolicy.ValidateRate(CustomBytesPerSecond);
+        SpeedLimitPresetPolicy.ValidateRate(ReducedBytesPerSecond);
     }
 }
 public sealed record DownloadColumnLayout(DownloadSortColumn Column, double Width, bool Visible = true);

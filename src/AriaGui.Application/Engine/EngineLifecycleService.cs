@@ -11,6 +11,8 @@ public sealed class EngineLifecycleService : IDisposable
     private DateTimeOffset? _readySince;
     private int _monitoring;
     private readonly SemaphoreSlim _monitorGate = new(1, 1);
+    private readonly object _restartSync = new();
+    private Task<bool>? _restartOperation;
 
     public EngineLifecycleService(IManagedAria2Engine engine, EngineStateStore store, TimeProvider? clock = null)
     {
@@ -21,6 +23,47 @@ public sealed class EngineLifecycleService : IDisposable
     }
 
     public Task StartAsync(CancellationToken cancellationToken = default) => StartCoreAsync(true, cancellationToken);
+    public Task<bool> RestartAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_restartSync)
+        {
+            if (_restartOperation is { IsCompleted: false }) return _restartOperation;
+            return _restartOperation = RestartCoreAsync(cancellationToken);
+        }
+    }
+
+    private async Task<bool> RestartCoreAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _restartAttempts = 0; _nextRestart = default; _readySince = null;
+            _store.Publish(EngineStatus.Stopping, "Restarting aria2…");
+            try { await _engine.StopAsync(cancellationToken).ConfigureAwait(false); }
+            catch (EngineException) { /* StartAsync can recover an already-exited owned process. */ }
+            _store.Publish(EngineStatus.Starting, "Reconnecting to aria2…");
+            var info = await _engine.StartAsync(cancellationToken).ConfigureAwait(false);
+            _readySince = _clock.GetUtcNow();
+            _store.Publish(EngineStatus.Ready, info.RecoveryMessage ?? "Ready · local connection verified", info.Version);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _store.Publish(EngineStatus.Stopped, "Engine restart cancelled");
+            throw;
+        }
+        catch (EngineException ex)
+        {
+            _store.Publish(EngineStatus.Failed, ex.Message, failure: ex.Failure);
+            return false;
+        }
+        catch (Exception)
+        {
+            _store.Publish(EngineStatus.Failed, "The engine could not restart. Check the diagnostic log.");
+            return false;
+        }
+        finally { _gate.Release(); }
+    }
     public bool SupportsLegacyTransition => _engine.SupportsLegacyTransition;
     public async Task StopLegacyDirectAsync(CancellationToken token = default)
     {

@@ -66,7 +66,7 @@ public sealed partial class DownloadsPage : Page
     private readonly DispatcherTimer _layoutSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
 
     public DownloadsPage(DownloadsViewModel viewModel, DownloadSummaryViewModel summary, EngineViewModel engine, PreferencesViewModel preferences,
-        FeatureFlags features, IHandoffNotifier handoffNotifier)
+        FeatureFlags features, IHandoffNotifier handoffNotifier, IEngineControl engineControl, ISpeedLimitService speedLimitService)
     {
         ViewModel = viewModel;
         Summary = summary;
@@ -91,7 +91,7 @@ public sealed partial class DownloadsPage : Page
         DownloadsTableControl.RowRightTapped += TransferRightTapped;
         DownloadsTableControl.RowCheckReady += DownloadTableRowCheckReady;
         DownloadsTableControl.RealizedContainersChanged += (_, _) => RefreshRowChecks();
-        StatusBarControl.ApplyFeatures(features);
+        StatusBarControl.ApplyServices(engineControl, speedLimitService, features);
         HandoffToastControl.Initialize(handoffNotifier, features);
         HandoffToastControl.ShowRequested += ShowHandoffItem;
         FiltersRailControl.ViewChanged += (_, _) => ShowDownloads();

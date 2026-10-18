@@ -7,6 +7,7 @@ public sealed record HandoffAddedEventArgs(Guid ItemId, string Name, bool AddedP
 public interface IEngineControl
 {
     EngineControlState State { get; }
+    event EventHandler? StateChanged { add { } remove { } }
     Task<bool> RestartAsync(CancellationToken cancellationToken = default);
 }
 
@@ -26,6 +27,7 @@ public interface IHandoffNotifier
 public sealed record FeatureFlags(bool SpeedPresets, bool EngineRestart, bool FailureReasons, bool BrowserHandoff)
 {
     public static FeatureFlags Unsupported { get; } = new(false, false, false, false);
+    public static FeatureFlags BackendImplemented { get; } = new(true, true, true, false);
 }
 
 public sealed class UnsupportedEngineControl : IEngineControl

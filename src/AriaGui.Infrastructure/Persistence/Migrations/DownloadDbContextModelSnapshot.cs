@@ -39,6 +39,9 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("HttpConnections")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")

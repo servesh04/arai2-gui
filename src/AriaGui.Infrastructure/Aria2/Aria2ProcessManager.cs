@@ -115,7 +115,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 bandwidth = await StageScheduledProfileAsync(bandwidth, schedule, cancellationToken).ConfigureAwait(false);
                 var startupProfile = bandwidth.RequestStatus == AriaGui.Core.Downloads.OperationStatus.Failed ? bandwidth.Confirmed : bandwidth.Requested;
                 _relayLimiter?.SetRate(startupProfile.Download);
-                static string Rate(ByteRateLimit cap) => (cap.BytesPerSecond ?? 0).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                static string Rate(ByteRateLimit cap) => SpeedLimitPresetPolicy.ToAriaOptionValue(cap.BytesPerSecond);
                 var config = string.Join('\n', new[]
                 {
                     "enable-rpc=true", "rpc-listen-all=false", "rpc-allow-origin-all=false",

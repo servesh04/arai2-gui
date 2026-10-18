@@ -171,6 +171,8 @@ public sealed class ContinuityLoopbackGateway : IAsyncDisposable
                 : await route.Relay.RelayAsync(offset, SendHeaders, context.Response.Body, context.RequestAborted);
             if (!accepted) context.Response.StatusCode = 412;
         }
+        catch (HttpOriginStatusException ex) when (!context.Response.HasStarted)
+        { context.Response.StatusCode = (int)ex.StatusCode; }
         catch (Exception ex) when (ex is IOException or HttpRequestException or OperationCanceledException or JsonException)
         { if (!context.Response.HasStarted) context.Response.StatusCode = 412;
             // Kestrel closes a short Content-Length response; preserve already flushed bytes.

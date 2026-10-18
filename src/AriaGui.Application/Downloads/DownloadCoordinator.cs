@@ -271,7 +271,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
                 else return entry;
                 if (next != entry) next = next with { ObservedAt = now };
                 if (next != entry && (next.Progress.Status != entry.Progress.Status || next.Verification != entry.Verification || next.PendingOperation != entry.PendingOperation
-                    || next.ErrorMessage != entry.ErrorMessage || next.Progress.TotalBytes != entry.Progress.TotalBytes
+                    || next.ErrorMessage != entry.ErrorMessage || next.HttpStatus != entry.HttpStatus || next.Progress.TotalBytes != entry.Progress.TotalBytes
                     || !_checkpoints.TryGetValue(entry.Job.Id, out var last) || now - last >= TimeSpan.FromSeconds(5))) save.Add(next);
                 return next;
             }).ToArray();
@@ -319,6 +319,7 @@ public sealed partial class DownloadCoordinator(IAria2Client engine, DownloadRun
             Progress = observation.Progress, File = entry.File with { TotalBytes = observation.Progress.TotalBytes },
             PendingOperation = confirmed ? null : operation, QueuePosition = observation.QueuePosition,
             ErrorMessage = confirmed ? observation.ErrorMessage : "Command is awaiting engine confirmation. No duplicate command was sent.",
+            HttpStatus = confirmed ? observation.HttpStatus : entry.HttpStatus,
             Verification = entry.Job.ExpectedChecksum is null ? VerificationStatus.NotSupplied
                 : observation.Verification == VerificationStatus.NotSupplied ? entry.Verification : observation.Verification
         };
