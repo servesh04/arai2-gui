@@ -9,13 +9,13 @@
                 <icons:FluentIcon IconName="Download" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaAccentBrush}" AutomationProperties.AccessibilityView="Raw" />
                 <TextBlock Text="AriaGUI" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
-            <Button x:Name="DownloadsButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="DownloadsClick" AutomationProperties.Name="Downloads">
+            <ToggleButton x:Name="DownloadsButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="DownloadsClick" AutomationProperties.Name="Downloads">
                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusOuter}"><icons:FluentIcon IconName="Download" /><TextBlock Text="Downloads" /></StackPanel>
-            </Button>
+            </ToggleButton>
         </StackPanel>
         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="{StaticResource AriaRadiusOuter}">
-                <StackPanel x:Name="TransferFilters" Spacing="{StaticResource AriaRadiusControl}" Margin="{StaticResource AriaSpace3}">
+                <StackPanel x:Name="TransferFilters" Spacing="{StaticResource AriaRadiusControl}" Margin="{StaticResource AriaSpace1}">
                     <TextBlock Text="TRANSFERS" FontWeight="SemiBold" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" />
                     <ListView x:Name="StatusFilters" SelectedIndex="{Binding ViewModel.FilterIndex, Mode=TwoWay}" SelectionMode="Single" AutomationProperties.Name="Download status filter">
                         <ListView.ItemContainerStyle>

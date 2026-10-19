@@ -15,4 +15,45 @@
     <SolidColorBrush x:Key="AriaDangerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
     <SolidColorBrush x:Key="AriaFocusRingBrush" Color="{ThemeResource SystemColorHighlightColor}" />
     <SolidColorBrush x:Key="AriaSelectionTintBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPointerOverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxDisabledBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPointerOverBorderBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPressedBorderBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxDisabledBorderBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedPointerOverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedDisabledBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="ListViewItemCheckDisabledBrush" Color="{ThemeResource SystemColorWindowColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxBrush" Color="{ThemeResource SystemColorWindowColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxDisabledBrush" Color="{ThemeResource SystemColorWindowColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxDisabledBorderBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxSelectedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxSelectedDisabledBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckDisabledBrush" Color="{ThemeResource SystemColorWindowColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUnchecked" Color="{ThemeResource SystemColorWindowColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedPointerOver" Color="{ThemeResource SystemColorButtonFaceColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedPressed" Color="{ThemeResource SystemColorButtonFaceColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedDisabled" Color="{ThemeResource SystemColorWindowColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUnchecked" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPressed" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedDisabled" Color="{ThemeResource SystemColorGrayTextColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedDisabled" Color="{ThemeResource SystemColorGrayTextColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="{ThemeResource SystemColorHighlightTextColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedDisabled" Color="{ThemeResource SystemColorWindowColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillIndeterminate" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeIndeterminate" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundIndeterminate" Color="{ThemeResource SystemColorHighlightTextColor}" />
 </ResourceDictionary>

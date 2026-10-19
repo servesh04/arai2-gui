@@ -12,7 +12,7 @@ public static class SegoeFluentIcons
         ["Notifications"] = "\uE7F4", ["Settings"] = "\uE713", ["List"] = "\uEA37",
         ["Play"] = "\uE768", ["Pause"] = "\uE769", ["Retry"] = "\uE72C",
         ["Delete"] = "\uE74D", ["Search"] = "\uE721", ["Filter"] = "\uE71C",
-        ["Speed"] = "\uEC4A", ["Status"] = "\uE9D9", ["ChevronDown"] = "\uE70D"
+        ["Speed"] = "\uEC4A", ["Status"] = "\uE9D9", ["ChevronDown"] = "\uE70D", ["Back"] = "\uE72B"
     };
 
     public static string Get(string name) => Glyphs.TryGetValue(name, out var glyph) ? glyph : "\uE946";

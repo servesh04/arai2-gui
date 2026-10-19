@@ -33,7 +33,7 @@ public sealed record SpeedLimitPreferences(string SelectedPreset = "Standard", l
 public sealed record DownloadColumnLayout(DownloadSortColumn Column, double Width, bool Visible = true);
 public sealed record DesktopLayout(IReadOnlyList<DownloadColumnLayout>? Columns = null, bool CompactRows = true,
     double SidebarWidth = 160, double DetailsHeight = 180, bool SidebarVisible = true, bool DetailsVisible = true, bool AnimationsEnabled = true,
-    DownloadTableSizingMode TableSizingMode = DownloadTableSizingMode.Fit)
+    DownloadTableSizingMode TableSizingMode = DownloadTableSizingMode.Fit, double DetailsWidth = 360)
 {
     public const double MinimumColumnWidth = 60;
     // A single column can use 600 DIPs; wider data remains available through tooltip/details.
@@ -45,11 +45,18 @@ public sealed record DesktopLayout(IReadOnlyList<DownloadColumnLayout>? Columns 
         Columns = Columns.Select(c => c is not null && double.IsFinite(c.Width)
             ? c with { Width = Math.Clamp(c.Width, MinimumColumnWidth, MaximumColumnWidth) } : c!).ToArray()
     };
+    public DesktopLayout NormalizeSavedPaneSizes() => this with
+    {
+        SidebarWidth = double.IsFinite(SidebarWidth) ? Math.Clamp(SidebarWidth, 120, 400) : 160,
+        DetailsHeight = double.IsFinite(DetailsHeight) ? Math.Clamp(DetailsHeight, 120, 600) : 180,
+        DetailsWidth = double.IsFinite(DetailsWidth) ? Math.Clamp(DetailsWidth, 280, 600) : 360
+    };
     [JsonIgnore] public IReadOnlyList<DownloadColumnLayout> EffectiveColumns => Columns ?? [new(DownloadSortColumn.Name, 280), new(DownloadSortColumn.Size, 140),
         new(DownloadSortColumn.Progress, 150), new(DownloadSortColumn.Status, 140), new(DownloadSortColumn.Speed, 110), new(DownloadSortColumn.Eta, 130)];
     public void Validate()
     {
         if (!Enum.IsDefined(TableSizingMode) || !double.IsFinite(SidebarWidth) || SidebarWidth is < 120 or > 400 || !double.IsFinite(DetailsHeight) || DetailsHeight is < 120 or > 600
+            || !double.IsFinite(DetailsWidth) || DetailsWidth is < 280 or > 600
             || EffectiveColumns.Count != 6 || EffectiveColumns.Any(c => c is null || !Enum.IsDefined(c.Column) || c.Column == DownloadSortColumn.Default
                 || !double.IsFinite(c.Width) || c.Width < MinimumColumnWidth || c.Width > MaximumColumnWidth) || EffectiveColumns.Select(c => c.Column).Distinct().Count() != 6
             || !EffectiveColumns.Any(c => c.Column == DownloadSortColumn.Name && c.Visible))

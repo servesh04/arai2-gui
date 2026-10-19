@@ -17,7 +17,14 @@
         </Style>
         <Style x:Key="DetailValue" TargetType="TextBlock">
             <Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="TextAlignment" Value="Right" />
+        </Style>
+        <Style x:Key="DetailLongValue" TargetType="TextBlock" BasedOn="{StaticResource DetailValue}">
             <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="TextTrimming" Value="None" />
         </Style>
     </UserControl.Resources>
     <Grid x:Name="Inspector" Padding="{StaticResource AriaSpace3}" Background="{ThemeResource AriaSurfaceRaisedBrush}">
@@ -55,7 +62,7 @@
         </Grid>
         <TextBlock x:Name="SelectionHint" Grid.Row="1" Text="Select a transfer to see its details." TextWrapping="Wrap" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" HorizontalAlignment="Center" />
         <ScrollViewer x:Name="DetailsHost" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0" SizeChanged="DetailsHostSizeChanged">
-            <StackPanel Spacing="{StaticResource AriaRadiusControl}">
+            <StackPanel x:Name="DetailsContent" Spacing="{StaticResource AriaRadiusControl}">
                 <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding FileName, Converter={StaticResource DetailsFileGlyph}}" FontSize="20" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
@@ -83,54 +90,105 @@
                         <Button Grid.Column="2" Content="Retry" Command="{Binding RetryCommand}" Style="{StaticResource AriaSecondaryButtonStyle}" VerticalAlignment="Top" />
                     </Grid>
                 </Border>
-                <TabView x:Name="DetailsTabs" IsAddTabButtonVisible="False" TabWidthMode="SizeToContent">
-                    <TabViewItem Header="Overview">
+                <TabView x:Name="DetailsTabs" IsAddTabButtonVisible="False" CanReorderTabs="False" TabWidthMode="SizeToContent" HorizontalAlignment="Stretch">
+                    <TabViewItem Header="Overview" IsClosable="False">
                         <Grid x:Name="OverviewCards" ColumnSpacing="{StaticResource AriaRadiusControl}" RowSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                             <Border x:Name="TransferCard" Style="{StaticResource AriaCardStyle}">
                                 <StackPanel Spacing="{StaticResource AriaRadiusControl}">
                                     <TextBlock Text="Transfer" FontWeight="SemiBold" />
-                                    <TextBlock Text="Speed" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding SpeedLabel}" Style="{StaticResource DetailValue}" />
-                                    <TextBlock Text="Downloaded" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding SizeLabel}" Style="{StaticResource DetailValue}" />
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Speed" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SpeedLabel}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Downloaded" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SizeLabel}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                             <Border x:Name="ProgressCard" Grid.Column="1" Style="{StaticResource AriaCardStyle}">
                                 <StackPanel Spacing="{StaticResource AriaRadiusControl}">
                                     <TextBlock Text="Progress" FontWeight="SemiBold" />
-                                    <TextBlock Text="Total" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding TotalSizeLabel}" Style="{StaticResource DetailValue}" />
-                                    <TextBlock Text="Complete" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding ProgressLabel}" Style="{StaticResource DetailValue}" />
-                                    <TextBlock Text="ETA" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding EtaLabel}" Style="{StaticResource DetailValue}" />
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Total" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding TotalSizeLabel}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Complete" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding ProgressLabel}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="ETA" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding EtaLabel}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                             <Border x:Name="NetworkCard" Grid.Column="2" Style="{StaticResource AriaCardStyle}">
                                 <StackPanel Spacing="{StaticResource AriaRadiusControl}">
                                     <TextBlock Text="Network" FontWeight="SemiBold" />
-                                    <TextBlock Text="Connections" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Entry.Attempt.HttpConnections}" Style="{StaticResource DetailValue}" />
-                                    <TextBlock Text="Server" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Source}" Style="{StaticResource DetailValue}" />
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Connections" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Entry.Attempt.HttpConnections}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Server" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Source}" Style="{StaticResource DetailLongValue}" />
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                             <Border x:Name="GeneralCard" Grid.Column="3" Style="{StaticResource AriaCardStyle}">
                                 <StackPanel Spacing="{StaticResource AriaRadiusControl}">
                                     <TextBlock Text="General" FontWeight="SemiBold" />
-                                    <TextBlock Text="Type" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding FileName, Converter={StaticResource DownloadType}}" Style="{StaticResource DetailValue}" />
-                                    <TextBlock Text="Created" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Entry.Job.CreatedAt, Converter={StaticResource DetailsDate}}" Style="{StaticResource DetailValue}" />
-                                    <TextBlock Text="Completed" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Entry.ObservedAt, Converter={StaticResource DetailsDate}}" Style="{StaticResource DetailValue}" />
-                                    <TextBlock Text="Save path" Style="{StaticResource DetailLabel}" /><TextBlock Text="{Binding Destination}" Style="{StaticResource DetailValue}" />
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Type" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding FileName, Converter={StaticResource DownloadType}}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Created" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Entry.Job.CreatedAt, Converter={StaticResource DetailsDate}}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Completed" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Entry.ObservedAt, Converter={StaticResource DetailsDate}}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Save path" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Destination}" Style="{StaticResource DetailLongValue}" />
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                         </Grid>
                     </TabViewItem>
-                    <TabViewItem Header="Options">
+                    <TabViewItem Header="Options" IsClosable="False">
                         <StackPanel Spacing="{StaticResource AriaRadiusControl}" Padding="{StaticResource AriaSpace2}">
-                            <TextBlock Text="Source URL" Style="{StaticResource DetailLabel}" />
-                            <TextBlock Text="{Binding SourceUrl}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
-                            <TextBlock Text="Verification" Style="{StaticResource DetailLabel}" />
-                            <TextBlock Text="{Binding VerificationLabel}" TextWrapping="Wrap" />
-                            <TextBlock Text="Queue" Style="{StaticResource DetailLabel}" />
-                            <TextBlock Text="{Binding QueueLabel}" TextWrapping="Wrap" />
+                            <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Source URL" Style="{StaticResource DetailLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SourceUrl}" Style="{StaticResource DetailLongValue}" IsTextSelectionEnabled="True" />
+                            </Grid>
+                            <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Verification" Style="{StaticResource DetailLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding VerificationLabel}" Style="{StaticResource DetailLongValue}" />
+                            </Grid>
+                            <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="Queue" Style="{StaticResource DetailLabel}" />
+                                <TextBlock Grid.Column="1" Text="{Binding QueueLabel}" Style="{StaticResource DetailValue}" />
+                            </Grid>
                         </StackPanel>
                     </TabViewItem>
                 </TabView>

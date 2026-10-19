@@ -44,7 +44,8 @@
                 </StackPanel></ScrollViewer>
                 <Grid x:Name="TransferWorkspace" Grid.Row="5" SizeChanged="WorkspaceSizeChanged">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition x:Name="DetailsGripRow" Height="6" /><RowDefinition x:Name="DetailsRow" Height="180" /></Grid.RowDefinitions>
-                    <Grid x:Name="HistoryBar" Padding="10,4" ColumnSpacing="8"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition x:Name="DetailsGripColumn" Width="0" /><ColumnDefinition x:Name="DetailsColumn" Width="0" /></Grid.ColumnDefinitions>
+                    <Grid x:Name="HistoryBar" Grid.ColumnSpan="3" Padding="10,4" ColumnSpacing="8"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <TextBlock Text="{x:Bind ViewModel.BrowserMessage, Mode=OneWay}" FontSize="{StaticResource AriaMinimumFontSize}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind ViewModel.BrowserMessage, Mode=OneWay}" />
                         <StackPanel x:Name="HistoryActions" Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="{x:Bind ViewModel.IsHistoryView, Mode=OneWay}">
@@ -53,7 +54,7 @@
                             <Button Content="Refresh" Command="{x:Bind ViewModel.RefreshHistoryCommand}" Style="{StaticResource AriaToolbarButtonStyle}" AutomationProperties.Name="Refresh history" />
                         </StackPanel>
                     </Grid>
-                    <Grid Grid.Row="1"><downloads:DownloadsTable x:Name="DownloadsTableControl" /><downloads:EmptyState x:Name="EmptyStateControl" /></Grid>
+                    <Grid x:Name="TransferListHost" Grid.Row="1"><downloads:DownloadsTable x:Name="DownloadsTableControl" /><downloads:EmptyState x:Name="EmptyStateControl" /></Grid>
                     <Thumb Grid.Row="2" x:Name="DetailsSplitter" IsTabStop="True" UseSystemFocusVisuals="True" DragDelta="DetailsDragDelta" KeyDown="DetailsKeyDown" AutomationProperties.Name="Resize details pane; use up and down arrows" AutomationProperties.HelpText="Preferred details height in device-independent pixels" Background="{ThemeResource AriaBorderBrush}">
                         <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{TemplateBinding Background}" /></ControlTemplate></Thumb.Template>
                     </Thumb>

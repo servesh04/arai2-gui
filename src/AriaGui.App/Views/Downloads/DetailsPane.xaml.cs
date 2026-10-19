@@ -81,7 +81,7 @@ public sealed partial class DetailsPane : UserControl
     {
         CloseOpenFlyouts();
         if (DataContext is not DownloadsPage page) return;
-        page.Preferences.DetailsVisible = false;
+        page.CloseDetailsFromPane();
         await page.SaveLayoutAsync();
     }
 
@@ -97,7 +97,15 @@ public sealed partial class DetailsPane : UserControl
 
     private void DetailsHostSizeChanged(object sender, SizeChangedEventArgs args)
     {
-        var columns = args.NewSize.Width >= 920 ? 4 : args.NewSize.Width >= 520 ? 2 : 1;
+        var viewportWidth = DetailsHost.ViewportWidth > 0 ? DetailsHost.ViewportWidth : args.NewSize.Width;
+        DetailsContent.Width = viewportWidth;
+        var columns = Inspector.ActualWidth >= 900 ? 4 : Inspector.ActualWidth >= 420 ? 2 : 1;
+        if (OverviewCards.ColumnDefinitions.Count != columns)
+        {
+            OverviewCards.ColumnDefinitions.Clear();
+            for (var index = 0; index < columns; index++)
+                OverviewCards.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        }
         var cards = new[] { TransferCard, ProgressCard, NetworkCard, GeneralCard };
         for (var index = 0; index < cards.Length; index++)
         {

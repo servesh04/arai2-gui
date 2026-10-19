@@ -1,16 +1,23 @@
 <Page x:Class="AriaGui.App.Views.Settings.SettingsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:icons="using:AriaGui.App.Icons"
       SizeChanged="PageSizeChanged">
     <Grid Padding="{StaticResource AriaSpace4}" ColumnSpacing="16">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <Grid.ColumnDefinitions><ColumnDefinition x:Name="SectionColumn" Width="180" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-        <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" Grid.ColumnSpan="2" Margin="{StaticResource AriaSpace2}" />
-        <ListView x:Name="SectionList" Grid.Row="1" Grid.RowSpan="2" SelectionMode="Single" SelectedIndex="0" SelectionChanged="SectionChanged" AutomationProperties.Name="Settings sections">
+        <Grid Grid.ColumnSpan="2" Margin="{StaticResource AriaSpace2}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <Button x:Name="CompactBackButton" Visibility="Collapsed" Click="CompactBackClick" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Back to downloads" AutomationProperties.Name="Back to downloads">
+                <icons:FluentIcon IconName="Back" AutomationProperties.AccessibilityView="Raw" />
+            </Button>
+            <TextBlock Grid.Column="1" Text="Settings" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </Grid>
+        <ListView x:Name="SectionList" Grid.Row="1" Grid.RowSpan="2" SelectionMode="Single" AutomationProperties.Name="Settings sections">
             <x:String>General</x:String><x:String>Appearance</x:String><x:String>Downloads</x:String><x:String>Network</x:String>
             <x:String>BitTorrent</x:String><x:String>Integration</x:String><x:String>Advanced</x:String><x:String>About</x:String>
         </ListView>
-        <ComboBox x:Name="SectionPicker" Grid.Row="1" Visibility="Collapsed" SelectedIndex="0" SelectionChanged="SectionChanged" AutomationProperties.Name="Settings section">
+        <ComboBox x:Name="SectionPicker" Grid.Row="1" Visibility="Collapsed" AutomationProperties.Name="Settings section">
             <x:String>General</x:String><x:String>Appearance</x:String><x:String>Downloads</x:String><x:String>Network</x:String>
             <x:String>BitTorrent</x:String><x:String>Integration</x:String><x:String>Advanced</x:String><x:String>About</x:String>
         </ComboBox>

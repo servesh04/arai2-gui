@@ -18,7 +18,10 @@ public sealed class JsonUserPreferencesRepository(string path) : IUserPreference
                 if (!File.Exists(path)) return new UserPreferences();
                 if (new FileInfo(path).Length > 16384) throw new JsonException();
                 var preferences = JsonSerializer.Deserialize<UserPreferences>(File.ReadAllText(path)) ?? throw new JsonException();
-                if (preferences.Layout is { } layout) preferences = preferences with { Layout = layout.NormalizeSavedColumnWidths() };
+                if (preferences.Layout is { } layout) preferences = preferences with
+                {
+                    Layout = layout.NormalizeSavedColumnWidths().NormalizeSavedPaneSizes()
+                };
                 preferences.Validate(); return preferences;
             }, token).ConfigureAwait(false);
         }

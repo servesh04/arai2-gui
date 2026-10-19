@@ -6,12 +6,13 @@ public sealed record EffectivePaneLayout(double NoticeHeight, double DetailsHeig
 public static class ResponsivePaneLayoutPolicy
 {
     public const double MinimumTableHeight = 180;
+    public const double MinimumBottomDockTableHeight = 80;
     public static EffectivePaneLayout Resolve(double bodyHeight, double historyHeight, double workspaceWidth,
         double preferredDetailsHeight, double preferredSidebarWidth, bool detailsVisible, bool selected,
-        bool noticesVisible, bool sidebarDocked)
+        bool noticesVisible, bool sidebarDocked, double minimumTableHeight = MinimumTableHeight)
     {
         // Reserve the workspace border and fractional physical-pixel rounding too.
-        var available = Math.Max(0, bodyHeight - historyHeight - MinimumTableHeight - 2);
+        var available = Math.Max(0, bodyHeight - historyHeight - minimumTableHeight - 2);
         var notice = noticesVisible ? Math.Min(120, available) : 0;
         var remaining = Math.Max(0, available - notice - 6);
         var details = !detailsVisible ? 0 : selected

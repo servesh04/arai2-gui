@@ -58,10 +58,16 @@ public sealed partial class DownloadsPage : Page
     private static readonly string[] FilterLabels = ["All transfers", "Downloading", "Waiting", "Paused", "Needs recovery", "Completed", "Failed", "Stopped"];
     private ContentDialog? _activeDialog;
     private double _detailsHeight = 180;
+    private double _detailsWidth = 360;
+    private bool _detailsSideDocked;
     private bool _restoringSelection;
+    private bool _hadSelection;
+    private bool _detailsOpenForSelection;
+    private bool _replacingSelection;
     private readonly HashSet<Guid> _selection = [];
     private readonly HashSet<CheckBox> _rowChecks = [];
     private bool _exiting;
+    private bool _settingsVisible;
     private DownloadItemViewModel? _observedSelected;
     private readonly DispatcherTimer _layoutSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
 
@@ -190,7 +196,13 @@ public sealed partial class DownloadsPage : Page
     private async void AddClick(object sender, RoutedEventArgs args) => await ShowDialogAsync(new Downloads.AddDownloadDialog(ViewModel));
     private void PreferencesClick(object sender, RoutedEventArgs args)
     {
-        SettingsHost.Content ??= new Settings.SettingsPage(Preferences, Features);
+        if (SettingsHost.Content is not Settings.SettingsPage)
+        {
+            var settings = new Settings.SettingsPage(Preferences, Features);
+            settings.BackRequested += (_, _) => ShowDownloads();
+            SettingsHost.Content = settings;
+        }
+        _settingsVisible = true;
         DownloadsContent.Visibility = Visibility.Collapsed;
         HandoffToastControl.Visibility = Visibility.Collapsed;
         SettingsHost.Visibility = Visibility.Visible;
@@ -198,6 +210,7 @@ public sealed partial class DownloadsPage : Page
     }
     private void ShowDownloads()
     {
+        _settingsVisible = false;
         SettingsHost.Visibility = Visibility.Collapsed;
         DownloadsContent.Visibility = Visibility.Visible;
         HandoffToastControl.Visibility = Visibility.Visible;
@@ -323,6 +336,10 @@ public sealed partial class DownloadsPage : Page
     private void TransferSelectionChanged(object sender, SelectionChangedEventArgs args)
     {
         if (_restoringSelection) return;
+        var hasSelection = TransferList.SelectedItems.Count > 0;
+        if (!hasSelection) _detailsOpenForSelection = false;
+        else if (!_hadSelection && !_replacingSelection) _detailsOpenForSelection = true;
+        _hadSelection = hasSelection;
         foreach (DownloadItemViewModel item in args.RemovedItems)
             if (ViewModel.Downloads.Contains(item)) _selection.Remove(item.Id);
         foreach (DownloadItemViewModel item in args.AddedItems) _selection.Add(item.Id);
@@ -416,6 +433,7 @@ public sealed partial class DownloadsPage : Page
         if (FiltersButton is null) return;
         var index = Math.Clamp(ViewModel.FilterIndex, 0, FilterLabels.Length - 1);
         FiltersRailControl.UpdateSelection(ViewModel.IsHistoryView);
+        if (_settingsVisible) FiltersRailControl.SetSettingsSelected(true);
         FilterCaption.Text = $"Filters: {FilterLabels[index]}";
         ToolTipService.SetToolTip(FiltersButton, $"{FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");
         AutomationProperties.SetName(FiltersButton, $"Filters: {FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");
@@ -512,33 +530,58 @@ public sealed partial class DownloadsPage : Page
         Preferences.DetailsHeight = Math.Clamp(height, 120, 600);
         UpdatePaneLayout();
     }
+    private void SetDetailsWidth(double width)
+    {
+        Preferences.DetailsWidth = Math.Clamp(width, 280, 600);
+        UpdatePaneLayout();
+    }
     private void UpdatePaneLayout()
     {
         if (Workspace is null || Workspace.ActualHeight <= 0) return;
         Downloads.DownloadsTable.SetGripAutomation(SidebarSplitter, "sidebar width", Preferences.SidebarWidth, 120, 400, "left and right");
-        Downloads.DownloadsTable.SetGripAutomation(DetailsSplitter, "details pane height", Preferences.DetailsHeight, 120, 600, "up and down");
+        _detailsSideDocked = ActualWidth >= 1100;
         var layout = ResponsivePaneLayoutPolicy.Resolve(Workspace.ActualHeight + NoticeScroller.ActualHeight,
             HistoryBar.ActualHeight, Workspace.ActualWidth, Preferences.DetailsHeight, Preferences.SidebarWidth,
-            Preferences.DetailsVisible, TransferList.SelectedItem is not null,
+            Preferences.DetailsVisible || _detailsOpenForSelection, TransferList.SelectedItem is not null,
             !string.IsNullOrWhiteSpace(ViewModel.BatchMessage) || ViewModel.HasError || ViewModel.HasCompletion,
-            Preferences.SidebarVisible && _shellMode != ShellLayoutMode.Compact);
+            Preferences.SidebarVisible && _shellMode != ShellLayoutMode.Compact,
+            _detailsSideDocked ? ResponsivePaneLayoutPolicy.MinimumTableHeight : ResponsivePaneLayoutPolicy.MinimumBottomDockTableHeight);
         if (Math.Abs(NoticeScroller.MaxHeight - layout.NoticeHeight) > .1) NoticeScroller.MaxHeight = layout.NoticeHeight;
         if (Math.Abs(SidebarColumn.Width.Value - layout.SidebarWidth) > .1) SidebarColumn.Width = new GridLength(layout.SidebarWidth);
         _detailsHeight = layout.DetailsHeight;
-        var visible = layout.DetailsHeight > 0;
+        _detailsWidth = Preferences.DetailsWidth;
+        var effectiveWidth = Math.Min(_detailsWidth, Math.Max(0, TransferWorkspace.ActualWidth - 426));
+        var visible = TransferList.SelectedItem is not null && (Preferences.DetailsVisible || _detailsOpenForSelection)
+            && (_detailsSideDocked ? effectiveWidth >= 280 : layout.DetailsHeight > 0);
+        DetailsToggle.IsChecked = Preferences.DetailsVisible || _detailsOpenForSelection;
         var visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         if (Inspector.Visibility != visibility) Inspector.Visibility = visibility;
         if (DetailsSplitter.Visibility != visibility) DetailsSplitter.Visibility = visibility;
-        var gripHeight = visible ? 6 : 0;
-        if (Math.Abs(DetailsGripRow.Height.Value - gripHeight) > .1) DetailsGripRow.Height = new GridLength(gripHeight);
-        if (Math.Abs(DetailsRow.Height.Value - layout.DetailsHeight) > .1) DetailsRow.Height = new GridLength(layout.DetailsHeight);
-        var detailsText = Preferences.DetailsVisible && !visible ? "Details pane (collapsed to fit)" : "Details pane";
+        Grid.SetColumn(TransferListHost, 0); Grid.SetColumnSpan(TransferListHost, _detailsSideDocked ? 1 : 3);
+        Grid.SetRow(DetailsSplitter, _detailsSideDocked ? 1 : 2); Grid.SetColumn(DetailsSplitter, _detailsSideDocked ? 1 : 0);
+        Grid.SetColumnSpan(DetailsSplitter, _detailsSideDocked ? 1 : 3);
+        Grid.SetRow(DetailsPaneControl, _detailsSideDocked ? 1 : 3); Grid.SetColumn(DetailsPaneControl, _detailsSideDocked ? 2 : 0);
+        Grid.SetColumnSpan(DetailsPaneControl, _detailsSideDocked ? 1 : 3);
+        DetailsGripColumn.Width = new GridLength(_detailsSideDocked && visible ? 6 : 0);
+        DetailsColumn.Width = new GridLength(_detailsSideDocked && visible ? effectiveWidth : 0);
+        DetailsGripRow.Height = new GridLength(!_detailsSideDocked && visible ? 6 : 0);
+        DetailsRow.Height = new GridLength(!_detailsSideDocked && visible ? layout.DetailsHeight : 0);
+        Downloads.DownloadsTable.SetGripAutomation(DetailsSplitter, _detailsSideDocked ? "details pane width" : "details pane height",
+            _detailsSideDocked ? Preferences.DetailsWidth : Preferences.DetailsHeight, _detailsSideDocked ? 280 : 120, 600,
+            _detailsSideDocked ? "left and right" : "up and down");
+        var detailsText = TransferList.SelectedItem is not null && (Preferences.DetailsVisible || _detailsOpenForSelection) && !visible
+            ? "Details pane (collapsed to fit)" : "Details pane";
         if (DetailsToggle.Text != detailsText) DetailsToggle.Text = detailsText;
-        var orientation = TransferWorkspace.ActualWidth >= 800 ? Orientation.Horizontal : Orientation.Vertical;
+        var orientation = !_detailsSideDocked && TransferWorkspace.ActualWidth >= 800 ? Orientation.Horizontal : Orientation.Vertical;
         if (InspectorMetadata.Orientation != orientation) InspectorMetadata.Orientation = orientation;
     }
     private void SidebarDragDelta(object sender, DragDeltaEventArgs args) { SetSidebarWidth(SidebarColumn.ActualWidth + args.HorizontalChange); SavePaneLayout(); }
-    private void DetailsDragDelta(object sender, DragDeltaEventArgs args) { SetDetailsHeight(_detailsHeight - args.VerticalChange); SavePaneLayout(); }
+    private void DetailsDragDelta(object sender, DragDeltaEventArgs args)
+    {
+        if (_detailsSideDocked) SetDetailsWidth(_detailsWidth - args.HorizontalChange);
+        else SetDetailsHeight(_detailsHeight - args.VerticalChange);
+        SavePaneLayout();
+    }
     private void GripPointerPressed(object sender, PointerRoutedEventArgs args) => ((Thumb)sender).Focus(FocusState.Pointer);
     private void SidebarKeyDown(object sender, KeyRoutedEventArgs args)
     {
@@ -547,8 +590,17 @@ public sealed partial class DownloadsPage : Page
     }
     private void DetailsKeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key is not (VirtualKey.Up or VirtualKey.Down)) return;
-        SetDetailsHeight(_detailsHeight + (args.Key == VirtualKey.Up ? 10 : -10)); SavePaneLayout(); args.Handled = true;
+        if (_detailsSideDocked)
+        {
+            if (args.Key is not (VirtualKey.Left or VirtualKey.Right)) return;
+            SetDetailsWidth(_detailsWidth + (args.Key == VirtualKey.Left ? 10 : -10));
+        }
+        else
+        {
+            if (args.Key is not (VirtualKey.Up or VirtualKey.Down)) return;
+            SetDetailsHeight(_detailsHeight + (args.Key == VirtualKey.Up ? 10 : -10));
+        }
+        SavePaneLayout(); args.Handled = true;
     }
     private void WorkspaceSizeChanged(object sender, SizeChangedEventArgs args)
     {
@@ -559,10 +611,17 @@ public sealed partial class DownloadsPage : Page
     private void DetailsClick(object sender, RoutedEventArgs args)
     {
         Preferences.DetailsVisible = DetailsToggle.IsChecked;
+        _detailsOpenForSelection = DetailsToggle.IsChecked && TransferList.SelectedItem is not null;
         UpdatePaneLayout();
         ScheduleLayoutSave();
     }
-    private void ResetPanesClick(object sender, RoutedEventArgs args) { SetSidebarWidth(160); SetDetailsHeight(180); SavePaneLayout(); }
+    internal void CloseDetailsFromPane()
+    {
+        _detailsOpenForSelection = false;
+        Preferences.DetailsVisible = false;
+        UpdatePaneLayout();
+    }
+    private void ResetPanesClick(object sender, RoutedEventArgs args) { SetSidebarWidth(160); SetDetailsHeight(180); SetDetailsWidth(360); SavePaneLayout(); }
     private void RestoreSelection()
     {
         _selection.IntersectWith(ViewModel.Downloads.Select(item => item.Id));
@@ -573,6 +632,8 @@ public sealed partial class DownloadsPage : Page
                 if (_selection.Contains(item.Id) && !TransferList.SelectedItems.Contains(item)) TransferList.SelectedItems.Add(item);
         }
         finally { _restoringSelection = false; }
+        _hadSelection = TransferList.SelectedItems.Count > 0;
+        if (!_hadSelection) _detailsOpenForSelection = false;
         ViewModel.SetSelection(_selection);
         RefreshSelectionPresentation();
     }
@@ -597,7 +658,12 @@ public sealed partial class DownloadsPage : Page
         var source = args.OriginalSource as DependencyObject;
         while (source is not null && source is not ListViewItem) source = VisualTreeHelper.GetParent(source);
         if (source is ListViewItem container && TransferList.ItemFromContainer(container) is DownloadItemViewModel item
-            && !TransferList.SelectedItems.Contains(item)) { TransferList.SelectedItems.Clear(); TransferList.SelectedItems.Add(item); }
+            && !TransferList.SelectedItems.Contains(item))
+        {
+            _replacingSelection = TransferList.SelectedItems.Count > 0;
+            try { TransferList.SelectedItems.Clear(); TransferList.SelectedItems.Add(item); }
+            finally { _replacingSelection = false; }
+        }
         var menu = new MenuFlyout();
         foreach (var (label, command) in new (string, ICommand)[] { ("Resume", ViewModel.BatchResumeCommand), ("Pause", ViewModel.BatchPauseCommand),
             ("Retry", ViewModel.BatchRetryCommand), ("Recover", ViewModel.BatchRecoverCommand), ("Restart fresh (keep partial files)", ViewModel.BatchRestartFreshCommand), ("Stop transfer (keep files and history)", ViewModel.BatchRemoveCommand) })
@@ -620,15 +686,13 @@ public sealed partial class DownloadsPage : Page
         if (TableHeader is null) return;
         RefreshSidebarCounts();
         EmptyStateControl.SetVisible(ViewModel.IsEmpty);
-        DetailsToggle.IsChecked = Preferences.DetailsVisible;
+        DetailsToggle.IsChecked = Preferences.DetailsVisible || _detailsOpenForSelection;
         _detailsHeight = Preferences.DetailsHeight;
+        _detailsWidth = Preferences.DetailsWidth;
         SidebarColumn.Width = new GridLength(Preferences.SidebarVisible ? Preferences.SidebarWidth : 0);
         SidebarHost.Visibility = Preferences.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
         Workspace.ColumnDefinitions[1].Width = new GridLength(Preferences.SidebarVisible ? 6 : 0);
         SidebarSplitter.Visibility = Preferences.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
-        Inspector.Visibility = DetailsSplitter.Visibility = Preferences.DetailsVisible ? Visibility.Visible : Visibility.Collapsed;
-        DetailsGripRow.Height = new GridLength(Preferences.DetailsVisible ? 6 : 0);
-        DetailsRow.Height = new GridLength(Preferences.DetailsVisible ? _detailsHeight : 0);
         UpdateShellLayout();
         DownloadsTableControl.ApplyLayout();
     }

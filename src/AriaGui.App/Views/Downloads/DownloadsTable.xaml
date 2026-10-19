@@ -74,6 +74,16 @@
                       KeyDown="TransferListKeyDown" AutomationProperties.Name="Transfers"
                       ContainerContentChanging="DownloadContainerChanging"
                       ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListView.Resources>
+                    <StaticResource x:Key="ListViewItemCheckBoxBrush" ResourceKey="AriaListViewItemCheckBoxBrush" />
+                    <StaticResource x:Key="ListViewItemCheckBoxDisabledBrush" ResourceKey="AriaListViewItemCheckBoxDisabledBrush" />
+                    <StaticResource x:Key="ListViewItemCheckBoxBorderBrush" ResourceKey="AriaListViewItemCheckBoxBorderBrush" />
+                    <StaticResource x:Key="ListViewItemCheckBoxDisabledBorderBrush" ResourceKey="AriaListViewItemCheckBoxDisabledBorderBrush" />
+                    <StaticResource x:Key="ListViewItemCheckBoxSelectedBrush" ResourceKey="AriaListViewItemCheckBoxSelectedBrush" />
+                    <StaticResource x:Key="ListViewItemCheckBoxSelectedDisabledBrush" ResourceKey="AriaListViewItemCheckBoxSelectedDisabledBrush" />
+                    <StaticResource x:Key="ListViewItemCheckBrush" ResourceKey="AriaListViewItemCheckBrush" />
+                    <StaticResource x:Key="ListViewItemCheckDisabledBrush" ResourceKey="AriaListViewItemCheckDisabledBrush" />
+                </ListView.Resources>
                 <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel Orientation="Vertical" CacheLength="1" /></ItemsPanelTemplate></ListView.ItemsPanel>
                 <ListView.ItemContainerTransitions><TransitionCollection /></ListView.ItemContainerTransitions>
                 <ListView.ItemContainerStyle>

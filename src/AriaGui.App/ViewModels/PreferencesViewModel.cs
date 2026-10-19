@@ -58,10 +58,11 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
     public bool AnimationsEnabled { get => _layout.AnimationsEnabled; set => UpdateLayout(_layout with { AnimationsEnabled = value }); }
     public double SidebarWidth { get => _layout.SidebarWidth; set => UpdateLayout(_layout with { SidebarWidth = value }); }
     public double DetailsHeight { get => _layout.DetailsHeight; set => UpdateLayout(_layout with { DetailsHeight = value }); }
+    public double DetailsWidth { get => _layout.DetailsWidth; set => UpdateLayout(_layout with { DetailsWidth = value }); }
     public void UpdateLayout(DesktopLayout layout)
     {
         layout.Validate(); _layout = layout;
-        foreach (var name in new[] { nameof(Layout), nameof(Columns), nameof(CompactRows), nameof(SidebarVisible), nameof(DetailsVisible), nameof(AnimationsEnabled), nameof(SidebarWidth), nameof(DetailsHeight) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(Layout), nameof(Columns), nameof(CompactRows), nameof(SidebarVisible), nameof(DetailsVisible), nameof(AnimationsEnabled), nameof(SidebarWidth), nameof(DetailsHeight), nameof(DetailsWidth) }) OnPropertyChanged(name);
     }
     public Task SaveLayoutAsync(CancellationToken token = default) => LayoutSaveTask = PersistLayoutAsync(token);
     private async Task PersistLayoutAsync(CancellationToken token)

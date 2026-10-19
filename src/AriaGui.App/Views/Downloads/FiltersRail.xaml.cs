@@ -25,18 +25,22 @@ public sealed partial class FiltersRail : UserControl
     public void UpdateSelection(bool history)
     {
         TransferFilters.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
+        DownloadsButton.IsChecked = !history;
         HistoryButton.IsChecked = history;
-        DownloadsButton.IsEnabled = history;
         SettingsButton.IsChecked = false;
         RefreshCounts();
     }
     public void SetSettingsSelected(bool selected)
     {
         SettingsButton.IsChecked = selected;
-        if (!selected) return;
+        if (!selected)
+        {
+            UpdateSelection(_page?.ViewModel.IsHistoryView == true);
+            return;
+        }
+        DownloadsButton.IsChecked = false;
         TransferFilters.Visibility = Visibility.Collapsed;
         HistoryButton.IsChecked = false;
-        DownloadsButton.IsEnabled = true;
     }
     private void DownloadsClick(object sender, RoutedEventArgs args)
     {

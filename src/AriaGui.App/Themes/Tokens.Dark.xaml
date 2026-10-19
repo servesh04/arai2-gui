@@ -15,4 +15,45 @@
     <SolidColorBrush x:Key="AriaDangerBrush" Color="#FFAAA4" />
     <SolidColorBrush x:Key="AriaFocusRingBrush" Color="#9BEAFF" />
     <SolidColorBrush x:Key="AriaSelectionTintBrush" Color="#244950" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxBrush" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPointerOverBrush" Color="#EFF7F8" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPressedBrush" Color="#EFF7F8" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxDisabledBrush" Color="#80959C" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxBorderBrush" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPointerOverBorderBrush" Color="#EFF7F8" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxPressedBorderBrush" Color="#EFF7F8" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxDisabledBorderBrush" Color="#80959C" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedBrush" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedPointerOverBrush" Color="#83E8D5" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedPressedBrush" Color="#55C8B3" />
+    <SolidColorBrush x:Key="ListViewItemCheckBoxSelectedDisabledBrush" Color="#3D555D" />
+    <SolidColorBrush x:Key="ListViewItemCheckBrush" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="ListViewItemCheckPressedBrush" Color="#55C8B3" />
+    <SolidColorBrush x:Key="ListViewItemCheckDisabledBrush" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxBrush" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxDisabledBrush" Color="#80959C" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxBorderBrush" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxDisabledBorderBrush" Color="#80959C" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxSelectedBrush" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBoxSelectedDisabledBrush" Color="#3D555D" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckBrush" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="AriaListViewItemCheckDisabledBrush" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUnchecked" Color="#1D3035" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedPointerOver" Color="#294147" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedPressed" Color="#365159" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillUncheckedDisabled" Color="#1D3035" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUnchecked" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" Color="#EFF7F8" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPressed" Color="#EFF7F8" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedDisabled" Color="#80959C" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#83E8D5" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="#55C8B3" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedDisabled" Color="#3D555D" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="#082D28" />
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedDisabled" Color="#B5C8CE" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillIndeterminate" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeIndeterminate" Color="#6CDEC9" />
+    <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundIndeterminate" Color="#082D28" />
 </ResourceDictionary>

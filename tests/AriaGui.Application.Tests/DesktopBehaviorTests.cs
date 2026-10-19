@@ -103,6 +103,11 @@ public sealed class DesktopBehaviorTests
         var defaults = new DesktopLayout(); defaults.Validate();
         Assert.Throws<DownloadRequestException>(() => (defaults with { SidebarWidth = double.NaN }).Validate());
         Assert.Throws<DownloadRequestException>(() => (defaults with { DetailsHeight = double.PositiveInfinity }).Validate());
+        Assert.Throws<DownloadRequestException>(() => (defaults with { DetailsWidth = 100 }).Validate());
+        var normalized = (defaults with { SidebarWidth = 0, DetailsHeight = 0, DetailsWidth = 0 }).NormalizeSavedPaneSizes();
+        Assert.Equal(120, normalized.SidebarWidth);
+        Assert.Equal(120, normalized.DetailsHeight);
+        Assert.Equal(280, normalized.DetailsWidth);
         Assert.Throws<DownloadRequestException>(() => (defaults with { Columns = defaults.EffectiveColumns.Select(c => c with { Column = DownloadSortColumn.Name }).ToArray() }).Validate());
         Assert.Throws<DownloadRequestException>(() => (defaults with { Columns = defaults.EffectiveColumns.Select(c => c.Column == DownloadSortColumn.Name ? c with { Visible = false } : c).ToArray() }).Validate());
     }
