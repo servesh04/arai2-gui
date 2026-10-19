@@ -185,7 +185,9 @@ public sealed class RpcTests
             {
                 Assert.Equal("aria2.tellStatus", call.GetProperty("methodName").GetString());
                 var parameters = call.GetProperty("params"); Assert.Equal("token:batch-secret", parameters[0].GetString());
-                Assert.Equal(6, parameters[2].GetArrayLength()); var gid = parameters[1].GetString();
+                Assert.Equal(7, parameters[2].GetArrayLength());
+                Assert.Contains(parameters[2].EnumerateArray(), value => value.GetString() == "errorMessage");
+                var gid = parameters[1].GetString();
                 return gid == ids[129] ? (object)new { code = 1, message = "GID is not found" }
                     : new[] { new { gid, status = "active", totalLength = "100", completedLength = "25", downloadSpeed = "10", errorCode = "0" } };
             }).ToArray();

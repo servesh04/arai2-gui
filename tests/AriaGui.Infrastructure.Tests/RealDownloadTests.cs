@@ -261,7 +261,7 @@ public sealed class RealDownloadTests
         Assert.Single(db.Attempts);
         Assert.Single(db.Files);
         Assert.Equal(OperationStatus.Confirmed, Assert.Single(db.Operations).Status);
-        Assert.Equal(11, db.Database.GetAppliedMigrations().Count());
+        Assert.Equal(12, db.Database.GetAppliedMigrations().Count());
         Assert.False(db.Database.HasPendingModelChanges());
         db.Database.OpenConnection();
         using var command = db.Database.GetDbConnection().CreateCommand();
@@ -312,7 +312,7 @@ public sealed class RealDownloadTests
         Assert.Equal(expected, entry.Progress.Status);
         var saved = Assert.Single(await runtime.Repository().LoadAsync(CancellationToken.None));
         Assert.Equal(expected, saved.Progress.Status);
-        if (route == "missing") Assert.Equal("The server did not find this file.", saved.ErrorMessage);
+        if (route == "missing") Assert.Equal("File not found", saved.ErrorMessage);
         if (route == "empty") { Assert.Equal(0, saved.Progress.TotalBytes); Assert.Equal(100, saved.Progress.Percentage); }
         if (route == "chunked")
         {

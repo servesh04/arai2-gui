@@ -40,7 +40,7 @@ public sealed class UpgradeTests
         var policy = await repository.LoadQueuePolicyAsync(default);
         Assert.Equal(migration == Queue ? 4 : 3, policy.Limit);
         if (migration == Queue) { Assert.Equal(6, policy.RequestedLimit); Assert.Equal(OperationStatus.Uncertain, policy.RequestStatus); }
-        using var current = runtime.Db(); Assert.Equal(11, current.Database.GetAppliedMigrations().Count());
+        using var current = runtime.Db(); Assert.Equal(12, current.Database.GetAppliedMigrations().Count());
         Assert.False(current.Database.HasPendingModelChanges());
 
         var backup = Assert.Single(Directory.GetFiles(Path.Combine(runtime.Root, "Backups"), "*.db"));
@@ -87,7 +87,7 @@ public sealed class UpgradeTests
         using var db = runtime.Db();
         db.Database.ExecuteSqlRaw("INSERT INTO __EFMigrationsHistory VALUES ('20990101000000_Future', '99.0.0');");
         var error = await Assert.ThrowsAsync<DownloadStorageException>(() => runtime.Repository().InitializeAsync(default));
-        Assert.Contains("newer", error.Message); Assert.Equal(12, db.Database.GetAppliedMigrations().Count());
+        Assert.Contains("newer", error.Message); Assert.Equal(13, db.Database.GetAppliedMigrations().Count());
         Assert.False(Directory.Exists(Path.Combine(runtime.Root, "Backups")));
     }
 

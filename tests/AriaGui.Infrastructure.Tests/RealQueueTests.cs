@@ -154,7 +154,7 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
         }
         await runtime.Repository().InitializeAsync(default);
         var saved = Assert.Single(await runtime.Repository().LoadAsync(default)); Assert.Equal(DownloadStatus.Completed, saved.Progress.Status);
-        using var upgraded = runtime.Db(); Assert.Equal(11, upgraded.Database.GetAppliedMigrations().Count());
+        using var upgraded = runtime.Db(); Assert.Equal(12, upgraded.Database.GetAppliedMigrations().Count());
         Assert.False(upgraded.Database.HasPendingModelChanges());
     }
 
