@@ -27,7 +27,7 @@ public interface IHandoffNotifier
 public sealed record FeatureFlags(bool SpeedPresets, bool EngineRestart, bool FailureReasons, bool BrowserHandoff)
 {
     public static FeatureFlags Unsupported { get; } = new(false, false, false, false);
-    public static FeatureFlags BackendImplemented { get; } = new(true, true, true, false);
+    public static FeatureFlags BackendImplemented { get; } = new(true, true, true, true);
 }
 
 public sealed class UnsupportedEngineControl : IEngineControl

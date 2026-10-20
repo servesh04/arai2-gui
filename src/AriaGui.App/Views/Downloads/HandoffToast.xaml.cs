@@ -19,6 +19,7 @@ public sealed partial class HandoffToast : UserControl
     private readonly ObservableCollection<HandoffToastItem> _items = [];
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private IHandoffNotifier _notifier = new UnsupportedHandoffNotifier();
+    private Microsoft.UI.Dispatching.DispatcherQueue? _uiQueue;
     private bool _paused;
     private int _collapsedCount;
 
@@ -35,13 +36,14 @@ public sealed partial class HandoffToast : UserControl
 
     public void Initialize(IHandoffNotifier notifier, FeatureFlags flags)
     {
+        _uiQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         _notifier.AddedFromBrowser -= AddedFromBrowser;
         _notifier = notifier;
         if (flags.BrowserHandoff) _notifier.AddedFromBrowser += AddedFromBrowser;
     }
 
     private void AddedFromBrowser(object? sender, HandoffAddedEventArgs args)
-        => DispatcherQueue.TryEnqueue(() => Add(args));
+        => _uiQueue?.TryEnqueue(() => Add(args));
 
     private void Add(HandoffAddedEventArgs args)
     {

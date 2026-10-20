@@ -2,11 +2,15 @@
     <StackPanel Spacing="16">
         <Border x:Name="ComingSoon" Style="{StaticResource AriaCardStyle}"><StackPanel><TextBlock Text="Browser integration" FontWeight="SemiBold" /><TextBlock Text="Coming soon" Foreground="{ThemeResource AriaTextSecondaryBrush}" /></StackPanel></Border>
         <StackPanel x:Name="IntegrationContent" Spacing="16" Visibility="Collapsed">
-            <Border Style="{StaticResource AriaCardStyle}"><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><FontIcon Glyph="&#xE73E;" FontFamily="Segoe Fluent Icons" Foreground="{ThemeResource AriaSuccessBrush}" /><TextBlock Grid.Column="1" Text="{Binding BrowserStatus}" TextWrapping="Wrap" /><Button Grid.Column="2" Content="Reconnect" Click="ReconnectClick" Style="{StaticResource AriaSecondaryButtonStyle}" /></Grid></Border>
+            <Border Style="{StaticResource AriaCardStyle}"><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><FontIcon Glyph="&#xE73E;" FontFamily="Segoe Fluent Icons" Foreground="{ThemeResource AriaSuccessBrush}" /><TextBlock Grid.Column="1" Text="{Binding BrowserStatus}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" /><Button Grid.Column="2" Content="Refresh" Click="ReconnectClick" Style="{StaticResource AriaSecondaryButtonStyle}" /></Grid></Border>
+            <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Register browser host" Click="RegisterClick" Style="{StaticResource AriaSecondaryButtonStyle}" /><Button Content="Unregister browser host" Click="UnregisterClick" Style="{StaticResource AriaSecondaryButtonStyle}" /></StackPanel>
             <ToggleSwitch Header="Capture browser downloads" IsOn="{Binding BrowserEnabled, Mode=TwoWay}" OffContent="Off" OnContent="On" />
-            <ToggleSwitch Header="Hold Alt to bypass capture" IsEnabled="False" ToolTipService.ToolTip="Not available yet" OffContent="Off" OnContent="On" />
-            <ToggleSwitch Header="Allow per-site control in the extension popup" IsEnabled="False" ToolTipService.ToolTip="Not available yet" OffContent="Off" OnContent="On" />
-            <NumberBox Header="Minimum download size (MB; 0 captures all)" Minimum="0" IsEnabled="False" ToolTipService.ToolTip="Not available yet" />
+            <ToggleSwitch Header="Automatically capture matching downloads" IsOn="{Binding BrowserAutoCapture, Mode=TwoWay}" OffContent="Off" OnContent="On" />
+            <ToggleSwitch Header="Hold Alt to bypass capture" IsOn="{Binding BrowserAltBypass, Mode=TwoWay}" OffContent="Off" OnContent="On" />
+            <ToggleSwitch Header="Start browser downloads paused" IsOn="{Binding BrowserStartPaused, Mode=TwoWay}" OffContent="Off" OnContent="On" />
+            <NumberBox Header="Minimum download size (MB; 0 captures all)" Minimum="0" Value="{Binding BrowserMinimumMb, Mode=TwoWay}" />
+            <TextBox Header="Capture file types (comma-separated, for example .zip, .iso)" Text="{Binding BrowserFileTypes, Mode=TwoWay}" />
+            <TextBox Header="Excluded sites (comma-separated hostnames)" Text="{Binding BrowserExcludedSites, Mode=TwoWay}" />
             <TextBlock Text="Cookies are passed to this download only and aren't saved." FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
             <HyperlinkButton Content="Reset this section to defaults" Click="ResetClick" HorizontalAlignment="Left" />
         </StackPanel>

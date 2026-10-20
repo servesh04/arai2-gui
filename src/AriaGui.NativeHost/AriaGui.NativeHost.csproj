@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><PlatformTarget>x64</PlatformTarget></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../AriaGui.Browser.Contracts/AriaGui.Browser.Contracts.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../AriaGui.Browser.Contracts/AriaGui.Browser.Contracts.csproj" />
+    <ProjectReference Include="../AriaGui.Application/AriaGui.Application.csproj" />
+  </ItemGroup>
 </Project>

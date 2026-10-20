@@ -1,5 +1,7 @@
 using AriaGui.App.Features;
 using AriaGui.App.ViewModels;
+using AriaGui.App.Services;
+using AriaGui.Application.Downloads;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AriaGui.App.Views.Settings;
@@ -19,11 +21,12 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     public FeatureFlags Features { get; }
-    public bool BrowserHandoffAvailable => Features.BrowserHandoff;
+    public bool BrowserHandoffAvailable => Features.BrowserHandoff || AppDataPaths.VerificationDirectory is not null;
     public bool SpeedPresetsAvailable => Features.SpeedPresets;
     public string SaveStatus { get => _saveStatus; private set => SetProperty(ref _saveStatus, value); }
     public string FolderStatus { get => _folderStatus; private set => SetProperty(ref _folderStatus, value); }
-    public string BrowserStatus => _preferences.BrowserStatus;
+    public string BrowserStatus => _preferences.HandoffStatus?.Connected == true ? "Connected to browser extension"
+        : HandoffRegistration.IsRegistered() ? "Not connected · open the extension popup to check" : "Host not registered";
     public bool IsSaving { get => _saving; private set => SetProperty(ref _saving, value); }
 
     public int ThemeIndex
@@ -54,13 +57,64 @@ public sealed class SettingsViewModel : ObservableObject
     public bool BrowserEnabled
     {
         get => _preferences.BrowserEnabled;
-        set { if (!Features.BrowserHandoff || value == _preferences.BrowserEnabled) return; var old = _preferences.BrowserEnabled; _preferences.BrowserEnabled = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserEnabled = old, nameof(BrowserEnabled)); }
+        set { if (!BrowserHandoffAvailable || value == _preferences.BrowserEnabled) return; var old = _preferences.BrowserEnabled; _preferences.BrowserEnabled = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserEnabled = old, nameof(BrowserEnabled)); }
+    }
+
+    public bool BrowserAutoCapture
+    {
+        get => _preferences.BrowserAutoCapture;
+        set { if (value == _preferences.BrowserAutoCapture) return; var old = _preferences.BrowserAutoCapture; _preferences.BrowserAutoCapture = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserAutoCapture = old, nameof(BrowserAutoCapture)); }
+    }
+    public bool BrowserAltBypass
+    {
+        get => _preferences.BrowserAltBypass;
+        set { if (value == _preferences.BrowserAltBypass) return; var old = _preferences.BrowserAltBypass; _preferences.BrowserAltBypass = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserAltBypass = old, nameof(BrowserAltBypass)); }
+    }
+    public bool BrowserStartPaused
+    {
+        get => _preferences.BrowserStartPaused;
+        set { if (value == _preferences.BrowserStartPaused) return; var old = _preferences.BrowserStartPaused; _preferences.BrowserStartPaused = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserStartPaused = old, nameof(BrowserStartPaused)); }
+    }
+    public double BrowserMinimumMb
+    {
+        get => _preferences.BrowserMinimumMb;
+        set { if (value == _preferences.BrowserMinimumMb) return; var old = _preferences.BrowserMinimumMb; _preferences.BrowserMinimumMb = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserMinimumMb = old, nameof(BrowserMinimumMb)); }
+    }
+    public string BrowserFileTypes
+    {
+        get => _preferences.BrowserFileTypes;
+        set { if (value == _preferences.BrowserFileTypes) return; var old = _preferences.BrowserFileTypes; _preferences.BrowserFileTypes = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserFileTypes = old, nameof(BrowserFileTypes)); }
+    }
+    public string BrowserExcludedSites
+    {
+        get => _preferences.BrowserExcludedSites;
+        set { if (value == _preferences.BrowserExcludedSites) return; var old = _preferences.BrowserExcludedSites; _preferences.BrowserExcludedSites = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserExcludedSites = old, nameof(BrowserExcludedSites)); }
+    }
+
+    public void RefreshBrowserStatus() => OnPropertyChanged(nameof(BrowserStatus));
+    public Task RegisterBrowserHostAsync()
+    {
+        try
+        {
+            HandoffRegistration.Register(Path.Combine(AppContext.BaseDirectory, "host", "AriaGui.NativeHost.exe"),
+                Environment.ProcessPath ?? throw new IOException("App path unavailable."));
+            SaveStatus = "Browser host registered";
+        }
+        catch { SaveStatus = "Browser host registration failed. Check the app installation folder."; }
+        RefreshBrowserStatus();
+        return Task.CompletedTask;
+    }
+    public Task UnregisterBrowserHostAsync()
+    {
+        SaveStatus = HandoffRegistration.Unregister() ? "Browser host unregistered" : "Browser host could not be unregistered";
+        RefreshBrowserStatus();
+        return Task.CompletedTask;
     }
 
     public async Task CheckBrowserAsync()
     {
-        if (_preferences.CheckBrowserCommand.CanExecute(null)) await _preferences.CheckBrowserCommand.ExecuteAsync(null);
-        OnPropertyChanged(nameof(BrowserStatus));
+        await Task.CompletedTask;
+        RefreshBrowserStatus();
     }
 
     public async Task ResetSectionAsync(string section)
@@ -69,7 +123,9 @@ public sealed class SettingsViewModel : ObservableObject
         {
             case "General": DefaultFolder = string.Empty; break;
             case "Appearance": ThemeIndex = 0; CompactRows = false; break;
-            case "Integration" when Features.BrowserHandoff: BrowserEnabled = false; break;
+            case "Integration" when BrowserHandoffAvailable: BrowserEnabled = false; BrowserAutoCapture = false;
+                BrowserAltBypass = true; BrowserStartPaused = false; BrowserMinimumMb = 0;
+                BrowserFileTypes = string.Empty; BrowserExcludedSites = string.Empty; break;
         }
         await Task.CompletedTask;
     }

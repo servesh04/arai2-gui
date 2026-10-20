@@ -10,14 +10,16 @@ namespace AriaGui.Infrastructure.Browser;
 internal static class PrivateBrowserPipe
 {
     internal static NamedPipeServerStream Create(BrowserBridgeEndpoint endpoint, bool first)
+        => Create(endpoint.PipeName, endpoint.UserSid, first, BrowserBridgeServer.MaximumSessions);
+    internal static NamedPipeServerStream Create(string pipeName, string userSid, bool first, uint maximumSessions)
     {
-        if (!ConvertStringSecurityDescriptorToSecurityDescriptor($"D:P(D;;GA;;;NU)(A;;GA;;;{endpoint.UserSid})", 1, out var descriptor, out _))
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptor($"D:P(D;;GA;;;NU)(A;;GA;;;{userSid})", 1, out var descriptor, out _))
             throw new Win32Exception();
         try
         {
             var attributes = new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(), Descriptor = descriptor };
-            var handle = CreateNamedPipe("\\\\.\\pipe\\" + endpoint.PipeName, 3 | 0x40000000u | (first ? 0x80000u : 0),
-                8, BrowserBridgeServer.MaximumSessions, 65540, 65540, 0, ref attributes);
+            var handle = CreateNamedPipe("\\\\.\\pipe\\" + pipeName, 3 | 0x40000000u | (first ? 0x80000u : 0),
+                8, maximumSessions, 65540, 65540, 0, ref attributes);
             if (handle.IsInvalid) { var error = Marshal.GetLastWin32Error(); handle.Dispose(); throw new Win32Exception(error); }
             return new(PipeDirection.InOut, true, false, handle);
         }

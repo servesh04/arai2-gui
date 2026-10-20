@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "AriaGUI Download Handoff",
+  "version": "0.1.0",
+  "description": "Send browser downloads to AriaGUI when it is ready.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0GcoOIzyaJZWjI0Lb7zOifhGekx93lgcBs18hjVgUbhCCpDVvzUxKjpoId1ZeyGj5yHvRChadELibNZVzO2vOm/0nB9z4bH+GNLpVX/qzdU+n2XBLJLlSJMCGEO1f6mK+V/ACTKUG+jsQwLD8ZPB1+eNLcXf4XsCW7G2KgC4HxBnq7oy49NVoAIFFOWArdcUOq+IrdeKI3r7xz6pjCrReskB1tNE7kegZEVY7X1I3oUP89k60Qx8jjE5aIryM8OuEudAwJ3vbox6BvJhVQgVzrwBlC1CMCvlirH6+6JUFxfzIP8yXNIboRoIrjnLHaTfsbQa7CC7RfxS7sKXXFY62QIDAQAB",
+  "permissions": ["downloads", "nativeMessaging", "cookies", "storage", "contextMenus", "webRequest"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_icon": "icons/32.png" },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["clicks.js"], "run_at": "document_start" }]
+}

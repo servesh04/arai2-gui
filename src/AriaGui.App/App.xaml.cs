@@ -30,6 +30,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     private Win32TrayIcon? _tray;
     private DesktopLifetimeController? _desktop;
     private BrowserBridgeServer? _browserBridge;
+    private BrowserHandoffPipeServer? _handoffPipe;
     private Task? _browserStart = null;
     private OpenActivationController? _openActivation;
     private Win32OpenActivation? _openReceiver;
@@ -49,6 +50,16 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         var supported = IsSupportedActivation(activation);
         WriteSyntheticActivationReceipt(activation, supported);
         if (!supported) { Exit(); return; }
+        try
+        {
+            var registered = Microsoft.Windows.AppLifecycle.AppInstance.FindOrRegisterForKey("AriaGUI.Primary");
+            if (!registered.IsCurrent)
+            {
+                _ = RedirectToPrimaryAsync(registered, activation);
+                return;
+            }
+        }
+        catch { /* The existing single-instance lease remains the ownership fallback. */ }
         var runtimeDirectory = AppDataPaths.RuntimeDirectory;
         EngineException? storageFailure = null;
         try
@@ -73,11 +84,16 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddSingleton(FeatureFlags.BackendImplemented);
         registrations.AddSingleton<IEngineControl, EngineControlService>();
         registrations.AddSingleton<ISpeedLimitService, SpeedLimitService>();
-        registrations.AddSingleton<IHandoffNotifier, UnsupportedHandoffNotifier>();
+        registrations.AddSingleton<IHandoffNotifier, BrowserHandoffNotifier>();
         var folderPicker = new WinUiFolderPicker();
         registrations.AddSingleton<IDownloadFolderPicker>(folderPicker);
         registrations.AddSingleton<DownloadRuntimeStore>();
         registrations.AddSingleton<DownloadCoordinator>();
+        // The guarded continuity gateway fetches the relay from this process after aria2 contacts the gateway.
+        registrations.AddSingleton<BrowserCookieRelay>(_ => new(() => Environment.ProcessId));
+        registrations.AddSingleton<IBrowserHandoffSubmitter, BrowserHandoffSubmitter>();
+        registrations.AddSingleton<BrowserHandoffService>();
+        registrations.AddSingleton<IBrowserHandoffStatus>(services => services.GetRequiredService<BrowserHandoffService>());
         registrations.AddSingleton(services => new DownloadPreferencesService(services.GetRequiredService<IUserPreferencesRepository>(), DownloadPreferencesService.DefaultFallbackFolder));
         registrations.AddSingleton(services => new ExternalDownloadIntakeService(services.GetRequiredService<DownloadCoordinator>(),
             services.GetRequiredService<DownloadPreferencesService>(), TimeProvider.System, _lifetime.Token,
@@ -103,6 +119,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         try { if (_instance is { IsPrimary: true }) _openReceiver = new(WinRT.Interop.WindowNative.GetWindowHandle(_window), runtimeDirectory, _openActivation); }
         catch (Exception) { _window.SetDesktopStatus("Opening an existing window through a link is unavailable; use the tray or taskbar."); }
         var preferences = _services.GetRequiredService<PreferencesViewModel>();
+        preferences.HandoffStatus = _services.GetRequiredService<IBrowserHandoffStatus>();
         preferences.Applied += value =>
         {
             _window.SetTheme(value.Theme);
@@ -128,6 +145,18 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         }
         catch (Exception) { _window.SetDesktopStatus("Tray unavailable. Close will keep this window visible; use Exit to stop."); }
         _window.Activate();
+        if (OpenProtocolActivation.ClassifyLaunch(Environment.GetCommandLineArgs().Skip(1).ToArray()) == GuiLaunchKind.BrowserWake)
+            _window.AppWindow.Hide();
+        if (storageFailure is null && _instance is { IsPrimary: true })
+        {
+            try
+            {
+                _handoffPipe = new(_services.GetRequiredService<BrowserHandoffService>(),
+                    Path.Combine(AppContext.BaseDirectory, "host", "AriaGui.NativeHost.exe"), _lifetime.Token);
+                _ = _handoffPipe.StartAsync(_lifetime.Token);
+            }
+            catch { _window.SetDesktopStatus("Browser handoff is unavailable; browser downloads continue normally."); }
+        }
         _updates = RunDownloadsAsync(_services.GetRequiredService<DownloadCoordinator>(), _services.GetRequiredService<ExternalDownloadIntakeService>(), _lifetime.Token);
         _reservationCleanup = RunReservationCleanupAsync(_services.GetRequiredService<DownloadCoordinator>(),
             (IPreparedTakeoverRepository)_services.GetRequiredService<IDownloadRepository>(), _lifetime.Token);
@@ -175,6 +204,17 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     {
         if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Protocol && IsSupportedActivation(activation))
             _openActivation?.RequestOpen();
+        else if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Launch
+            && activation.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch
+            && string.IsNullOrWhiteSpace(launch.Arguments)) _openActivation?.RequestOpen();
+    }
+
+    private async Task RedirectToPrimaryAsync(Microsoft.Windows.AppLifecycle.AppInstance primary,
+        Microsoft.Windows.AppLifecycle.AppActivationArguments activation)
+    {
+        try { await primary.RedirectActivationToAsync(activation); }
+        catch { Win32OpenActivation.RequestExistingWindow(AppDataPaths.RuntimeDirectory); }
+        Exit();
     }
 
     private async Task StartSyntheticBridgeAsync(string runtime, string peerExecutable)
@@ -303,6 +343,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
             _services?.GetRequiredService<PreferencesViewModel>().SaveCommand.Cancel();
             _services?.GetRequiredService<PreferencesViewModel>().CheckBrowserCommand.Cancel();
             _lifetime.Cancel();
+            if (_handoffPipe is not null) await _handoffPipe.DisposeAsync();
             if (_browserStart is not null)
             {
                 try { await _browserStart.WaitAsync(TimeSpan.FromSeconds(2)); } catch (TimeoutException) { }

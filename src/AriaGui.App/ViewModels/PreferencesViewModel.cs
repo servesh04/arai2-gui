@@ -10,8 +10,18 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
     private DesktopLayout _layout = new();
     private UserPreferences _saved = new();
     private bool _browserEnabled;
+    private bool _browserAutoCapture, _browserStartPaused, _browserAltBypass = true;
+    private double _browserMinimumMb;
+    private string _browserFileTypes = "", _browserExcludedSites = "";
+    public IBrowserHandoffStatus? HandoffStatus { get; set; }
     private string _browserInstallRoot = "", _browserInstallationId = "", _browserStatus = "Browser traffic is disabled pending release verification. Extension presence is unverified.";
     public bool BrowserEnabled { get => _browserEnabled; set => SetProperty(ref _browserEnabled, value); }
+    public bool BrowserAutoCapture { get => _browserAutoCapture; set => SetProperty(ref _browserAutoCapture, value); }
+    public bool BrowserStartPaused { get => _browserStartPaused; set => SetProperty(ref _browserStartPaused, value); }
+    public bool BrowserAltBypass { get => _browserAltBypass; set => SetProperty(ref _browserAltBypass, value); }
+    public double BrowserMinimumMb { get => _browserMinimumMb; set => SetProperty(ref _browserMinimumMb, value); }
+    public string BrowserFileTypes { get => _browserFileTypes; set => SetProperty(ref _browserFileTypes, value); }
+    public string BrowserExcludedSites { get => _browserExcludedSites; set => SetProperty(ref _browserExcludedSites, value); }
     public string BrowserInstallRoot { get => _browserInstallRoot; set => SetProperty(ref _browserInstallRoot, value); }
     public string BrowserInstallationId { get => _browserInstallationId; set => SetProperty(ref _browserInstallationId, value); }
     public string BrowserStatus { get => _browserStatus; private set => SetProperty(ref _browserStatus, value); }
@@ -24,8 +34,18 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
                 throw new DownloadRequestException("Choose a valid app installation UUID.");
             installation = id;
         }
-        var settings = new BrowserIntegrationPreferences(BrowserEnabled, installation, BrowserInstallRoot.Trim()); settings.Validate(); return settings;
+        if (!double.IsFinite(BrowserMinimumMb) || BrowserMinimumMb < 0 || BrowserMinimumMb > 1_048_576)
+            throw new DownloadRequestException("Choose a valid minimum size.");
+        var settings = _saved.EffectiveBrowser with
+        {
+            Enabled = BrowserEnabled, SelectedInstallationId = installation, InstallRoot = BrowserInstallRoot.Trim(),
+            AutomaticTakeoverEnabled = BrowserAutoCapture, StartPaused = BrowserStartPaused,
+            AltBypass = BrowserAltBypass, MinimumSizeBytes = checked((long)(BrowserMinimumMb * 1_048_576)),
+            CaptureFileTypes = SplitList(BrowserFileTypes), ExcludedSites = SplitList(BrowserExcludedSites)
+        };
+        settings.Validate(); return settings;
     }
+    private static string[] SplitList(string value) => value.Split([',', ';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     private IAsyncRelayCommand? _checkBrowser;
     public IAsyncRelayCommand CheckBrowserCommand => _checkBrowser ??= new AsyncRelayCommand(async token =>
     {
@@ -100,6 +120,12 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
             var preferences = await repository.LoadAsync(token); ThemeIndex = (int)preferences.Theme; DefaultFolder = preferences.DefaultFolder;
             _saved = preferences; UpdateLayout(preferences.EffectiveLayout);
             BrowserEnabled = preferences.EffectiveBrowser.Enabled; BrowserInstallRoot = preferences.EffectiveBrowser.InstallRoot;
+            BrowserAutoCapture = preferences.EffectiveBrowser.AutomaticTakeoverEnabled;
+            BrowserStartPaused = preferences.EffectiveBrowser.StartPaused;
+            BrowserAltBypass = preferences.EffectiveBrowser.AltBypass;
+            BrowserMinimumMb = preferences.EffectiveBrowser.MinimumSizeBytes / 1_048_576d;
+            BrowserFileTypes = string.Join(", ", preferences.EffectiveBrowser.EffectiveCaptureFileTypes);
+            BrowserExcludedSites = string.Join(", ", preferences.EffectiveBrowser.EffectiveExcludedSites);
             BrowserInstallationId = preferences.EffectiveBrowser.SelectedInstallationId?.ToString("D") ?? "";
             Applied?.Invoke(preferences);
         }
