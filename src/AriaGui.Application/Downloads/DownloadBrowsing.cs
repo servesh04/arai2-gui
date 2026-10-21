@@ -4,6 +4,7 @@ namespace AriaGui.Application.Downloads;
 
 public enum DownloadFilter { All, Active, Waiting, Paused, Recovery, Completed, Failed, Removed }
 public enum DownloadSortColumn { Default, Name, Size, Progress, Status, Speed, Eta }
+public enum TorrentColumnVisibility { Automatic, Visible, Hidden }
 public sealed record HistoryQuery(string Search = "", DownloadFilter Filter = DownloadFilter.All, int Page = 0, int PageSize = 50,
     DownloadSortColumn SortColumn = DownloadSortColumn.Default, bool SortDescending = false)
 {

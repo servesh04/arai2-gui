@@ -15,6 +15,35 @@ namespace AriaGui.Infrastructure.Tests;
 public sealed class TorrentLifecycleTests
 {
     [Fact]
+    public async Task Torrent_file_progress_preserves_manifest_order_completion_and_selection()
+    {
+        var manifest = TorrentManifestParser.Parse(Metainfo());
+        var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.TorrentRpcTests", "file-progress"));
+        const string gid = "1234567890abcdef";
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            return Json(new { jsonrpc = "2.0", id = body.RootElement.GetProperty("id").GetString(), result = new
+            {
+                gid, status = "active", infoHash = manifest.InfoHash, dir = root,
+                totalLength = "5", completedLength = "4", downloadSpeed = "7",
+                files = new[]
+                {
+                    new { index = "2", path = Path.Combine(root, "bundle", "second.bin"), length = "3", completedLength = "2", selected = "true" },
+                    new { index = "1", path = Path.Combine(root, "bundle", "first.bin"), length = "2", completedLength = "2", selected = "false" }
+                }
+            } });
+        }));
+        var rpc = new Aria2RpcClient(http, new("http://127.0.0.1:16800/jsonrpc"), "secret", TimeSpan.FromSeconds(1));
+        var observed = (await rpc.GetTorrentAsync(gid, manifest, manifest.SelectFiles([2]), root, default))!;
+        Assert.Equal([1, 2], observed.Files.Select(file => file.Index));
+        Assert.Equal([2L, 2L], observed.Files.Select(file => file.CompletedLength));
+        Assert.Equal([false, true], observed.Files.Select(file => file.Selected));
+        Assert.Equal(manifest.Files.Select(file => file.RelativePath), observed.Files.Select(file => file.RelativePath));
+        Assert.Equal(2, observed.CompletedBytes);
+    }
+
+    [Fact]
     public async Task T1_selected_progress_ignores_unselected_payload_bytes()
     {
         var manifest = TorrentManifestParser.Parse(Metainfo());

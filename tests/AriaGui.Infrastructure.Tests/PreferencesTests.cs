@@ -6,6 +6,35 @@ namespace AriaGui.Infrastructure.Tests;
 public sealed class PreferencesTests
 {
     [Fact]
+    public async Task Torrent_column_choices_round_trip_after_loading_legacy_preferences()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PreferencesTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "preferences.json");
+        try
+        {
+            const string legacy = "{\"Theme\":2,\"DefaultFolder\":\"\",\"Layout\":{\"CompactRows\":false}}";
+            await File.WriteAllTextAsync(path, legacy);
+            var repository = new JsonUserPreferencesRepository(path);
+            var loaded = await repository.LoadAsync(default);
+            Assert.Equal(legacy, await File.ReadAllTextAsync(path));
+            Assert.Equal(new TorrentColumnPreferences(), loaded.EffectiveLayout.EffectiveTorrentColumns);
+            var choices = new TorrentColumnPreferences(TorrentColumnVisibility.Visible,
+                TorrentColumnVisibility.Hidden, TorrentColumnVisibility.Automatic, TorrentColumnVisibility.Visible);
+            await repository.SaveAsync(loaded with { Layout = loaded.EffectiveLayout with { TorrentColumns = choices } }, default);
+            var roundTrip = await repository.LoadAsync(default);
+            Assert.Equal(choices, roundTrip.EffectiveLayout.EffectiveTorrentColumns);
+            Assert.False(roundTrip.EffectiveLayout.CompactRows);
+        }
+        finally
+        {
+            var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.PreferencesTests")) + Path.DirectorySeparatorChar;
+            if (!Path.GetFullPath(root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unsafe cleanup.");
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task Legacy_outlier_widths_are_clamped_on_load_without_rewriting_the_file_or_losing_other_preferences()
     {
         var root = Path.Combine(Path.GetTempPath(), "AriaGUI.PreferencesTests", Guid.NewGuid().ToString("N"));

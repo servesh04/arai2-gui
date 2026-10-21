@@ -5,6 +5,8 @@ using AriaGui.Core.Downloads;
 
 namespace AriaGui.Infrastructure.Aria2;
 
+public sealed record TorrentFileProgress(int Index, string RelativePath, long Length, long CompletedLength, bool Selected);
+
 public sealed record TorrentEngineObservation(string Gid, TorrentStage Stage, long CompletedBytes,
     long TotalBytes, long DownloadBytesPerSecond, long VerifiedBytes, string? Error = null)
 {
@@ -12,6 +14,7 @@ public sealed record TorrentEngineObservation(string Gid, TorrentStage Stage, lo
     public int? Seeds { get; init; }
     public long? UploadBytesPerSecond { get; init; }
     public long? UploadedBytes { get; init; }
+    public IReadOnlyList<TorrentFileProgress> Files { get; init; } = [];
 }
 
 public sealed partial class Aria2RpcClient
@@ -79,6 +82,7 @@ public sealed partial class Aria2RpcClient
         var selected = selection.FileIndices.ToHashSet();
         var seen = new HashSet<int>();
         var selectedCompleted = 0L;
+        var fileProgress = new List<TorrentFileProgress>(files.GetArrayLength());
         foreach (var file in files.EnumerateArray())
         {
             if (!int.TryParse(Text(file, "index"), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
@@ -87,6 +91,9 @@ public sealed partial class Aria2RpcClient
                 || Number(file, "length") != manifest.Files[index - 1].Length
                 || Text(file, "selected") != (selected.Contains(index) ? "true" : "false"))
                 throw new EngineException(EngineFailure.RequestRejected, "Engine torrent files differ from the saved selection.");
+            fileProgress.Add(new TorrentFileProgress(index, manifest.Files[index - 1].RelativePath,
+                manifest.Files[index - 1].Length, Math.Min(Number(file, "completedLength", optional: true),
+                    manifest.Files[index - 1].Length), selected.Contains(index)));
             if (selected.Contains(index))
                 selectedCompleted = checked(selectedCompleted + Math.Min(Number(file, "completedLength", optional: true),
                     manifest.Files[index - 1].Length));
@@ -111,7 +118,8 @@ public sealed partial class Aria2RpcClient
             { "" => "Torrent transfer failed.", var message => message } : null)
         {
             Peers = CheckedInt(status, "connections"), Seeds = CheckedInt(status, "numSeeders"),
-            UploadBytesPerSecond = OptionalNumber(status, "uploadSpeed"), UploadedBytes = OptionalNumber(status, "uploadLength")
+            UploadBytesPerSecond = OptionalNumber(status, "uploadSpeed"), UploadedBytes = OptionalNumber(status, "uploadLength"),
+            Files = fileProgress.OrderBy(entry => entry.Index).ToArray()
         };
     }
 

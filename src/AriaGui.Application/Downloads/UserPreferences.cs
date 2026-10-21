@@ -32,10 +32,17 @@ public sealed record SpeedLimitPreferences(string SelectedPreset = "Standard", l
     }
 }
 public sealed record DownloadColumnLayout(DownloadSortColumn Column, double Width, bool Visible = true);
+public sealed record TorrentColumnPreferences(
+    TorrentColumnVisibility Peers = TorrentColumnVisibility.Automatic,
+    TorrentColumnVisibility Seeds = TorrentColumnVisibility.Automatic,
+    TorrentColumnVisibility Upload = TorrentColumnVisibility.Automatic,
+    TorrentColumnVisibility Ratio = TorrentColumnVisibility.Automatic);
 public sealed record DesktopLayout(IReadOnlyList<DownloadColumnLayout>? Columns = null, bool CompactRows = true,
     double SidebarWidth = 160, double DetailsHeight = 180, bool SidebarVisible = true, bool DetailsVisible = true, bool AnimationsEnabled = true,
     DownloadTableSizingMode TableSizingMode = DownloadTableSizingMode.Fit, double DetailsWidth = 360)
 {
+    public TorrentColumnPreferences? TorrentColumns { get; init; }
+    [JsonIgnore] public TorrentColumnPreferences EffectiveTorrentColumns => TorrentColumns ?? new();
     public const double MinimumColumnWidth = 60;
     // A single column can use 600 DIPs; wider data remains available through tooltip/details.
     public const double MaximumColumnWidth = 600;
