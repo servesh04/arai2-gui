@@ -9,6 +9,85 @@ namespace AriaGui.Infrastructure.Aria2;
 
 public sealed partial class Aria2ProcessManager
 {
+    public async Task PauseTorrentAsync(Guid jobId, CancellationToken token)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var repository = _torrentRepository ?? throw new EngineException(EngineFailure.RequestRejected, "Torrent storage is unavailable.");
+            var draft = await repository.LoadDraftAsync(jobId, token).ConfigureAwait(false)
+                ?? throw new EngineException(EngineFailure.TransferNotFound, "Torrent record is missing.");
+            var binding = await repository.LoadBindingAsync(jobId, token).ConfigureAwait(false)
+                ?? throw new EngineException(EngineFailure.TransferNotFound, "Torrent engine identity is missing.");
+            var rpc = ConnectedClient();
+            var observed = await rpc.GetTorrentAsync(binding.EngineId, draft.Manifest, draft.Selection, draft.PayloadRoot, token).ConfigureAwait(false)
+                ?? throw new EngineException(EngineFailure.TransferNotFound, "Torrent engine transfer is missing.");
+            if (observed.Stage is not (TorrentStage.Downloading or TorrentStage.Waiting or TorrentStage.Checking))
+                throw new EngineException(EngineFailure.RequestRejected, "This torrent cannot be paused now.");
+            await rpc.ExecuteAsync(binding.EngineId, DownloadAction.Pause, null, token).ConfigureAwait(false);
+            await repository.SetStageAsync(jobId, TorrentStage.Stopped, token).ConfigureAwait(false);
+            await rpc.SaveSessionAsync(token).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task ResumeTorrentAsync(Guid jobId, CancellationToken token)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var repository = _torrentRepository ?? throw new EngineException(EngineFailure.RequestRejected, "Torrent storage is unavailable.");
+            var draft = await repository.LoadDraftAsync(jobId, token).ConfigureAwait(false)
+                ?? throw new EngineException(EngineFailure.TransferNotFound, "Torrent record is missing.");
+            if (draft.Stage != TorrentStage.Stopped)
+                throw new EngineException(EngineFailure.RequestRejected, "Only a paused torrent can be resumed.");
+            var binding = await repository.LoadBindingAsync(jobId, token).ConfigureAwait(false)
+                ?? throw new EngineException(EngineFailure.TransferNotFound, "Torrent engine identity is missing.");
+            var rpc = ConnectedClient();
+            var observed = await rpc.GetTorrentAsync(binding.EngineId, draft.Manifest, draft.Selection, draft.PayloadRoot, token).ConfigureAwait(false);
+            if (observed is null)
+            {
+                var info = await CheckHealthCoreAsync(token).ConfigureAwait(false);
+                await DispatchTorrentCoreAsync(rpc, info.SessionId, jobId, token).ConfigureAwait(false);
+                return;
+            }
+            if (observed.Stage != TorrentStage.Stopped)
+                throw new EngineException(EngineFailure.RequestRejected, "Torrent engine is not paused.");
+            await rpc.ExecuteAsync(binding.EngineId, DownloadAction.Resume, null, token).ConfigureAwait(false);
+            await repository.SetStageAsync(jobId, TorrentStage.Waiting, token).ConfigureAwait(false);
+            await rpc.SaveSessionAsync(token).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task RemoveTorrentAsync(Guid jobId, bool deleteFiles, CancellationToken token)
+    {
+        await _gate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            var repository = _torrentRepository ?? throw new EngineException(EngineFailure.RequestRejected, "Torrent storage is unavailable.");
+            var draft = await repository.LoadDraftAsync(jobId, token).ConfigureAwait(false)
+                ?? throw new EngineException(EngineFailure.TransferNotFound, "Torrent record is missing.");
+            var binding = await repository.LoadBindingAsync(jobId, token).ConfigureAwait(false);
+            if (deleteFiles) await TorrentOwnedFileDeletion.ValidateAsync(_options.RuntimeDirectory, draft,
+                await repository.LoadSelectedFilesAsync(jobId, token).ConfigureAwait(false), token).ConfigureAwait(false);
+            if (binding is not null)
+            {
+                var rpc = ConnectedClient();
+                var observed = await rpc.GetTorrentAsync(binding.EngineId, draft.Manifest, draft.Selection, draft.PayloadRoot, token).ConfigureAwait(false);
+                if (draft.Stage == TorrentStage.Completed || observed?.Stage is TorrentStage.Publishing or TorrentStage.Failed
+                    || observed?.Stage == TorrentStage.Stopped && draft.Stage != TorrentStage.Stopped)
+                    await rpc.RemoveFailedTorrentResultAsync(binding.EngineId, token).ConfigureAwait(false);
+                else if (observed is not null)
+                    await rpc.ExecuteAsync(binding.EngineId, DownloadAction.Remove, null, token).ConfigureAwait(false);
+                await rpc.SaveSessionAsync(token).ConfigureAwait(false);
+            }
+            if (deleteFiles) await TorrentOwnedFileDeletion.DeleteAsync(_options.RuntimeDirectory, draft,
+                await repository.LoadSelectedFilesAsync(jobId, token).ConfigureAwait(false), token).ConfigureAwait(false);
+            await repository.DeleteDraftAsync(jobId, token).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
     public async Task<Guid> CreateTorrentDraftAsync(byte[] metainfo, IEnumerable<int> fileIndices,
         string destinationRoot, bool privacyNoticeAccepted, CancellationToken token)
     {

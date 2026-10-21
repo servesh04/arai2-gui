@@ -15,6 +15,69 @@ namespace AriaGui.Infrastructure.Tests;
 public sealed class TorrentLifecycleTests
 {
     [Fact]
+    public async Task T1_selected_progress_ignores_unselected_payload_bytes()
+    {
+        var manifest = TorrentManifestParser.Parse(Metainfo());
+        var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.TorrentRpcTests", "private"));
+        const string gid = "1234567890abcdef";
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            var id = body.RootElement.GetProperty("id").GetString();
+            return Json(new { jsonrpc = "2.0", id, result = new
+            {
+                gid, status = "active", infoHash = manifest.InfoHash, dir = root,
+                totalLength = "5", completedLength = "4", downloadSpeed = "7",
+                connections = "3", numSeeders = "1", uploadSpeed = "2", uploadLength = "6",
+                files = new[]
+                {
+                    new { index = "1", path = Path.Combine(root, "bundle", "first.bin"), length = "2", completedLength = "2", selected = "false" },
+                    new { index = "2", path = Path.Combine(root, "bundle", "second.bin"), length = "3", completedLength = "2", selected = "true" }
+                }
+            } });
+        }));
+        var rpc = new Aria2RpcClient(http, new("http://127.0.0.1:16800/jsonrpc"), "secret", TimeSpan.FromSeconds(1));
+        var observed = (await rpc.GetTorrentAsync(gid, manifest, manifest.SelectFiles([2]), root, default))!;
+        Assert.Equal(2, observed.CompletedBytes);
+        Assert.Equal(3, observed.TotalBytes);
+        Assert.Equal(3, observed.Peers);
+        Assert.Equal(1, observed.Seeds);
+        Assert.Equal(2, observed.UploadBytesPerSecond);
+    }
+
+    [Fact]
+    public async Task T1_delete_only_recorded_published_and_private_files()
+    {
+        using var runtime = new Runtime();
+        var repository = new SqliteTorrentMetadataRepository(runtime.DatabasePath);
+        await repository.InitializeAsync();
+        var payload = Path.Combine(runtime.Root, "torrent-payloads", Guid.NewGuid().ToString("N"));
+        var id = await repository.CreateDraftAsync(Metainfo(), [2], payload, runtime.PublicRoot);
+        var draft = (await repository.LoadDraftAsync(id))!;
+        var source = Path.Combine(payload, "bundle", "second.bin");
+        var published = Path.Combine(runtime.PublicRoot, "bundle", "second.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(published)!);
+        await File.WriteAllTextAsync(source, "abc");
+        await File.WriteAllTextAsync(published, "abc");
+        await File.WriteAllTextAsync(Path.Combine(runtime.PublicRoot, "keep.txt"), "user file");
+        await repository.MarkPublishedAsync(id, 2, 3);
+        var rows = await repository.LoadSelectedFilesAsync(id);
+        await TorrentOwnedFileDeletion.ValidateAsync(runtime.Root, draft, rows, default);
+        await File.WriteAllTextAsync(published, "bad");
+        await Assert.ThrowsAsync<IOException>(() => TorrentOwnedFileDeletion.ValidateAsync(runtime.Root, draft, rows, default));
+        await File.WriteAllTextAsync(published, "abc");
+        var unownedPartial = published + $".ariagui-{id:N}-2.partial";
+        await File.WriteAllTextAsync(unownedPartial, "a");
+        await Assert.ThrowsAsync<IOException>(() => TorrentOwnedFileDeletion.ValidateAsync(runtime.Root, draft, rows, default));
+        Assert.True(File.Exists(unownedPartial));
+        File.Delete(unownedPartial);
+        await TorrentOwnedFileDeletion.DeleteAsync(runtime.Root, draft, rows, default);
+        Assert.False(File.Exists(published));
+        Assert.False(Directory.Exists(payload));
+        Assert.Equal("user file", await File.ReadAllTextAsync(Path.Combine(runtime.PublicRoot, "keep.txt")));
+    }
+    [Fact]
     public async Task FailedTorrentRetryRemovesOnlyItsEngineResult()
     {
         const string gid = "1234567890abcdef";
@@ -281,6 +344,69 @@ public sealed class TorrentLifecycleTests
         finally
         {
             if (!seed.HasExited) { seed.Kill(entireProcessTree: true); await seed.WaitForExitAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task T1_paused_local_torrent_resumes_after_restart_without_duplicate_and_removes()
+    {
+        using var runtime = new Runtime();
+        var seedPort = FreePort();
+        await using var tracker = new LocalTracker(seedPort);
+        var first = Encoding.ASCII.GetBytes("ab");
+        var second = Encoding.ASCII.GetBytes("cde");
+        var metainfo = MetainfoWithPieces(tracker.Port, first, second);
+        Directory.CreateDirectory(runtime.PublicRoot);
+        var repository = new SqliteTorrentMetadataRepository(runtime.DatabasePath);
+        var executable = Path.Combine(AppContext.BaseDirectory, "Engine", "aria2c.exe");
+        var options = new Aria2ProcessOptions(executable, runtime.Root)
+            { RpcPort = FreePort(), StartupTimeout = TimeSpan.FromSeconds(8) };
+        Guid id;
+        await using (var engine = new Aria2ProcessManager(options, torrentRepository: repository))
+        {
+            await engine.StartAsync(default);
+            id = await engine.CreateTorrentDraftAsync(metainfo, [2], runtime.PublicRoot, true, default);
+            await engine.DispatchTorrentAsync(id, default);
+            await engine.PauseTorrentAsync(id, default);
+            Assert.Equal(TorrentStage.Stopped, (await repository.LoadDraftAsync(id))!.Stage);
+            await engine.StopAsync(default);
+        }
+        var seedRoot = Path.Combine(runtime.Root, "seed");
+        Directory.CreateDirectory(Path.Combine(seedRoot, "bundle"));
+        await File.WriteAllBytesAsync(Path.Combine(seedRoot, "bundle", "first.bin"), first);
+        await File.WriteAllBytesAsync(Path.Combine(seedRoot, "bundle", "second.bin"), second);
+        var torrentPath = Path.Combine(runtime.Root, "local-t1.torrent");
+        await File.WriteAllBytesAsync(torrentPath, metainfo);
+        var seedStart = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true,
+            WorkingDirectory = runtime.Root };
+        foreach (var argument in new[] { $"--dir={seedRoot}", $"--listen-port={seedPort}", "--interface=127.0.0.1",
+            "--disable-ipv6=true", "--enable-dht=false", "--enable-dht6=false", "--enable-peer-exchange=false",
+            "--bt-enable-lpd=false", "--seed-time=45", "--check-integrity=true", "--file-allocation=none",
+            "--quiet=true", torrentPath }) seedStart.ArgumentList.Add(argument);
+        using var seed = Process.Start(seedStart) ?? throw new InvalidOperationException("Local seeder did not start.");
+        try
+        {
+            await using var engine = new Aria2ProcessManager(options, torrentRepository: repository);
+            await engine.StartAsync(default);
+            Assert.Equal(id, Assert.Single(await repository.LoadDraftIdsAsync()));
+            await engine.ResumeTorrentAsync(id, default);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+            while ((await repository.LoadDraftAsync(id, deadline.Token))!.Stage != TorrentStage.Completed)
+            {
+                await engine.ObserveTorrentAsync(id, deadline.Token);
+                await Task.Delay(250, deadline.Token);
+            }
+            Assert.Single(await repository.LoadBindingsAsync());
+            Assert.Equal(second, await File.ReadAllBytesAsync(Path.Combine(runtime.PublicRoot, "bundle", "second.bin")));
+            await engine.RemoveTorrentAsync(id, false, default);
+            Assert.Null(await repository.LoadDraftAsync(id));
+            Assert.True(File.Exists(Path.Combine(runtime.PublicRoot, "bundle", "second.bin")));
+            await engine.StopAsync(default);
+        }
+        finally
+        {
+            if (!seed.HasExited) seed.Kill(entireProcessTree: true);
+            await seed.WaitForExitAsync();
         }
     }
 

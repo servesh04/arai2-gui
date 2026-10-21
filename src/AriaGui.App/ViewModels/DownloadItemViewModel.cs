@@ -10,18 +10,21 @@ public sealed class DownloadItemViewModel : ObservableObject
     private DownloadEntry _entry;
     private bool _connected;
     public DownloadItemViewModel(DownloadEntry entry, Func<Guid, DownloadAction, CancellationToken, Task>? execute = null,
-        Func<Guid, int, CancellationToken, Task>? move = null, Func<string, bool, CancellationToken, Task>? open = null)
+        Func<Guid, int, CancellationToken, Task>? move = null, Func<string, bool, CancellationToken, Task>? open = null,
+        Func<Guid, CancellationToken, Task>? removeAndDelete = null)
     {
         _entry = entry;
         OpenFileCommand = new AsyncRelayCommand(token => open is null ? Task.CompletedTask : open(Destination, false, token),
-            () => open is not null && _entry.Progress.Status == DownloadStatus.Completed && _entry.PendingOperation is null);
+            () => open is not null && Kind == TransferKind.Http && _entry.Progress.Status == DownloadStatus.Completed && _entry.PendingOperation is null);
         OpenFolderCommand = new AsyncRelayCommand(token => open is null ? Task.CompletedTask : open(Path.GetDirectoryName(Destination)!, true, token),
             () => open is not null && Path.IsPathFullyQualified(Destination));
-        PauseCommand = Create(DownloadAction.Pause, () => DownloadBatch.CanExecute(_entry, _connected, DownloadAction.Pause));
-        ResumeCommand = Create(DownloadAction.Resume, () => DownloadBatch.CanExecute(_entry, _connected, DownloadAction.Resume));
-        RemoveCommand = Create(DownloadAction.Remove, () => DownloadBatch.CanExecute(_entry, _connected, DownloadAction.Remove));
-        RetryCommand = Create(DownloadAction.Retry, () => DownloadBatch.CanExecute(_entry, _connected, DownloadAction.Retry));
-        RecoverCommand = Create(DownloadAction.Recover, () => DownloadBatch.CanExecute(_entry, _connected, DownloadAction.Recover));
+        PauseCommand = Create(DownloadAction.Pause, () => CanExecute(DownloadAction.Pause));
+        ResumeCommand = Create(DownloadAction.Resume, () => CanExecute(DownloadAction.Resume));
+        RemoveCommand = Create(DownloadAction.Remove, () => CanExecute(DownloadAction.Remove));
+        RetryCommand = Create(DownloadAction.Retry, () => CanExecute(DownloadAction.Retry));
+        RecoverCommand = Create(DownloadAction.Recover, () => CanExecute(DownloadAction.Recover));
+        RemoveAndDeleteCommand = new AsyncRelayCommand(token => removeAndDelete is null ? Task.CompletedTask : removeAndDelete(Id, token),
+            () => removeAndDelete is not null && Kind == TransferKind.Torrent && _connected);
         MoveUpCommand = new AsyncRelayCommand(token => move is null ? Task.CompletedTask : move(Id, -1, token), () => move is not null && CanMove && _entry.QueuePosition > 0);
         MoveDownCommand = new AsyncRelayCommand(token => move is null ? Task.CompletedTask : move(Id, 1, token), () => move is not null && CanMove);
         IAsyncRelayCommand Create(DownloadAction action, Func<bool> canExecute) => new AsyncRelayCommand(
@@ -32,16 +35,37 @@ public sealed class DownloadItemViewModel : ObservableObject
     public IAsyncRelayCommand RemoveCommand { get; }
     public IAsyncRelayCommand RetryCommand { get; }
     public IAsyncRelayCommand RecoverCommand { get; }
+    public IAsyncRelayCommand RemoveAndDeleteCommand { get; }
     public IAsyncRelayCommand OpenFileCommand { get; }
     public IAsyncRelayCommand OpenFolderCommand { get; }
     public IAsyncRelayCommand MoveUpCommand { get; }
     public IAsyncRelayCommand MoveDownCommand { get; }
-    public IReadOnlyList<IAsyncRelayCommand> Commands => [PauseCommand, ResumeCommand, RemoveCommand, RetryCommand, RecoverCommand, MoveUpCommand, MoveDownCommand, OpenFileCommand, OpenFolderCommand];
+    public IReadOnlyList<IAsyncRelayCommand> Commands => [PauseCommand, ResumeCommand, RemoveCommand, RetryCommand, RecoverCommand, RemoveAndDeleteCommand, MoveUpCommand, MoveDownCommand, OpenFileCommand, OpenFolderCommand];
+    private bool CanExecute(DownloadAction action) => _entry.Kind == TransferKind.Torrent
+        ? _connected && (action switch
+        {
+            DownloadAction.Pause => _entry.Progress.Status == DownloadStatus.Downloading,
+            DownloadAction.Resume => _entry.Progress.Status == DownloadStatus.Paused,
+            DownloadAction.Remove => true,
+            DownloadAction.Retry => _entry.Progress.Status == DownloadStatus.Failed,
+            DownloadAction.Recover => _entry.Progress.Status == DownloadStatus.Interrupted,
+            _ => false
+        })
+        : DownloadBatch.CanExecute(_entry, _connected, action);
     private bool CanControl => _connected && _entry.PendingOperation is null;
-    private bool CanMove => CanControl && _entry.Progress.Status == DownloadStatus.Queued && _entry.QueuePosition is not null;
+    private bool CanMove => Kind == TransferKind.Http && CanControl && _entry.Progress.Status == DownloadStatus.Queued && _entry.QueuePosition is not null;
     public string QueueLabel => _entry.Progress.Status == DownloadStatus.Queued && _entry.QueuePosition is int position ? $"Waiting · position {position + 1}" : "";
     public Guid Id => _entry.Job.Id;
     public DownloadEntry Entry => _entry;
+    public TransferKind Kind => _entry.Kind;
+    public string? SubstateText => _entry.SubstateText;
+    public int? Peers => _entry.Peers;
+    public int? Seeds => _entry.Seeds;
+    public long? UploadBytesPerSecond => _entry.UploadBytesPerSecond;
+    public double? Ratio => _entry.Ratio;
+    public int? FileCount => _entry.FileCount;
+    public int? SelectedFileCount => _entry.SelectedFileCount;
+    public long? TorrentTotalBytes => _entry.TorrentTotalBytes;
     public long? TotalBytes => _entry.Progress.TotalBytes;
     public long DownloadedBytes => _entry.Progress.DownloadedBytes;
     public long BytesPerSecond => _entry.Progress.BytesPerSecond;
@@ -50,7 +74,9 @@ public sealed class DownloadItemViewModel : ObservableObject
     public string SourceUrl => _entry.Job.Source.AbsoluteUri;
     public string FileName => _entry.Job.DisplayName;
     public string Source => _entry.Job.Source.Host;
-    public string VerificationLabel => _entry.Job.ExpectedChecksum is null ? "Verification: Not supplied" : _entry.Verification switch
+    public string VerificationLabel => Kind == TransferKind.Torrent
+        ? _entry.Progress.Status == DownloadStatus.Completed ? "Verification: Torrent payload verified" : "Verification: Pending"
+        : _entry.Job.ExpectedChecksum is null ? "Verification: Not supplied" : _entry.Verification switch
     {
         VerificationStatus.Verified => "Verification: Matches supplied SHA-256",
         VerificationStatus.Mismatch => "Verification: SHA-256 mismatch",
@@ -69,14 +95,14 @@ public sealed class DownloadItemViewModel : ObservableObject
             : _entry.Progress.Status == DownloadStatus.Interrupted ? "Needs recovery" : _entry.Progress.Status.ToString()
     };
     public string Destination => _entry.Job.Destination;
-    public bool ShowPause => _entry.Verification != VerificationStatus.Verifying &&
+    public bool ShowPause => Kind == TransferKind.Torrent ? CanExecute(DownloadAction.Pause) : _entry.Verification != VerificationStatus.Verifying &&
         _entry.Progress.Status is (DownloadStatus.Downloading or DownloadStatus.Queued);
     public bool ShowResume => _entry.Progress.Status == DownloadStatus.Paused;
-    public bool ShowRemove => ShowPause || ShowResume;
+    public bool ShowRemove => Kind == TransferKind.Torrent ? CanExecute(DownloadAction.Remove) : ShowPause || ShowResume;
     public bool ShowRetry => _entry.Progress.Status is DownloadStatus.Failed or DownloadStatus.Removed;
     public bool ShowRecover => _entry.Progress.Status == DownloadStatus.Interrupted || _entry.PendingOperation?.Status == OperationStatus.Uncertain;
     public bool ShowQueue => _entry.Progress.Status == DownloadStatus.Queued;
-    public bool ShowOpenFile => _entry.Progress.Status == DownloadStatus.Completed;
+    public bool ShowOpenFile => Kind == TransferKind.Http && _entry.Progress.Status == DownloadStatus.Completed;
     public string ErrorMessage => _entry.ErrorMessage ?? "";
     public string? FailureReason => _entry.ErrorMessage;
     public int? HttpStatus => _entry.HttpStatus;
@@ -104,6 +130,7 @@ public sealed class DownloadItemViewModel : ObservableObject
         _connected = connected;
         foreach (var command in Commands) command.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(Status));
+        foreach (var name in new[] { nameof(Kind), nameof(SubstateText), nameof(Peers), nameof(Seeds), nameof(UploadBytesPerSecond), nameof(Ratio), nameof(FileCount), nameof(SelectedFileCount), nameof(TorrentTotalBytes) }) OnPropertyChanged(name);
         foreach (var name in new[] { nameof(Entry), nameof(TotalBytes), nameof(DownloadedBytes), nameof(BytesPerSecond), nameof(EstimatedTimeRemaining), nameof(RawStatus), nameof(SourceUrl) }) OnPropertyChanged(name);
         OnPropertyChanged(nameof(Progress));
         OnPropertyChanged(nameof(IsIndeterminate));

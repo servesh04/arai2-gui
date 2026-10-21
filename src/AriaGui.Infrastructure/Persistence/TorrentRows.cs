@@ -2,7 +2,7 @@ using AriaGui.Core.Downloads;
 
 namespace AriaGui.Infrastructure.Persistence;
 
-// Torrent rows are separate until the integration phase can expose multi-file jobs in browsing.
+// Torrent persistence stays separate; the shared transfer collection projects these rows for browsing.
 public sealed class TorrentSpecRow
 {
     public Guid JobId { get; set; }

@@ -7,6 +7,59 @@ namespace AriaGui.Application.Tests;
 
 public sealed class DesktopBehaviorTests
 {
+    [Theory]
+    [InlineData(TorrentStage.AwaitingSelection, null, DownloadStatus.Queued, null)]
+    [InlineData(TorrentStage.Checking, null, DownloadStatus.Downloading, "Checking files")]
+    [InlineData(TorrentStage.Downloading, "Fetching metadata", DownloadStatus.Downloading, "Fetching metadata")]
+    [InlineData(TorrentStage.Downloading, "Connecting", DownloadStatus.Downloading, "Connecting")]
+    [InlineData(TorrentStage.Downloading, "No peers yet", DownloadStatus.Downloading, "No peers yet")]
+    [InlineData(TorrentStage.Verifying, null, DownloadStatus.Downloading, "Verifying")]
+    [InlineData(TorrentStage.Completed, "Seeding", DownloadStatus.Downloading, "Seeding")]
+    [InlineData(TorrentStage.Publishing, null, DownloadStatus.Downloading, "Publishing to Downloads")]
+    [InlineData(TorrentStage.Completed, null, DownloadStatus.Completed, null)]
+    [InlineData(TorrentStage.Failed, null, DownloadStatus.Failed, null)]
+    public void T1_torrent_substates_keep_existing_filters(TorrentStage stage, string? activity,
+        DownloadStatus expected, string? substate)
+    {
+        var row = TorrentTransferProjection.Map(new(Guid.NewGuid(), "bundle", new string('a', 40),
+            @"C:\Downloads", DateTimeOffset.UtcNow, stage, 200, 100, 35, 9, 2, 1,
+            stage == TorrentStage.Failed ? "Local tracker stopped." : null, activity));
+        Assert.Equal(TransferKind.Torrent, row.Kind);
+        Assert.Equal(expected, row.Progress.Status);
+        Assert.Equal(substate, row.SubstateText);
+        Assert.Equal(100, row.Progress.TotalBytes);
+        Assert.Equal(stage == TorrentStage.Completed ? 100 : 35, row.Progress.DownloadedBytes);
+        Assert.True(DownloadBrowsing.Matches(row, "", expected switch
+        {
+            DownloadStatus.Downloading => DownloadFilter.Active,
+            DownloadStatus.Queued => DownloadFilter.Waiting,
+            DownloadStatus.Completed => DownloadFilter.Completed,
+            _ => DownloadFilter.Failed
+        }));
+        Assert.Equal(1, Enum.GetValues<DownloadFilter>().Skip(1)
+            .Count(filter => DownloadBrowsing.Matches(row, "", filter)));
+    }
+
+    [Fact]
+    public void T1_shared_collection_counts_torrent_once_in_rail_and_footer()
+    {
+        var store = new DownloadRuntimeStore();
+        var coordinator = new DownloadCoordinator(new MutableEngine(), store, TimeProvider.System,
+            new MemoryDownloadRepository(), new TestDownloadDestination());
+        using var vm = new DownloadsViewModel(coordinator, store, new ImmediateDispatcher());
+        using var summary = new DownloadSummaryViewModel(store, new ImmediateDispatcher());
+        var row = TorrentTransferProjection.Map(new(Guid.NewGuid(), "bundle", new string('a', 40),
+            @"C:\Downloads", DateTimeOffset.UtcNow, TorrentStage.Downloading, 200, 100, 40, 10, 2, 1));
+        store.PublishTorrents([row]);
+        Assert.Single(vm.Downloads);
+        Assert.Equal(1, vm.SidebarCounts[DownloadFilter.All]);
+        Assert.Equal(1, vm.SidebarCounts[DownloadFilter.Active]);
+        Assert.Equal("1 active · 0 waiting", summary.QueueStatus);
+        Assert.Equal("1 download", summary.Total);
+        store.PublishTorrents([row with { Progress = new(DownloadStatus.Completed, 100, 100, 0) }]);
+        Assert.Equal(1, vm.SidebarCounts[DownloadFilter.Completed]);
+        Assert.Equal("1", summary.Completed);
+    }
     [Fact]
     public async Task Selection_survives_progress_updates_explicit_sort_and_is_pruned_after_filter()
     {

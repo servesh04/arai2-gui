@@ -2,8 +2,11 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using AriaGui.App.Services;
 using AriaGui.Application.Downloads;
+using AriaGui.Application.Engine;
 using CommunityToolkit.Mvvm.Input;
 using AriaGui.Core.Downloads;
+using AriaGui.Infrastructure.Downloads;
+using AriaGui.Infrastructure.Aria2;
 
 namespace AriaGui.App.ViewModels;
 
@@ -20,6 +23,8 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     private readonly DownloadCoordinator _coordinator;
     private readonly IUiDispatcher _dispatcher;
     private readonly DownloadRuntimeStore _runtimeStore;
+    private readonly TorrentTransferCollection? _torrentTransfers;
+    private readonly Aria2ProcessManager? _torrentEngine;
     private readonly HashSet<Guid> _selectedIds = [];
     private DownloadSortColumn _sortColumn;
     private bool _sortDescending, _batchRunning;
@@ -72,13 +77,16 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     private readonly object _operationsSync = new();
 
     public DownloadsViewModel(DownloadCoordinator coordinator, DownloadRuntimeStore store, IUiDispatcher dispatcher,
-        IDownloadFolderPicker? folderPicker = null, IDownloadRepository? repository = null, IDownloadFileActions? fileActions = null)
+        IDownloadFolderPicker? folderPicker = null, IDownloadRepository? repository = null, IDownloadFileActions? fileActions = null,
+        TorrentTransferCollection? torrentTransfers = null, IManagedAria2Engine? managedEngine = null)
         : base(store, dispatcher)
     {
         _coordinator = coordinator;
         _runtimeStore = store;
         _dispatcher = dispatcher;
         _repository = repository; _fileActions = fileActions;
+        _torrentTransfers = torrentTransfers; _torrentEngine = managedEngine as Aria2ProcessManager;
+        _torrentTransfers?.Start();
         BatchPauseCommand = BatchCommand(DownloadAction.Pause); BatchResumeCommand = BatchCommand(DownloadAction.Resume);
         BatchRemoveCommand = BatchCommand(DownloadAction.Remove); BatchRetryCommand = BatchCommand(DownloadAction.Retry); BatchRecoverCommand = BatchCommand(DownloadAction.Recover);
         BatchRestartFreshCommand = new AsyncRelayCommand(token => ExecuteBatchAsync(DownloadAction.Retry, token, true),
@@ -99,7 +107,7 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         SaveProfileCommand = new AsyncRelayCommand(token => HandleAsync(() => SaveNamedProfileAsync(token)), () => _connected);
         DeleteProfileCommand = new AsyncRelayCommand(token => HandleAsync(() => DeleteNamedProfileAsync(token)), () => _connected && SelectedSavedProfileIndex >= 0);
         ApplyJobBandwidthCommand = new AsyncRelayCommand(token => HandleAsync(() => ApplySelectedJobRateAsync(token)),
-            () => _connected && SelectedBandwidthJob is { } job && !DownloadBrowsing.IsTerminal(job.RawStatus));
+            () => _connected && SelectedBandwidthJob is { Kind: TransferKind.Http } job && !DownloadBrowsing.IsTerminal(job.RawStatus));
         AddDownloadCommand = new AsyncRelayCommand(AddDownloadAsync, () => _connected);
         BrowseCommand = new AsyncRelayCommand(async token =>
         {
@@ -128,7 +136,7 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     public IAsyncRelayCommand BatchRecoverCommand { get; }
     private IEnumerable<IAsyncRelayCommand> BatchCommands => [BatchPauseCommand, BatchResumeCommand, BatchRemoveCommand, BatchRetryCommand, BatchRecoverCommand, BatchRestartFreshCommand];
     public IReadOnlyDictionary<DownloadFilter, int> SidebarCounts => Enum.GetValues<DownloadFilter>().ToDictionary(filter => filter,
-        filter => _snapshot?.Downloads.Count(row => DownloadBrowsing.Matches(row, "", filter)) ?? 0);
+        filter => _snapshot?.AllTransfers.Count(row => DownloadBrowsing.Matches(row, "", filter)) ?? 0);
     public string SidebarCountScope => "Loaded live and up to 100 recent records";
     public DownloadSortColumn SortColumn { get => _sortColumn; set { if (Enum.IsDefined(value) && SetProperty(ref _sortColumn, value)) BrowseChanged(); } }
     public bool SortDescending { get => _sortDescending; set { if (SetProperty(ref _sortDescending, value)) BrowseChanged(); } }
@@ -140,10 +148,20 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     }
     private void NotifyBatchCommands() { foreach (var command in BatchCommands) command.NotifyCanExecuteChanged(); }
     private IAsyncRelayCommand BatchCommand(DownloadAction action) => new AsyncRelayCommand(token => ExecuteBatchAsync(action, token),
-        () => !IsBatchRunning && _selectedIds.Any(id => ResolveBatchEntry(id) is { } entry && DownloadBatch.CanExecute(entry, _connected, action)));
-    private DownloadEntry? ResolveBatchEntry(Guid id) => _runtimeStore.Current.Downloads.FirstOrDefault(row => row.Job.Id == id)
+        () => !IsBatchRunning && _selectedIds.Any(id => ResolveBatchEntry(id) is { } entry && CanExecuteEntry(entry, action)));
+    private bool CanExecuteEntry(DownloadEntry entry, DownloadAction action) => entry.Kind == TransferKind.Torrent
+        ? _connected && (action switch
+        {
+            DownloadAction.Pause => entry.Progress.Status == DownloadStatus.Downloading,
+            DownloadAction.Resume => entry.Progress.Status == DownloadStatus.Paused,
+            DownloadAction.Remove => true,
+            DownloadAction.Retry => entry.Progress.Status == DownloadStatus.Failed,
+            DownloadAction.Recover => entry.Progress.Status == DownloadStatus.Interrupted,
+            _ => false
+        }) : DownloadBatch.CanExecute(entry, _connected, action);
+    private DownloadEntry? ResolveBatchEntry(Guid id) => _runtimeStore.Current.AllTransfers.FirstOrDefault(row => row.Job.Id == id)
         ?? _rows.GetValueOrDefault(id)?.Entry;
-    private bool CanRestartFresh(DownloadEntry entry) => _coordinator.SupportsFreshRestart && entry.Progress.Status == DownloadStatus.Interrupted
+    private bool CanRestartFresh(DownloadEntry entry) => entry.Kind == TransferKind.Http && _coordinator.SupportsFreshRestart && entry.Progress.Status == DownloadStatus.Interrupted
         && entry.PendingOperation?.Status != OperationStatus.Pending;
     private async Task ExecuteBatchAsync(DownloadAction action, CancellationToken token, bool freshRestart = false)
     {
@@ -154,7 +172,8 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         {
             Func<Guid, DownloadAction, CancellationToken, Task> execute = freshRestart ? (id, _, cancellation) => _coordinator.RestartFreshAsync(id, cancellation) : ExecuteCoordinatorAsync;
             _batchResults = await DownloadBatch.ExecuteAsync(selection, action, ResolveBatchEntry,
-                () => _runtimeStore.Current.Connection == EngineConnectionState.Connected, execute, linked.Token, freshRestart ? CanRestartFresh : null);
+                () => _runtimeStore.Current.Connection == EngineConnectionState.Connected, execute, linked.Token,
+                freshRestart ? CanRestartFresh : entry => CanExecuteEntry(entry, action));
             _dispatcher.Enqueue(() =>
             {
                 OnPropertyChanged(nameof(BatchResults));
@@ -540,9 +559,9 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     private void Render(bool explicitBrowse = false)
     {
         if (_snapshot is null) return;
-        var current = _snapshot.Downloads.ToDictionary(row => row.Job.Id);
+        var current = _snapshot.AllTransfers.ToDictionary(row => row.Job.Id);
         var source = IsHistoryView ? _history.Entries.Select(row => current.GetValueOrDefault(row.Job.Id) ?? row)
-            .Where(row => DownloadBrowsing.IsTerminal(row.Progress.Status)) : _snapshot.Downloads;
+            .Concat(_snapshot.Torrents).Where(row => DownloadBrowsing.IsTerminal(row.Progress.Status)) : _snapshot.AllTransfers;
         var filtered = source.Where(row => DownloadBrowsing.Matches(row, SearchText, (DownloadFilter)FilterIndex));
         var ordered = (IsHistoryView ? filtered : SortColumn == DownloadSortColumn.Default ? filtered
             .OrderBy(row => IsHistoryView ? 0 : row.Progress.Status switch { DownloadStatus.Downloading => 0, DownloadStatus.Queued => 1, DownloadStatus.Paused => 2, _ => 3 })
@@ -562,7 +581,8 @@ public sealed class DownloadsViewModel : RuntimeViewModel
             if (!_rows.TryGetValue(entry.Job.Id, out var item))
             {
                 item = new(entry, ExecuteAsync, (id, offset, token) => RunOperation(inner => _coordinator.MoveAsync(id, offset, inner), token),
-                    _fileActions is null ? null : (path, folder, token) => RunOperation(inner => folder ? _fileActions.OpenFolderAsync(path, inner) : _fileActions.OpenFileAsync(path, inner), token));
+                    _fileActions is null ? null : (path, folder, token) => RunOperation(inner => folder ? _fileActions.OpenFolderAsync(path, inner) : _fileActions.OpenFileAsync(path, inner), token),
+                    RemoveAndDeleteTorrentAsync);
                 _rows[entry.Job.Id] = item;
             }
             item.Update(entry, _connected);
@@ -589,15 +609,40 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         };
         return (SortDescending ? entries.OrderByDescending(key) : entries.OrderBy(key)).ThenBy(row => row.Job.Id);
     }
-    private Task ExecuteCoordinatorAsync(Guid id, DownloadAction action, CancellationToken token) => action switch
+    private async Task ExecuteCoordinatorAsync(Guid id, DownloadAction action, CancellationToken token)
     {
-        DownloadAction.Pause => _coordinator.PauseAsync(id, token), DownloadAction.Resume => _coordinator.ResumeAsync(id, token),
-        DownloadAction.Remove => _coordinator.RemoveAsync(id, token), DownloadAction.Retry => _coordinator.RetryAsync(id, token),
-        DownloadAction.Recover => _coordinator.RecoverAsync(id, token), _ => throw new ArgumentOutOfRangeException(nameof(action))
-    };
+        if (ResolveBatchEntry(id)?.Kind == TransferKind.Torrent)
+        {
+            var engine = _torrentEngine ?? throw new DownloadRequestException("Torrent engine is unavailable.");
+            switch (action)
+            {
+                case DownloadAction.Pause: await engine.PauseTorrentAsync(id, token); break;
+                case DownloadAction.Resume: await engine.ResumeTorrentAsync(id, token); break;
+                case DownloadAction.Remove: await engine.RemoveTorrentAsync(id, false, token); break;
+                case DownloadAction.Retry: await engine.RetryFailedTorrentAsync(id, token); break;
+                case DownloadAction.Recover: await engine.DispatchTorrentAsync(id, token); break;
+                default: throw new ArgumentOutOfRangeException(nameof(action));
+            }
+            if (_torrentTransfers is not null) await _torrentTransfers.RefreshAsync(token);
+            return;
+        }
+        await (action switch
+        {
+            DownloadAction.Pause => _coordinator.PauseAsync(id, token), DownloadAction.Resume => _coordinator.ResumeAsync(id, token),
+            DownloadAction.Remove => _coordinator.RemoveAsync(id, token), DownloadAction.Retry => _coordinator.RetryAsync(id, token),
+            DownloadAction.Recover => _coordinator.RecoverAsync(id, token), _ => throw new ArgumentOutOfRangeException(nameof(action))
+        });
+    }
+    private Task RemoveAndDeleteTorrentAsync(Guid id, CancellationToken token) => RunOperation(async inner =>
+    {
+        if (ResolveBatchEntry(id)?.Kind != TransferKind.Torrent || _torrentEngine is null)
+            throw new DownloadRequestException("This torrent is no longer available.");
+        await _torrentEngine.RemoveTorrentAsync(id, true, inner);
+        if (_torrentTransfers is not null) await _torrentTransfers.RefreshAsync(inner);
+    }, token);
     private Task ExecuteAsync(Guid id, DownloadAction action, CancellationToken token) => RunOperation(async inner =>
     {
-        if (ResolveBatchEntry(id) is not { } entry || !DownloadBatch.CanExecute(entry, _runtimeStore.Current.Connection == EngineConnectionState.Connected, action))
+        if (ResolveBatchEntry(id) is not { } entry || !CanExecuteEntry(entry, action))
             throw new DownloadRequestException("This download is no longer eligible for that command.");
         await ExecuteCoordinatorAsync(id, action, inner).ConfigureAwait(false);
         _dispatcher.Enqueue(() => { if (!_disposed && IsHistoryView && !IsBrowsing) QueueHistory(_history.Page, false); });

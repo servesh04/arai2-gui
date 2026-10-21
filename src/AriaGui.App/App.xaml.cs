@@ -90,6 +90,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         var folderPicker = new WinUiFolderPicker();
         registrations.AddSingleton<IDownloadFolderPicker>(folderPicker);
         registrations.AddSingleton<DownloadRuntimeStore>();
+        registrations.AddSingleton<TorrentTransferCollection>();
         registrations.AddSingleton<DownloadCoordinator>();
         // The guarded continuity gateway fetches the relay from this process after aria2 contacts the gateway.
         registrations.AddSingleton<BrowserCookieRelay>(_ => new(() => Environment.ProcessId));

@@ -6,7 +6,13 @@ using AriaGui.Core.Downloads;
 namespace AriaGui.Infrastructure.Aria2;
 
 public sealed record TorrentEngineObservation(string Gid, TorrentStage Stage, long CompletedBytes,
-    long TotalBytes, long DownloadBytesPerSecond, long VerifiedBytes, string? Error = null);
+    long TotalBytes, long DownloadBytesPerSecond, long VerifiedBytes, string? Error = null)
+{
+    public int? Peers { get; init; }
+    public int? Seeds { get; init; }
+    public long? UploadBytesPerSecond { get; init; }
+    public long? UploadedBytes { get; init; }
+}
 
 public sealed partial class Aria2RpcClient
 {
@@ -19,7 +25,8 @@ public sealed partial class Aria2RpcClient
     private static readonly string[] TorrentKeys =
     [
         "gid", "status", "infoHash", "dir", "files", "totalLength", "completedLength",
-        "downloadSpeed", "verifiedLength", "verifyIntegrityPending", "errorCode"
+        "downloadSpeed", "uploadSpeed", "uploadLength", "connections", "numSeeders",
+        "verifiedLength", "verifyIntegrityPending", "errorCode", "errorMessage"
     ];
 
     public async Task<TorrentEngineObservation> AddTorrentAsync(byte[] metainfo, TorrentManifest manifest,
@@ -71,6 +78,7 @@ public sealed partial class Aria2RpcClient
             throw new EngineException(EngineFailure.RequestRejected, "Engine torrent identity differs from the saved draft.");
         var selected = selection.FileIndices.ToHashSet();
         var seen = new HashSet<int>();
+        var selectedCompleted = 0L;
         foreach (var file in files.EnumerateArray())
         {
             if (!int.TryParse(Text(file, "index"), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
@@ -79,6 +87,9 @@ public sealed partial class Aria2RpcClient
                 || Number(file, "length") != manifest.Files[index - 1].Length
                 || Text(file, "selected") != (selected.Contains(index) ? "true" : "false"))
                 throw new EngineException(EngineFailure.RequestRejected, "Engine torrent files differ from the saved selection.");
+            if (selected.Contains(index))
+                selectedCompleted = checked(selectedCompleted + Math.Min(Number(file, "completedLength", optional: true),
+                    manifest.Files[index - 1].Length));
         }
         var state = Text(status, "status");
         var stage = state switch
@@ -93,13 +104,15 @@ public sealed partial class Aria2RpcClient
             "removed" => TorrentStage.Stopped,
             _ => throw InvalidResponse()
         };
-        var completed = Number(status, "completedLength");
-        var total = Number(status, "totalLength");
-        if (total == 0 && stage is (TorrentStage.Waiting or TorrentStage.Stopped))
-            total = selection.SelectedBytes;
-        if (completed > total) throw InvalidResponse();
-        return new(gid, stage, completed, total, Number(status, "downloadSpeed"),
-            Number(status, "verifiedLength", optional: true), stage == TorrentStage.Failed ? "Torrent transfer failed." : null);
+        if (Number(status, "completedLength") > Number(status, "totalLength")) throw InvalidResponse();
+        return new(gid, stage, Math.Min(selectedCompleted, selection.SelectedBytes), selection.SelectedBytes,
+            Number(status, "downloadSpeed"), Number(status, "verifiedLength", optional: true),
+            stage == TorrentStage.Failed ? Text(status, "errorMessage", optional: true) switch
+            { "" => "Torrent transfer failed.", var message => message } : null)
+        {
+            Peers = CheckedInt(status, "connections"), Seeds = CheckedInt(status, "numSeeders"),
+            UploadBytesPerSecond = OptionalNumber(status, "uploadSpeed"), UploadedBytes = OptionalNumber(status, "uploadLength")
+        };
     }
 
     private static string Text(JsonElement element, string key, bool optional = false)
@@ -115,6 +128,13 @@ public sealed partial class Aria2RpcClient
         if (optional && value.Length == 0) return 0;
         return long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number) && number >= 0
             ? number : throw InvalidResponse();
+    }
+    private static long? OptionalNumber(JsonElement element, string key) =>
+        element.TryGetProperty(key, out _) ? Number(element, key) : null;
+    private static int? CheckedInt(JsonElement element, string key)
+    {
+        var value = OptionalNumber(element, key);
+        return value is null ? null : checked((int)value.Value);
     }
     private static bool SamePath(string first, string second)
     {

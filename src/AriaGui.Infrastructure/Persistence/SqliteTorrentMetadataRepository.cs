@@ -7,7 +7,10 @@ using Microsoft.EntityFrameworkCore;
 namespace AriaGui.Infrastructure.Persistence;
 
 public sealed record StoredTorrentDraft(Guid JobId, TorrentManifest Manifest, TorrentSelection Selection,
-    byte[] Metainfo, string PayloadRoot, string DestinationRoot, TorrentStage Stage);
+    byte[] Metainfo, string PayloadRoot, string DestinationRoot, TorrentStage Stage)
+{
+    public DateTimeOffset CreatedAt { get; init; }
+}
 public sealed record TorrentEngineBinding(Guid JobId, string Generation, string EngineId, string InfoHash);
 
 /// <summary>Durable local metadata and selection; no RPC or payload filesystem writes.</summary>
@@ -90,7 +93,8 @@ public sealed class SqliteTorrentMetadataRepository(string databasePath)
         if (selection.SelectedBytes != spec.SelectedBytes)
             throw new DownloadStorageException("Saved torrent selection size is inconsistent; the draft was preserved.");
         return new StoredTorrentDraft(spec.JobId, manifest, selection, spec.Metainfo.ToArray(),
-            spec.PayloadRoot, spec.DestinationRoot, spec.Stage);
+            spec.PayloadRoot, spec.DestinationRoot, spec.Stage)
+            { CreatedAt = new DateTimeOffset(spec.CreatedAtUtcTicks, TimeSpan.Zero) };
     }, token);
 
     public Task<IReadOnlyList<Guid>> LoadUnfinishedIdsAsync(CancellationToken token = default) => OnDatabaseThreadAsync<IReadOnlyList<Guid>>(db =>
@@ -101,6 +105,15 @@ public sealed class SqliteTorrentMetadataRepository(string databasePath)
     public Task<IReadOnlyList<Guid>> LoadDraftIdsAsync(CancellationToken token = default) => OnDatabaseThreadAsync<IReadOnlyList<Guid>>(db =>
         db.TorrentSpecs.AsNoTracking().OrderByDescending(row => row.CreatedAtUtcTicks)
             .Select(row => row.JobId).ToArray(), token);
+
+    public Task DeleteDraftAsync(Guid jobId, CancellationToken token = default) => OnDatabaseThreadAsync(db =>
+    {
+        var row = db.TorrentSpecs.SingleOrDefault(item => item.JobId == jobId);
+        if (row is null) return true;
+        db.TorrentSpecs.Remove(row);
+        db.SaveChanges();
+        return true;
+    }, token);
 
     public Task<TorrentEngineBinding?> LoadBindingAsync(Guid jobId, CancellationToken token = default) => OnDatabaseThreadAsync(db =>
     {
@@ -122,7 +135,7 @@ public sealed class SqliteTorrentMetadataRepository(string databasePath)
             using var transaction = db.Database.BeginTransaction();
             var spec = db.TorrentSpecs.SingleOrDefault(row => row.JobId == jobId)
                 ?? throw new DownloadStorageException("Torrent draft is missing.");
-            if (spec.Stage is TorrentStage.Completed or TorrentStage.Stopped)
+            if (spec.Stage == TorrentStage.Completed)
                 throw new DownloadStorageException("Finished torrent cannot be dispatched again.");
             var row = db.TorrentEngines.SingleOrDefault(item => item.JobId == jobId && item.Role == TorrentEngineRole.Payload);
             if (row is null)

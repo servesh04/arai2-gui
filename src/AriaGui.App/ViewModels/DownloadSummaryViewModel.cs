@@ -24,11 +24,12 @@ public sealed class DownloadSummaryViewModel : RuntimeViewModel
 
     protected override void Apply(DownloadRuntimeSnapshot snapshot)
     {
-        Active = snapshot.Downloads.Count(item => item.Progress.Status == DownloadStatus.Downloading).ToString();
-        Waiting = snapshot.Downloads.Count(item => item.Progress.Status == DownloadStatus.Queued).ToString();
+        var transfers = snapshot.AllTransfers;
+        Active = transfers.Count(item => item.Progress.Status == DownloadStatus.Downloading).ToString();
+        Waiting = transfers.Count(item => item.Progress.Status == DownloadStatus.Queued).ToString();
         QueueStatus = $"{Active} active · {Waiting} waiting";
-        Completed = snapshot.Downloads.Count(item => item.Progress.Status == DownloadStatus.Completed).ToString();
-        Speed = $"{DownloadItemViewModel.FormatBytes(snapshot.Downloads.Sum(item => item.Progress.BytesPerSecond))}/s";
-        Total = $"{snapshot.Downloads.Count} download{(snapshot.Downloads.Count == 1 ? "" : "s")}";
+        Completed = transfers.Count(item => item.Progress.Status == DownloadStatus.Completed).ToString();
+        Speed = $"{DownloadItemViewModel.FormatBytes(transfers.Sum(item => item.Progress.BytesPerSecond))}/s";
+        Total = $"{transfers.Count} download{(transfers.Count == 1 ? "" : "s")}";
     }
 }
