@@ -258,12 +258,14 @@ internal sealed class ContinuityTransferLedger : IDisposable
         _states.TryGetValue(gid, out var state) && state.Job == jobId && state.Attempt == attemptId && state.Phase != "complete-published";
     internal bool CanResume(string gid) => _states.TryGetValue(gid, out var state) && state.Phase != "complete-published"
         && (state.Version == 1 || _parallelEnabled && _verificationEnabled);
-    internal async Task<bool> VerifySurvivorAsync(Aria2RpcClient rpc, IReadOnlyList<DownloadEntry> history, CancellationToken token, IDownloadRepository? repository = null)
+    internal async Task<bool> VerifySurvivorAsync(Aria2RpcClient rpc, IReadOnlyList<DownloadEntry> history, CancellationToken token,
+        IDownloadRepository? repository = null, IReadOnlySet<string>? verifiedTorrentIds = null)
     {
         var inventory = await rpc.GetInventoryAsync(token, 4096);
         if (inventory.Count > 4096) return false;
         foreach (var gid in inventory)
         {
+            if (verifiedTorrentIds?.Contains(gid) == true) continue;
             if (!_states.TryGetValue(gid, out var state)) return false;
             Validate(state);
             if (state.Phase != "complete-published" && !HasDestinationIdentity(state)) return false;

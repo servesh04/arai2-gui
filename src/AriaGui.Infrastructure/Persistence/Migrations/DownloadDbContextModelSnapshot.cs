@@ -39,13 +39,13 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("HttpStatus")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("HttpConnections")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(1);
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("JobId")
                         .HasColumnType("TEXT");
@@ -364,6 +364,127 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.ToTable("QueuePolicies");
                 });
 
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.TorrentEngineRow", b =>
+                {
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EngineId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Generation")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InfoHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RegisteredAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("JobId", "Role");
+
+                    b.HasIndex("Generation", "EngineId")
+                        .IsUnique();
+
+                    b.ToTable("TorrentEngines");
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.TorrentFileRow", b =>
+                {
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FileIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Length")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Published")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("PublishedBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Selected")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("JobId", "FileIndex");
+
+                    b.ToTable("TorrentFiles");
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.TorrentSpecRow", b =>
+                {
+                    b.Property<Guid>("JobId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DestinationKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DestinationRoot")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InfoHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsPrivate")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Metainfo")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadRoot")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PieceLength")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SelectedBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Stage")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TotalBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UpdatedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("JobId");
+
+                    b.HasIndex("DestinationKey")
+                        .IsUnique();
+
+                    b.HasIndex("InfoHash");
+
+                    b.ToTable("TorrentSpecs");
+                });
+
             modelBuilder.Entity("AriaGui.Infrastructure.Persistence.AttemptRow", b =>
                 {
                     b.HasOne("AriaGui.Infrastructure.Persistence.JobRow", null)
@@ -430,6 +551,24 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.HasOne("AriaGui.Infrastructure.Persistence.ExternalRequestRow", null)
                         .WithMany()
                         .HasForeignKey("CallerKey", "InstallationId", "RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.TorrentEngineRow", b =>
+                {
+                    b.HasOne("AriaGui.Infrastructure.Persistence.TorrentSpecRow", null)
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.TorrentFileRow", b =>
+                {
+                    b.HasOne("AriaGui.Infrastructure.Persistence.TorrentSpecRow", null)
+                        .WithMany()
+                        .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

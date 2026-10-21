@@ -1,0 +1,45 @@
+<ContentDialog x:Class="AriaGui.App.Views.Downloads.TorrentAddDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Add torrent" PrimaryButtonText="Add selected files" SecondaryButtonText="Cancel"
+    DefaultButton="Primary" Opened="DialogOpened" PrimaryButtonClick="AddClick">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="{StaticResource AriaRadiusControl}" Padding="{StaticResource AriaSpace1}">
+            <Button Content="Choose .torrent file…" Click="ChooseTorrentClick"
+                    Style="{StaticResource AriaSecondaryButtonStyle}" AutomationProperties.Name="Choose torrent file" />
+            <TextBlock x:Name="TorrentName" Text="Choose a local torrent file to preview it." TextWrapping="Wrap" />
+            <TextBlock x:Name="TorrentSummary" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                       FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
+            <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBox x:Name="FolderBox" Header="Save selected files to" TextChanged="FolderChanged"
+                         AutomationProperties.Name="Torrent destination folder" />
+                <Button Grid.Column="1" Content="Browse…" Click="ChooseFolderClick" VerticalAlignment="Bottom"
+                        Style="{StaticResource AriaSecondaryButtonStyle}" AutomationProperties.Name="Browse for torrent destination folder" />
+            </Grid>
+            <TextBlock x:Name="SpaceSummary" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                       FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="Files" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button x:Name="SelectAllButton" Grid.Column="1" Content="Select all" Click="SelectAllClick" IsEnabled="False" Style="{StaticResource AriaSecondaryButtonStyle}" />
+                <Button x:Name="ClearButton" Grid.Column="2" Content="Clear" Click="ClearSelectionClick" IsEnabled="False" Style="{StaticResource AriaSecondaryButtonStyle}" />
+            </Grid>
+            <TreeView x:Name="FileTree" SelectionMode="Multiple" SelectionChanged="FileSelectionChanged"
+                      AutomationProperties.Name="Torrent file selection tree" />
+            <TextBlock x:Name="SelectionSummary" Text="No files selected." FontWeight="SemiBold"
+                       FontSize="{StaticResource AriaMinimumFontSize}" AutomationProperties.LiveSetting="Polite" />
+            <InfoBar x:Name="PrivacyNotice" IsOpen="True" IsClosable="False" Severity="Warning"
+                     Message="BitTorrent peers and trackers can see your IP address. Your VPN or proxy may not cover peer traffic. Windows Firewall may ask about aria2. DHT, peer exchange and local discovery stay off; this torrent uses its own trackers. Upload during download is capped, and seeding stops when download finishes." />
+            <CheckBox x:Name="PrivacyConsent" Checked="ConsentChanged" Unchecked="ConsentChanged"
+                      AutomationProperties.Name="Accept torrent network and privacy notice">
+                <TextBlock Text="I understand the peer and tracker exposure and want to add this torrent." TextWrapping="Wrap" />
+            </CheckBox>
+            <TextBlock Text="Only download material you have permission to share. AriaGUI provides no search or tracker list."
+                       Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
+            <TextBlock x:Name="ErrorText" Foreground="{ThemeResource AriaDangerBrush}"
+                       FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" Visibility="Collapsed"
+                       AutomationProperties.LiveSetting="Assertive" />
+        </StackPanel>
+    </ScrollViewer>
+</ContentDialog>

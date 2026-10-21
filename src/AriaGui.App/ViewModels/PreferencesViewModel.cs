@@ -25,6 +25,20 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
     public string BrowserInstallRoot { get => _browserInstallRoot; set => SetProperty(ref _browserInstallRoot, value); }
     public string BrowserInstallationId { get => _browserInstallationId; set => SetProperty(ref _browserInstallationId, value); }
     public string BrowserStatus { get => _browserStatus; private set => SetProperty(ref _browserStatus, value); }
+    public bool TorrentPrivacyNoticeAccepted => _saved.TorrentPrivacyNoticeAccepted;
+    public async Task RememberTorrentPrivacyNoticeAsync(CancellationToken token)
+    {
+        await _saveGate.WaitAsync(token);
+        try
+        {
+            if (_saved.TorrentPrivacyNoticeAccepted) return;
+            var updated = _saved with { TorrentPrivacyNoticeAccepted = true };
+            await repository.SaveAsync(updated, token);
+            _saved = updated;
+            OnPropertyChanged(nameof(TorrentPrivacyNoticeAccepted));
+        }
+        finally { _saveGate.Release(); }
+    }
     private BrowserIntegrationPreferences BrowserSettings()
     {
         Guid? installation = null;
@@ -105,7 +119,8 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
         try
         {
             await _saveGate.WaitAsync(token); acquired = true;
-            var preferences = new UserPreferences((AppTheme)ThemeIndex, DefaultFolder.Trim(), _layout, BrowserSettings());
+            var preferences = _saved with { Theme = (AppTheme)ThemeIndex, DefaultFolder = DefaultFolder.Trim(),
+                Layout = _layout, Browser = BrowserSettings() };
             await repository.SaveAsync(preferences, token); _saved = preferences; Applied?.Invoke(preferences); Message = "Saved. The folder applies to new downloads.";
         }
         catch (OperationCanceledException) { }
@@ -118,7 +133,7 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
         try
         {
             var preferences = await repository.LoadAsync(token); ThemeIndex = (int)preferences.Theme; DefaultFolder = preferences.DefaultFolder;
-            _saved = preferences; UpdateLayout(preferences.EffectiveLayout);
+            _saved = preferences; OnPropertyChanged(nameof(TorrentPrivacyNoticeAccepted)); UpdateLayout(preferences.EffectiveLayout);
             BrowserEnabled = preferences.EffectiveBrowser.Enabled; BrowserInstallRoot = preferences.EffectiveBrowser.InstallRoot;
             BrowserAutoCapture = preferences.EffectiveBrowser.AutomaticTakeoverEnabled;
             BrowserStartPaused = preferences.EffectiveBrowser.StartPaused;

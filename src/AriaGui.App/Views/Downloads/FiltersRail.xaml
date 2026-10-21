@@ -9,24 +9,24 @@
                 <icons:FluentIcon IconName="Download" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaAccentBrush}" AutomationProperties.AccessibilityView="Raw" />
                 <TextBlock Text="AriaGUI" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
-            <ToggleButton x:Name="DownloadsButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="DownloadsClick" AutomationProperties.Name="Downloads">
+            <ToggleButton x:Name="DownloadsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" Click="DownloadsClick" AutomationProperties.Name="Downloads">
                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusOuter}"><icons:FluentIcon IconName="Download" /><TextBlock Text="Downloads" /></StackPanel>
+            </ToggleButton>
+            <ToggleButton x:Name="TorrentsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="TorrentsClick" AutomationProperties.Name="Torrents">
+                <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}">
+                        <icons:FluentIcon IconName="List" /><TextBlock Text="Torrents" />
+                    </StackPanel>
+                    <TextBlock x:Name="TorrentCount" Grid.Column="1" />
+                </Grid>
             </ToggleButton>
         </StackPanel>
         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="{StaticResource AriaRadiusOuter}">
                 <StackPanel x:Name="TransferFilters" Spacing="{StaticResource AriaRadiusControl}" Margin="{StaticResource AriaSpace1}">
                     <TextBlock Text="TRANSFERS" FontWeight="SemiBold" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" />
-                    <ListView x:Name="StatusFilters" SelectedIndex="{Binding ViewModel.FilterIndex, Mode=TwoWay}" SelectionMode="Single" AutomationProperties.Name="Download status filter">
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="MinHeight" Value="{StaticResource AriaRowHeightCompact}" />
-                                <Setter Property="Padding" Value="{StaticResource AriaSpace2}" />
-                                <Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" />
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                <Setter Property="CornerRadius" Value="{StaticResource AriaControlCornerRadius}" />
-                            </Style>
-                        </ListView.ItemContainerStyle>
+                    <ListView x:Name="StatusFilters" SelectedIndex="{Binding ActiveFilterIndex, Mode=TwoWay}" SelectionMode="Single" ItemContainerStyle="{StaticResource AriaSidebarFilterStyle}" AutomationProperties.Name="Transfer status filter">
                         <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="List" /><TextBlock Text="All" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
@@ -62,19 +62,19 @@
                     </ListView>
                 </StackPanel>
                 <Border Style="{StaticResource AriaDividerStyle}" Margin="{StaticResource AriaSpace2}" />
-                <ToggleButton x:Name="HistoryButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="HistoryClick" AutomationProperties.Name="History">
+                <ToggleButton x:Name="HistoryButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="HistoryClick" AutomationProperties.Name="History">
                     <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="History" /><TextBlock Text="History" /></StackPanel>
                         <TextBlock x:Name="HistoryCount" Grid.Column="1" />
                     </Grid>
                 </ToggleButton>
-                <Button IsEnabled="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" ToolTipService.ToolTip="Notifications are not available in this build." AutomationProperties.Name="Notifications, unavailable">
+                <Button IsEnabled="False" Style="{StaticResource AriaSecondaryButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" ToolTipService.ToolTip="Notifications are not available in this build." AutomationProperties.Name="Notifications, unavailable">
                     <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="Notifications" /><TextBlock Text="Notifications" /></StackPanel>
                 </Button>
             </StackPanel>
         </ScrollViewer>
-        <ToggleButton x:Name="SettingsButton" Grid.Row="2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="SettingsClick" AutomationProperties.Name="Settings">
+        <ToggleButton x:Name="SettingsButton" Grid.Row="2" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" Click="SettingsClick" AutomationProperties.Name="Settings">
             <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="Settings" /><TextBlock Text="Settings" /></StackPanel>
         </ToggleButton>
     </Grid>

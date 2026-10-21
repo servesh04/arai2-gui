@@ -10,7 +10,7 @@ using System.Globalization;
 
 namespace AriaGui.Infrastructure.Aria2;
 
-public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret, TimeSpan requestTimeout)
+public sealed partial class Aria2RpcClient(HttpClient http, Uri endpoint, string secret, TimeSpan requestTimeout)
 {
     private long _requestId;
     internal string OwnershipFailure { get; private set; } = "none";
@@ -279,7 +279,7 @@ public sealed class Aria2RpcClient(HttpClient http, Uri endpoint, string secret,
                 if (method == "aria2.tellStatus" && payload.Error.Code == 1
                     && payload.Error.Message?.Contains("is not found", StringComparison.OrdinalIgnoreCase) == true)
                     throw new EngineException(EngineFailure.TransferNotFound, "The transfer is not in this engine session.");
-                if (method is "aria2.addUri" or "aria2.pause" or "aria2.unpause" or "aria2.remove" or "aria2.changePosition" or "aria2.changeGlobalOption" or "aria2.changeOption")
+                if (method is "aria2.addUri" or "aria2.addTorrent" or "aria2.pause" or "aria2.unpause" or "aria2.remove" or "aria2.changePosition" or "aria2.changeGlobalOption" or "aria2.changeOption")
                     throw new EngineException(EngineFailure.RequestRejected, "The engine rejected the command.");
                 throw new EngineException(EngineFailure.RpcUnavailable, "aria2 rejected a local engine request.");
             }

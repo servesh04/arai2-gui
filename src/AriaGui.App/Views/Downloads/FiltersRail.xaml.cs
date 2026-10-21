@@ -22,12 +22,23 @@ public sealed partial class FiltersRail : UserControl
     public ListView Filters => StatusFilters;
     public event RoutedEventHandler? SettingsRequested;
     public event RoutedEventHandler? ViewChanged;
+    public event RoutedEventHandler? TorrentsRequested;
     public void UpdateSelection(bool history)
     {
         TransferFilters.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
         DownloadsButton.IsChecked = !history;
+        TorrentsButton.IsChecked = false;
         HistoryButton.IsChecked = history;
         SettingsButton.IsChecked = false;
+        RefreshCounts();
+    }
+    public void SetTorrentSelected()
+    {
+        DownloadsButton.IsChecked = false;
+        HistoryButton.IsChecked = false;
+        SettingsButton.IsChecked = false;
+        TorrentsButton.IsChecked = true;
+        TransferFilters.Visibility = Visibility.Visible;
         RefreshCounts();
     }
     public void SetSettingsSelected(bool selected)
@@ -39,6 +50,7 @@ public sealed partial class FiltersRail : UserControl
             return;
         }
         DownloadsButton.IsChecked = false;
+        TorrentsButton.IsChecked = false;
         TransferFilters.Visibility = Visibility.Collapsed;
         HistoryButton.IsChecked = false;
     }
@@ -53,6 +65,7 @@ public sealed partial class FiltersRail : UserControl
         UpdateSelection(true); ViewChanged?.Invoke(this, args);
     }
     private void SettingsClick(object sender, RoutedEventArgs args) => SettingsRequested?.Invoke(this, args);
+    private void TorrentsClick(object sender, RoutedEventArgs args) => TorrentsRequested?.Invoke(this, args);
 
     private void FiltersRailLoaded(object sender, RoutedEventArgs args) => AttachPage();
 
@@ -74,10 +87,10 @@ public sealed partial class FiltersRail : UserControl
             RefreshCounts();
     }
 
-    private void RefreshCounts()
+    public void RefreshCounts()
     {
         if (_page is null) return;
-        var counts = _page.ViewModel.SidebarCounts;
+        var counts = _page.TorrentMode ? _page.TorrentCounts : _page.ViewModel.SidebarCounts;
         for (var index = 0; index < StatusFilters.Items.Count && index < Labels.Length; index++)
         {
             if (StatusFilters.Items[index] is not Grid row || row.Children.Count < 2 || row.Children[1] is not TextBlock count) continue;
@@ -90,5 +103,8 @@ public sealed partial class FiltersRail : UserControl
             + counts.GetValueOrDefault(DownloadFilter.Removed);
         HistoryCount.Text = history.ToString();
         AutomationProperties.SetName(HistoryButton, $"History, {history} records");
+        var torrents = _page.TorrentCounts.GetValueOrDefault(DownloadFilter.All);
+        TorrentCount.Text = torrents.ToString();
+        AutomationProperties.SetName(TorrentsButton, $"Torrents, {torrents} transfers");
     }
 }

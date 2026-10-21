@@ -48,7 +48,8 @@ public sealed class PreferencesTests
         try
         {
             Assert.Equal(new UserPreferences(), await repository.LoadAsync(default));
-            var expected = new UserPreferences(AppTheme.Dark, @"C:\Downloads\AriaGUI"); await repository.SaveAsync(expected, default);
+            var expected = new UserPreferences(AppTheme.Dark, @"C:\Downloads\AriaGUI", TorrentPrivacyNoticeAccepted: true);
+            await repository.SaveAsync(expected, default);
             Assert.Equal(expected, await new JsonUserPreferencesRepository(path).LoadAsync(default)); Assert.False(File.Exists(path + ".tmp"));
             await File.WriteAllTextAsync(path, "{\"Theme\":2,\"DefaultFolder\":\"\"}");
             var legacy = await repository.LoadAsync(default); Assert.Equal(AppTheme.Dark, legacy.Theme); legacy.EffectiveLayout.Validate();

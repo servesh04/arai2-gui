@@ -127,7 +127,7 @@ public sealed class BandwidthPolicyTests(Xunit.Abstractions.ITestOutputHelper ou
         Assert.Equal(schedule.Override, loaded.Override);
         Assert.Equal(schedule.SavedProfiles, loaded.SavedProfiles);
         Assert.True((await reopened.GetAsync(jobId, default))!.PolicyHeld);
-        using var db = runtime.Db(); Assert.Equal(12, db.Database.GetAppliedMigrations().Count());
+        using var db = runtime.Db(); Assert.Equal(13, db.Database.GetAppliedMigrations().Count());
         Assert.False(db.Database.HasPendingModelChanges());
     }
 
@@ -222,7 +222,7 @@ public sealed class BandwidthPolicyTests(Xunit.Abstractions.ITestOutputHelper ou
         var restored = await restarted.ObserveJobBandwidthAsync(jobId, gid, default);
         Assert.Equal(new ByteRateLimit(65536), restored.Download);
         Assert.Equal(DownloadStatus.Paused, (await restarted.GetDownloadsAsync([gid], default)).Single().Progress.Status);
-        using var db = runtime.Db(); Assert.Equal(12, db.Database.GetAppliedMigrations().Count());
+        using var db = runtime.Db(); Assert.Equal(13, db.Database.GetAppliedMigrations().Count());
         Assert.False(db.Database.HasPendingModelChanges());
     }
 
@@ -269,7 +269,7 @@ public sealed class BandwidthPolicyTests(Xunit.Abstractions.ITestOutputHelper ou
 
         using (var db = runtime.Db())
         {
-            Assert.Equal(12, db.Database.GetAppliedMigrations().Count());
+            Assert.Equal(13, db.Database.GetAppliedMigrations().Count());
             Assert.False(db.Database.HasPendingModelChanges());
         }
         var reopened = runtime.Repository();

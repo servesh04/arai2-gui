@@ -7,6 +7,7 @@
             <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="FindInvoked" />
             <KeyboardAccelerator Key="A" Modifiers="Control" Invoked="SelectAllInvoked" />
             <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="AddInvoked" />
+            <KeyboardAccelerator Key="Menu" Invoked="MainMenuInvoked" />
         </Grid.KeyboardAccelerators>
         <Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="184" /><ColumnDefinition Width="6" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
         <Border x:Name="SidebarHost" Grid.Column="0" Background="{ThemeResource AriaBackgroundBrush}">
@@ -18,31 +19,40 @@
         <Border x:Name="ContentSurface" Grid.Column="2" Margin="0,8,8,0" Background="{ThemeResource AriaSurfaceBrush}" BorderBrush="{ThemeResource AriaBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource AriaOuterCornerRadius}">
             <Grid>
             <Grid x:Name="DownloadsContent">
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                <MenuBar Padding="4,0" Background="{ThemeResource AriaSurfaceRaisedBrush}">
-                    <MenuBarItem Title="File"><MenuFlyoutItem Text="Add download…" Click="AddClick" /><MenuFlyoutSeparator /><MenuFlyoutItem Text="Exit" Click="ExitClick" /></MenuBarItem>
-                    <MenuBarItem Title="Edit"><MenuFlyoutItem Text="Select all visible" Click="SelectAllClick" /><MenuFlyoutItem Text="Clear selection" Click="ClearSelectionClick" /></MenuBarItem>
-                    <MenuBarItem x:Name="TransferMenu" Title="Transfer" IsEnabled="False">
-                        <MenuFlyoutItem Text="Resume" Command="{x:Bind ViewModel.BatchResumeCommand}" /><MenuFlyoutItem Text="Pause" Command="{x:Bind ViewModel.BatchPauseCommand}" />
-                        <MenuFlyoutItem Text="Retry" Command="{x:Bind ViewModel.BatchRetryCommand}" /><MenuFlyoutItem Text="Recover" Command="{x:Bind ViewModel.BatchRecoverCommand}" />
-                        <MenuFlyoutSeparator /><MenuFlyoutItem Text="Move earlier in queue" Click="SingleActionClick" Tag="MoveUp" /><MenuFlyoutItem Text="Move later in queue" Click="SingleActionClick" Tag="MoveDown" />
-                        <MenuFlyoutSeparator /><MenuFlyoutItem Text="Stop transfer (keep files and history)" Command="{x:Bind ViewModel.BatchRemoveCommand}" />
-                        <MenuFlyoutItem Text="Open file" Click="SingleActionClick" Tag="OpenFile" /><MenuFlyoutItem Text="Open folder" Click="SingleActionClick" Tag="OpenFolder" />
-                    </MenuBarItem>
-                    <MenuBarItem Title="View"><ToggleMenuFlyoutItem x:Name="DetailsToggle" Text="Details pane" IsChecked="True" Click="DetailsClick" /><MenuFlyoutItem x:Name="InspectorDetailsMenu" Text="Transfer details…" IsEnabled="False" Click="InspectorDetailsClick" /><MenuFlyoutItem Text="Columns..." Click="ColumnsClick" /><MenuFlyoutItem Text="Reset pane sizes" Click="ResetPanesClick" /></MenuBarItem>
-                    <MenuBarItem Title="Tools"><MenuFlyoutItem Text="Preferences…" Click="PreferencesClick" /><MenuFlyoutItem Text="Download engine…" Click="EngineClick" /></MenuBarItem>
-                    <MenuBarItem x:Name="HelpMenu" Title="Help"><MenuFlyoutItem Text="Keyboard shortcuts" Click="HelpClick" /></MenuBarItem>
-                </MenuBar>
-                <downloads:DownloadsToolbar x:Name="DownloadsToolbarControl" Grid.Row="1" AddRequested="AddClick" FiltersRequested="FiltersClick" SizeChanged="ShellSizeChanged" />
-                <downloads:SelectionBar x:Name="SelectionBarControl" Grid.Row="2" Visibility="Collapsed" SingleActionRequested="SingleActionClick" />
-                <downloads:EngineBanner x:Name="EngineBannerControl" Grid.Row="3" />
-                <ScrollViewer x:Name="NoticeScroller" Grid.Row="4" MaxHeight="120" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"><StackPanel>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <Grid Background="{ThemeResource AriaSurfaceRaisedBrush}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <DropDownButton x:Name="AppMenuButton" Style="{StaticResource AriaSecondaryButtonStyle}" Margin="{StaticResource AriaSpace2}" VerticalAlignment="Top" AutomationProperties.Name="Main menu" ToolTipService.ToolTip="Main menu (Alt)">
+                        <DropDownButton.Content><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE712;" /></DropDownButton.Content>
+                        <DropDownButton.Flyout>
+                            <MenuFlyout>
+                                <MenuFlyoutSubItem x:Name="TransferMenu" Text="Transfer actions" IsEnabled="False">
+                                    <MenuFlyoutItem Text="Resume" KeyboardAcceleratorTextOverride="Space" Command="{x:Bind ViewModel.BatchResumeCommand}" /><MenuFlyoutItem Text="Pause" KeyboardAcceleratorTextOverride="Space" Command="{x:Bind ViewModel.BatchPauseCommand}" />
+                                    <MenuFlyoutItem Text="Retry" Command="{x:Bind ViewModel.BatchRetryCommand}" /><MenuFlyoutItem Text="Recover" Command="{x:Bind ViewModel.BatchRecoverCommand}" />
+                                    <MenuFlyoutSeparator /><MenuFlyoutItem Text="Move earlier in queue" Click="SingleActionClick" Tag="MoveUp" /><MenuFlyoutItem Text="Move later in queue" Click="SingleActionClick" Tag="MoveDown" />
+                                    <MenuFlyoutSeparator /><MenuFlyoutItem Text="Stop transfer (keep files and history)" Command="{x:Bind ViewModel.BatchRemoveCommand}" />
+                                    <MenuFlyoutItem Text="Open file" Click="SingleActionClick" Tag="OpenFile" /><MenuFlyoutItem Text="Open folder" Click="SingleActionClick" Tag="OpenFolder" />
+                                </MenuFlyoutSubItem>
+                                <MenuFlyoutSeparator />
+                                <MenuFlyoutSubItem Text="View"><ToggleMenuFlyoutItem x:Name="DetailsToggle" Text="Details pane" IsChecked="True" Click="DetailsClick" /><MenuFlyoutItem x:Name="InspectorDetailsMenu" Text="Transfer details…" IsEnabled="False" Click="InspectorDetailsClick" /><MenuFlyoutItem Text="Columns..." Click="ColumnsClick" /><MenuFlyoutItem Text="Reset pane sizes" Click="ResetPanesClick" /></MenuFlyoutSubItem>
+                                <MenuFlyoutSeparator />
+                                <MenuFlyoutSubItem Text="Tools"><MenuFlyoutItem Text="Select all visible" KeyboardAcceleratorTextOverride="Ctrl+A" Click="SelectAllClick" /><MenuFlyoutItem Text="Clear selection" Click="ClearSelectionClick" /></MenuFlyoutSubItem>
+                                <MenuFlyoutSeparator />
+                                <MenuFlyoutSubItem x:Name="HelpMenu" Text="Help"><MenuFlyoutItem Text="Keyboard shortcuts" Click="HelpClick" /><MenuFlyoutItem Text="About AriaGUI" Click="AboutMenuClick" /><MenuFlyoutSeparator /><MenuFlyoutItem Text="Exit" KeyboardAcceleratorTextOverride="Alt+F4" Click="ExitClick" /></MenuFlyoutSubItem>
+                            </MenuFlyout>
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+                    <downloads:DownloadsToolbar x:Name="DownloadsToolbarControl" Grid.Column="1" AddRequested="AddClick" FiltersRequested="FiltersClick" SizeChanged="ShellSizeChanged" />
+                </Grid>
+                <downloads:SelectionBar x:Name="SelectionBarControl" Grid.Row="1" Visibility="Collapsed" SingleActionRequested="SingleActionClick" />
+                <downloads:EngineBanner x:Name="EngineBannerControl" Grid.Row="2" />
+                <ScrollViewer x:Name="NoticeScroller" Grid.Row="3" MaxHeight="120" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"><StackPanel>
                     <TextBlock x:Name="BatchMessageText" TextWrapping="Wrap" Text="{x:Bind ViewModel.BatchMessage, Mode=OneWay}" FontSize="{StaticResource AriaMinimumFontSize}" Margin="10,2" AutomationProperties.LiveSetting="Polite" />
                     <Button x:Name="BatchDetailsButton" Content="Batch results..." Click="BatchDetailsClick" Visibility="Collapsed" HorizontalAlignment="Left" Margin="10,0" Style="{StaticResource AriaSecondaryButtonStyle}" />
                     <InfoBar IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}" IsClosable="False" Severity="Error" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
                     <InfoBar IsOpen="{x:Bind ViewModel.HasCompletion, Mode=OneWay}" Severity="Success" IsClosable="True" Message="{x:Bind ViewModel.CompletionMessage, Mode=OneWay}" />
                 </StackPanel></ScrollViewer>
-                <Grid x:Name="TransferWorkspace" Grid.Row="5" SizeChanged="WorkspaceSizeChanged">
+                <Grid x:Name="TransferWorkspace" Grid.Row="4" SizeChanged="WorkspaceSizeChanged">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition x:Name="DetailsGripRow" Height="6" /><RowDefinition x:Name="DetailsRow" Height="180" /></Grid.RowDefinitions>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition x:Name="DetailsGripColumn" Width="0" /><ColumnDefinition x:Name="DetailsColumn" Width="0" /></Grid.ColumnDefinitions>
                     <Grid x:Name="HistoryBar" Grid.ColumnSpan="3" Padding="10,4" ColumnSpacing="8"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -60,7 +70,8 @@
                     </Thumb>
                     <downloads:DetailsPane x:Name="DetailsPaneControl" Grid.Row="3" SingleActionRequested="SingleActionClick" />
                 </Grid>
-                <downloads:StatusBar x:Name="StatusBarControl" Grid.Row="6" EngineRequested="EngineClick" />
+                <downloads:TorrentWorkspaceView x:Name="TorrentWorkspaceControl" Grid.Row="4" Visibility="Collapsed" />
+                <downloads:StatusBar x:Name="StatusBarControl" Grid.Row="5" EngineRequested="EngineClick" />
             </Grid>
             <downloads:HandoffToast x:Name="HandoffToastControl" VerticalAlignment="Bottom" HorizontalAlignment="Left" />
             <ContentControl x:Name="SettingsHost" Visibility="Collapsed" />

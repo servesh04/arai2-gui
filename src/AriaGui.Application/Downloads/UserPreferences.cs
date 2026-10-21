@@ -4,7 +4,8 @@ namespace AriaGui.Application.Downloads;
 
 public enum AppTheme { System, Light, Dark }
 public sealed record UserPreferences(AppTheme Theme = AppTheme.System, string DefaultFolder = "", DesktopLayout? Layout = null,
-    BrowserIntegrationPreferences? Browser = null, SpeedLimitPreferences? SpeedLimits = null)
+    BrowserIntegrationPreferences? Browser = null, SpeedLimitPreferences? SpeedLimits = null,
+    bool TorrentPrivacyNoticeAccepted = false)
 {
     [JsonIgnore] public DesktopLayout EffectiveLayout => Layout ?? new();
     [JsonIgnore] public BrowserIntegrationPreferences EffectiveBrowser => Browser ?? new();

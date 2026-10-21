@@ -1,0 +1,28 @@
+<UserControl x:Class="AriaGui.App.Views.Downloads.TorrentStatusView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="{StaticResource AriaRadiusControl}" Padding="{StaticResource AriaSpace3}">
+            <TextBlock x:Name="TorrentName" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock x:Name="StageText" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
+            <ProgressBar x:Name="TransferProgress" Maximum="100" AutomationProperties.Name="Torrent selected files progress" />
+            <TextBlock x:Name="ProgressText" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                       FontSize="{StaticResource AriaMinimumFontSize}" AutomationProperties.LiveSetting="Polite" />
+            <InfoBar x:Name="FailureNotice" IsOpen="False" IsClosable="False" Severity="Error"
+                     Message="Torrent transfer needs review. Saved metadata and files were preserved." />
+            <Border Style="{StaticResource AriaCardStyle}">
+                <StackPanel Spacing="{StaticResource AriaRadiusControl}">
+                    <TextBlock Text="Selected files" FontWeight="SemiBold" />
+                    <TextBlock x:Name="SelectionText" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                               FontSize="{StaticResource AriaMinimumFontSize}" />
+                    <ListView x:Name="SelectedFiles" SelectionMode="None" AutomationProperties.Name="Selected torrent files">
+                        <ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="{StaticResource AriaMinimumFontSize}" /></DataTemplate></ListView.ItemTemplate>
+                    </ListView>
+                </StackPanel>
+            </Border>
+            <TextBlock x:Name="DestinationText" TextWrapping="Wrap" FontSize="{StaticResource AriaMinimumFontSize}" />
+            <TextBlock Text="Completed means the selected payload passed aria2 piece verification and was published. Post-download seeding is off."
+                       Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

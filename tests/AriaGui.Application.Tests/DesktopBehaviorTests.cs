@@ -38,6 +38,29 @@ public sealed class DesktopBehaviorTests
         Assert.Equal(selectedInstallation, repository.Saved.EffectiveBrowser.SelectedInstallationId); Assert.Equal(@"C:\Saved browser 日本語", repository.Saved.EffectiveBrowser.InstallRoot);
         Assert.False(repository.Saved.EffectiveLayout.CompactRows); Assert.Equal(1, applied); Assert.Equal(1, repository.MaxConcurrent);
     }
+    [Fact]
+    public async Task Torrent_notice_acceptance_survives_other_preferences_save()
+    {
+        var repository = new ImmediatePreferences();
+        var vm = new PreferencesViewModel(repository);
+        await vm.LoadAsync(default);
+        Assert.False(vm.TorrentPrivacyNoticeAccepted);
+        await vm.RememberTorrentPrivacyNoticeAsync(default);
+        Assert.True(vm.TorrentPrivacyNoticeAccepted);
+        vm.ThemeIndex = (int)AppTheme.Dark;
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.True(repository.Saved.TorrentPrivacyNoticeAccepted);
+        var loaded = new PreferencesViewModel(repository);
+        await loaded.LoadAsync(default);
+        Assert.True(loaded.TorrentPrivacyNoticeAccepted);
+    }
+    private sealed class ImmediatePreferences : IUserPreferencesRepository
+    {
+        public UserPreferences Saved { get; private set; } = new();
+        public Task<UserPreferences> LoadAsync(CancellationToken token) => Task.FromResult(Saved);
+        public Task SaveAsync(UserPreferences preferences, CancellationToken token)
+        { Saved = preferences; return Task.CompletedTask; }
+    }
     private sealed class ImmediateDispatcher : IUiDispatcher { public void Enqueue(Action action) => action(); }
     private sealed class MutableEngine : IAria2Client
     {

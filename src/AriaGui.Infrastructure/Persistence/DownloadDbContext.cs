@@ -15,9 +15,20 @@ public sealed class DownloadDbContext(DbContextOptions<DownloadDbContext> option
     public DbSet<JobBandwidthPolicyRow> JobBandwidthPolicies => Set<JobBandwidthPolicyRow>();
     public DbSet<ExternalRequestRow> ExternalRequests => Set<ExternalRequestRow>();
     public DbSet<PreparedDestinationRow> PreparedDestinations => Set<PreparedDestinationRow>();
+    public DbSet<TorrentSpecRow> TorrentSpecs => Set<TorrentSpecRow>();
+    public DbSet<TorrentFileRow> TorrentFiles => Set<TorrentFileRow>();
+    public DbSet<TorrentEngineRow> TorrentEngines => Set<TorrentEngineRow>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        model.Entity<TorrentSpecRow>().HasKey(row => row.JobId);
+        model.Entity<TorrentSpecRow>().HasIndex(row => row.DestinationKey).IsUnique();
+        model.Entity<TorrentSpecRow>().HasIndex(row => row.InfoHash);
+        model.Entity<TorrentFileRow>().HasKey(row => new { row.JobId, row.FileIndex });
+        model.Entity<TorrentFileRow>().HasOne<TorrentSpecRow>().WithMany().HasForeignKey(row => row.JobId).OnDelete(DeleteBehavior.Cascade);
+        model.Entity<TorrentEngineRow>().HasKey(row => new { row.JobId, row.Role });
+        model.Entity<TorrentEngineRow>().HasIndex(row => new { row.Generation, row.EngineId }).IsUnique();
+        model.Entity<TorrentEngineRow>().HasOne<TorrentSpecRow>().WithMany().HasForeignKey(row => row.JobId).OnDelete(DeleteBehavior.Cascade);
         model.Entity<JobBandwidthPolicyRow>().HasKey(row => row.JobId);
         model.Entity<JobBandwidthPolicyRow>().HasOne<JobRow>().WithOne().HasForeignKey<JobBandwidthPolicyRow>(row => row.JobId)
             .OnDelete(DeleteBehavior.Cascade);

@@ -9,6 +9,7 @@ using System.Text.Json;
 using AriaGui.Application.Engine;
 using AriaGui.Application.Downloads;
 using AriaGui.Infrastructure.Downloads;
+using AriaGui.Infrastructure.Persistence;
 
 namespace AriaGui.Infrastructure.Aria2;
 
@@ -28,6 +29,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
     private bool _wroteConfig;
     private string? _sessionFile;
     private readonly IDownloadRepository? _repository;
+    private readonly SqliteTorrentMetadataRepository? _torrentRepository;
     private string[] _restoredIds = [];
     private HashSet<string> _knownIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, EngineDownload> _observations = new(StringComparer.Ordinal);
@@ -45,7 +47,8 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
     private string ConfigPath => Path.Combine(_options.RuntimeDirectory, "aria2.conf");
     private string OwnershipPath => Path.Combine(_options.RuntimeDirectory, "engine.owner.json");
 
-    public Aria2ProcessManager(Aria2ProcessOptions options, IDownloadRepository? repository = null)
+    public Aria2ProcessManager(Aria2ProcessOptions options, IDownloadRepository? repository = null,
+        SqliteTorrentMetadataRepository? torrentRepository = null)
     {
         if (!Path.IsPathFullyQualified(options.ExecutablePath) || !Path.IsPathFullyQualified(options.RuntimeDirectory)
             || options.RuntimeDirectory.IndexOfAny(['\r', '\n']) >= 0
@@ -54,6 +57,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             throw new ArgumentException("Invalid local engine configuration.");
         _options = options;
         _repository = repository;
+        _torrentRepository = torrentRepository;
         _log = new(Path.Combine(options.RuntimeDirectory, "engine.log"));
     }
 
@@ -76,6 +80,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             {
                 await VerifyBinaryAsync(cancellationToken).ConfigureAwait(false);
                 var history = await LoadHistoryAsync(cancellationToken).ConfigureAwait(false);
+                if (_torrentRepository is not null) await _torrentRepository.InitializeAsync(cancellationToken).ConfigureAwait(false);
                 if (_options.UseContinuityGateway)
                 {
                     _relayLimiter = new();
@@ -96,6 +101,8 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                 }
                 _observations.Clear(); _nextReconcile = default; _unknownCount = 0;
                 _knownIds = _repository is null ? [] : (await _repository.LoadEngineIdsAsync(cancellationToken).ConfigureAwait(false)).ToHashSet(StringComparer.Ordinal);
+                if (_torrentRepository is not null)
+                    foreach (var binding in await _torrentRepository.LoadBindingsAsync(cancellationToken).ConfigureAwait(false)) _knownIds.Add(binding.EngineId);
                 if (await TryAdoptAsync(history, cancellationToken).ConfigureAwait(false) is { } adopted) return adopted;
                 CheckPortAvailable();
                 var secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -121,6 +128,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                     "enable-rpc=true", "rpc-listen-all=false", "rpc-allow-origin-all=false",
                     $"rpc-listen-port={_options.RpcPort}", $"rpc-secret={secret}", "no-netrc=true",
                     "enable-dht=false", "enable-dht6=false", "enable-peer-exchange=false", "bt-enable-lpd=false",
+                    "seed-time=0", "rpc-save-upload-metadata=true",
                     "quiet=true", "show-console-readout=false", "summary-interval=0", "enable-color=false", "file-allocation=none",
                     "auto-save-interval=5", "max-tries=3", "retry-wait=1", "connect-timeout=10", "timeout=30",
                     $"max-concurrent-downloads={policy.RequestedLimit ?? policy.Limit}",
@@ -176,6 +184,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
                                     await _rpc.ExecuteAsync(entry.Attempt.EngineId, AriaGui.Core.Downloads.DownloadAction.Resume, null, startup.Token).ConfigureAwait(false);
                             await _rpc.SaveSessionAsync(startup.Token).ConfigureAwait(false);
                             await WriteOwnershipAsync(_info, startup.Token).ConfigureAwait(false);
+                            await RecoverTorrentsCoreAsync(_rpc, info.SessionId, cancellationToken).ConfigureAwait(false);
                             _log.Write("rpc", $"Authenticated engine ready; version {info.Version}.");
                             return _info;
                         }
@@ -704,7 +713,8 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             var info = await rpc.GetInfoAsync(token).ConfigureAwait(false);
             if (info.SessionId != owner.SessionId || info.Version != Aria2ProcessOptions.BundledVersion)
                 throw AdoptionRefused("The surviving engine's authenticated session does not match its ownership record.");
-            if (_continuityTransfers is not null && !await _continuityTransfers.VerifySurvivorAsync(rpc, history, token, _repository).ConfigureAwait(false))
+            var torrentIds = await VerifyTorrentSurvivorAsync(rpc, token).ConfigureAwait(false);
+            if (_continuityTransfers is not null && !await _continuityTransfers.VerifySurvivorAsync(rpc, history, token, _repository, torrentIds).ConfigureAwait(false))
                 throw AdoptionRefused($"Surviving guarded transfer ownership could not be verified ({rpc.OwnershipFailure}). Its files and process were preserved.");
             // Adopt only after every identity/authentication check succeeds.
             _log.Secret = secret; _process = existing; _rpc = rpc; _sessionFile = owner.SessionFile;
@@ -746,6 +756,7 @@ public sealed partial class Aria2ProcessManager : IManagedAria2Engine, IAsyncDis
             }
             _info = info with { RecoveryMessage = "Reconnected to the verified surviving engine; checking saved intents and history." };
             await rpc.SaveSessionAsync(token).ConfigureAwait(false);
+            await RecoverTorrentsCoreAsync(rpc, info.SessionId, token).ConfigureAwait(false);
             await WriteCheckpointAsync(token).ConfigureAwait(false);
             await WriteOwnershipAsync(_info, token).ConfigureAwait(false);
             _log.Write("recovery", "Adopted verified surviving engine.");

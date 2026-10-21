@@ -17,6 +17,7 @@ namespace AriaGui.App;
 
 public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
 {
+    internal bool BrowserHandoffStartupUnavailable { get; private set; }
     private MainWindow? _window;
     private ServiceProvider? _services;
     private readonly CancellationTokenSource _lifetime = new();
@@ -75,6 +76,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddSingleton<IUiDispatcher>(new WinUiDispatcher(DispatcherQueue.GetForCurrentThread()));
         registrations.AddSingleton<IAria2Client>(services => new ManagedAria2Client((Aria2ProcessManager)services.GetRequiredService<IManagedAria2Engine>()));
         registrations.AddSingleton<IDownloadRepository>(new SqliteDownloadRepository(Path.Combine(runtimeDirectory, "downloads.db")));
+        registrations.AddSingleton(new SqliteTorrentMetadataRepository(Path.Combine(runtimeDirectory, "downloads.db")));
         registrations.AddSingleton<IDownloadDestination, FileDownloadDestination>();
         registrations.AddSingleton<IDownloadFileActions, WindowsDownloadFileActions>();
         registrations.AddSingleton<IUserPreferencesRepository>(new JsonUserPreferencesRepository(Path.Combine(runtimeDirectory, "preferences.json")));
@@ -113,7 +115,9 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddTransient<DownloadsPage>();
         _services = registrations.BuildServiceProvider();
 
-        _window = new MainWindow(_services.GetRequiredService<DownloadsPage>());
+        var downloadsPage = _services.GetRequiredService<DownloadsPage>();
+        _window = new MainWindow(downloadsPage);
+        downloadsPage.TorrentWindowId = _window.AppWindow.Id;
         var dispatcher = DispatcherQueue.GetForCurrentThread();
         _openActivation = new(TimeProvider.System, action => dispatcher.TryEnqueue(action.Invoke), () => _desktop?.Open());
         try { if (_instance is { IsPrimary: true }) _openReceiver = new(WinRT.Interop.WindowNative.GetWindowHandle(_window), runtimeDirectory, _openActivation); }
@@ -155,7 +159,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
                     Path.Combine(AppContext.BaseDirectory, "host", "AriaGui.NativeHost.exe"), _lifetime.Token);
                 _ = _handoffPipe.StartAsync(_lifetime.Token);
             }
-            catch { _window.SetDesktopStatus("Browser handoff is unavailable; browser downloads continue normally."); }
+            catch { BrowserHandoffStartupUnavailable = true; }
         }
         _updates = RunDownloadsAsync(_services.GetRequiredService<DownloadCoordinator>(), _services.GetRequiredService<ExternalDownloadIntakeService>(), _lifetime.Token);
         _reservationCleanup = RunReservationCleanupAsync(_services.GetRequiredService<DownloadCoordinator>(),
