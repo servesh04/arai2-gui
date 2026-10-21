@@ -46,7 +46,7 @@ public sealed partial class IntegrationSettingsSection : UserControl
         IntegrationContent.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         if (available && DataContext is SettingsViewModel vm) vm.RefreshBrowserStatus();
     }
-    private async void ReconnectClick(object sender, RoutedEventArgs args) { if (DataContext is SettingsViewModel vm) await vm.CheckBrowserAsync(); }
+    private void ReconnectClick(object sender, RoutedEventArgs args) { if (DataContext is SettingsViewModel vm) vm.RefreshBrowserStatus(); }
     private async void RegisterClick(object sender, RoutedEventArgs args) { if (DataContext is SettingsViewModel vm) await vm.RegisterBrowserHostAsync(); }
     private async void UnregisterClick(object sender, RoutedEventArgs args) { if (DataContext is SettingsViewModel vm) await vm.UnregisterBrowserHostAsync(); }
     private async void ResetClick(object sender, RoutedEventArgs args) { if (DataContext is SettingsViewModel vm) await SettingsResetConfirmation.ResetAsync(this, vm, "Integration"); }

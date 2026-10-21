@@ -1,8 +1,8 @@
 using AriaGui.App.Features;
 using AriaGui.App.ViewModels;
-using AriaGui.App.Services;
 using AriaGui.Application.Downloads;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Microsoft.UI.Xaml.Controls;
 
 namespace AriaGui.App.Views.Settings;
 
@@ -21,12 +21,20 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     public FeatureFlags Features { get; }
-    public bool BrowserHandoffAvailable => Features.BrowserHandoff || AppDataPaths.VerificationDirectory is not null;
+    public bool BrowserHandoffAvailable => Features.BrowserHandoff;
     public bool SpeedPresetsAvailable => Features.SpeedPresets;
     public string SaveStatus { get => _saveStatus; private set => SetProperty(ref _saveStatus, value); }
     public string FolderStatus { get => _folderStatus; private set => SetProperty(ref _folderStatus, value); }
-    public string BrowserStatus => _preferences.HandoffStatus?.Connected == true ? "Connected to browser extension"
-        : HandoffRegistration.IsRegistered() ? "Not connected · open the extension popup to check" : "Host not registered";
+    public string BrowserStatus => (App.Current as App)?.BrowserHandoffStartupUnavailable == true
+        ? "Browser handoff is unavailable; browser downloads continue normally."
+        : !HandoffRegistration.IsRegistered() ? "Host not registered"
+        : _preferences.HandoffStatus?.Connected == true ? "Connected to browser extension"
+        : "Not connected · open the extension popup to check";
+    public InfoBarSeverity BrowserStatusSeverity => (App.Current as App)?.BrowserHandoffStartupUnavailable == true
+        ? InfoBarSeverity.Warning : !HandoffRegistration.IsRegistered() ? InfoBarSeverity.Error
+        : _preferences.HandoffStatus?.Connected == true ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+    public bool BrowserHostRegistered => HandoffRegistration.RegisteredAppPath() is not null;
+    public bool BrowserHostUnregistered => !HandoffRegistration.IsRegistered();
     public bool IsSaving { get => _saving; private set => SetProperty(ref _saving, value); }
 
     public int ThemeIndex
@@ -91,7 +99,13 @@ public sealed class SettingsViewModel : ObservableObject
         set { if (value == _preferences.BrowserExcludedSites) return; var old = _preferences.BrowserExcludedSites; _preferences.BrowserExcludedSites = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.BrowserExcludedSites = old, nameof(BrowserExcludedSites)); }
     }
 
-    public void RefreshBrowserStatus() => OnPropertyChanged(nameof(BrowserStatus));
+    public void RefreshBrowserStatus()
+    {
+        OnPropertyChanged(nameof(BrowserStatus));
+        OnPropertyChanged(nameof(BrowserStatusSeverity));
+        OnPropertyChanged(nameof(BrowserHostRegistered));
+        OnPropertyChanged(nameof(BrowserHostUnregistered));
+    }
     public Task RegisterBrowserHostAsync()
     {
         try
@@ -109,12 +123,6 @@ public sealed class SettingsViewModel : ObservableObject
         SaveStatus = HandoffRegistration.Unregister() ? "Browser host unregistered" : "Browser host could not be unregistered";
         RefreshBrowserStatus();
         return Task.CompletedTask;
-    }
-
-    public async Task CheckBrowserAsync()
-    {
-        await Task.CompletedTask;
-        RefreshBrowserStatus();
     }
 
     public async Task ResetSectionAsync(string section)

@@ -6,8 +6,9 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
         <StackPanel x:Name="PrimaryActions" Orientation="Horizontal" Spacing="6">
-            <Button x:Name="AddButton" Style="{StaticResource AriaPrimaryButtonStyle}" Click="AddClick" AutomationProperties.Name="Add download"><StackPanel Orientation="Horizontal" Spacing="6"><icons:FluentIcon IconName="Add" /><TextBlock x:Name="AddLabel" Text="Add download" /></StackPanel></Button>
+            <Button x:Name="AddButton" Style="{StaticResource AriaPrimaryButtonStyle}" Click="AddClick" AutomationProperties.Name="Add download" ToolTipService.ToolTip="Add download"><StackPanel Orientation="Horizontal" Spacing="6"><icons:FluentIcon IconName="Add" /><TextBlock x:Name="AddLabel" Text="Add download" /></StackPanel></Button>
             <Button x:Name="FiltersButton" Style="{StaticResource AriaToolbarButtonStyle}" Click="FiltersClick" AutomationProperties.Name="Choose transfer status and history filters"><StackPanel Orientation="Horizontal" Spacing="6"><icons:FluentIcon IconName="Filter" /><TextBlock x:Name="FilterCaption" Text="Filters" MaxWidth="130" TextTrimming="CharacterEllipsis" /></StackPanel></Button>
+            <Button x:Name="SearchButton" Style="{StaticResource AriaToolbarButtonStyle}" Click="SearchClick" Visibility="Collapsed" AutomationProperties.Name="Search transfers" ToolTipService.ToolTip="Search transfers (Ctrl+F)"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE721;" /></Button>
         </StackPanel>
         <TextBox x:Name="SearchBox" Grid.Column="1" MinWidth="100" HorizontalAlignment="Right" MinHeight="32" Text="{Binding ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" PlaceholderText="Filter transfers… (Ctrl+F)" AutomationProperties.Name="Search downloads and history" />
     </Grid>

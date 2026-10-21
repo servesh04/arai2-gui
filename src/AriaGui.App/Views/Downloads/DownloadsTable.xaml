@@ -57,7 +57,7 @@
                         <TextBlock Text="Failed" FontSize="{StaticResource AriaMinimumFontSize}" FontWeight="SemiBold" VerticalAlignment="Center" />
                         <Button Content="Retry" Command="{Binding RetryCommand}" Style="{StaticResource AriaSecondaryButtonStyle}" MinHeight="26" Padding="8,2" AutomationProperties.Name="Retry failed download" />
                     </StackPanel>
-                    <TextBlock Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=FailedReason}" />
+                    <TextBlock Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=FailedReason}" />
                 </StackPanel>
             </Grid>
         </DataTemplate>
@@ -120,7 +120,7 @@
                                 <TextBlock Tag="2" Text="{Binding TotalSizeLabel}" Style="{StaticResource NumericCellText}" AutomationProperties.AccessibilityView="Raw" />
                             </Grid>
                             <Grid x:Name="NarrowRow" Tag="NarrowRow" Visibility="Collapsed" Padding="8,5" RowSpacing="5">
-                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding FileName, Converter={StaticResource FileGlyph}}" FontSize="16" Margin="0,0,6,0" AutomationProperties.AccessibilityView="Raw" />
@@ -134,9 +134,9 @@
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
                                         <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding Converter={StaticResource StatusGlyph}}" FontSize="12" />
                                         <TextBlock Text="{Binding Converter={StaticResource StatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" />
-                                        <TextBlock Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" MaxWidth="180" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=FailedReason}" />
                                     </StackPanel>
                                 </Grid>
+                                <TextBlock Grid.Row="2" Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=FailedReason}" />
                             </Grid>
                         </Grid>
                     </DataTemplate>

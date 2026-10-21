@@ -1,0 +1,260 @@
+[
+  {
+    "id": "fluent-add",
+    "upstreamName": "Add",
+    "source": "ic_fluent_add_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Add/SVG/ic_fluent_add_24_regular.svg"
+  },
+  {
+    "id": "fluent-download",
+    "upstreamName": "Arrow Download",
+    "source": "ic_fluent_arrow_download_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Download/SVG/ic_fluent_arrow_download_24_regular.svg"
+  },
+  {
+    "id": "fluent-play",
+    "upstreamName": "Play",
+    "source": "ic_fluent_play_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Play/SVG/ic_fluent_play_24_regular.svg"
+  },
+  {
+    "id": "fluent-pause",
+    "upstreamName": "Pause",
+    "source": "ic_fluent_pause_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Pause/SVG/ic_fluent_pause_24_regular.svg"
+  },
+  {
+    "id": "fluent-retry",
+    "upstreamName": "Arrow Clockwise",
+    "source": "ic_fluent_arrow_clockwise_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Clockwise/SVG/ic_fluent_arrow_clockwise_24_regular.svg"
+  },
+  {
+    "id": "fluent-delete",
+    "upstreamName": "Delete",
+    "source": "ic_fluent_delete_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Delete/SVG/ic_fluent_delete_24_regular.svg"
+  },
+  {
+    "id": "fluent-folder",
+    "upstreamName": "Folder",
+    "source": "ic_fluent_folder_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Folder/SVG/ic_fluent_folder_24_regular.svg"
+  },
+  {
+    "id": "fluent-file",
+    "upstreamName": "Document",
+    "source": "ic_fluent_document_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Document/SVG/ic_fluent_document_24_regular.svg"
+  },
+  {
+    "id": "fluent-copy",
+    "upstreamName": "Copy",
+    "source": "ic_fluent_copy_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Copy/SVG/ic_fluent_copy_24_regular.svg"
+  },
+  {
+    "id": "fluent-more",
+    "upstreamName": "More Horizontal",
+    "source": "ic_fluent_more_horizontal_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/More%20Horizontal/SVG/ic_fluent_more_horizontal_24_regular.svg"
+  },
+  {
+    "id": "fluent-search",
+    "upstreamName": "Search",
+    "source": "ic_fluent_search_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Search/SVG/ic_fluent_search_24_regular.svg"
+  },
+  {
+    "id": "fluent-filter",
+    "upstreamName": "Filter",
+    "source": "ic_fluent_filter_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Filter/SVG/ic_fluent_filter_24_regular.svg"
+  },
+  {
+    "id": "fluent-settings",
+    "upstreamName": "Settings",
+    "source": "ic_fluent_settings_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Settings/SVG/ic_fluent_settings_24_regular.svg"
+  },
+  {
+    "id": "fluent-info",
+    "upstreamName": "Info",
+    "source": "ic_fluent_info_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Info/SVG/ic_fluent_info_24_regular.svg"
+  },
+  {
+    "id": "fluent-warning",
+    "upstreamName": "Warning",
+    "source": "ic_fluent_warning_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Warning/SVG/ic_fluent_warning_24_regular.svg"
+  },
+  {
+    "id": "fluent-check",
+    "upstreamName": "Checkmark",
+    "source": "ic_fluent_checkmark_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Checkmark/SVG/ic_fluent_checkmark_24_regular.svg"
+  },
+  {
+    "id": "fluent-close",
+    "upstreamName": "Dismiss",
+    "source": "ic_fluent_dismiss_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Dismiss/SVG/ic_fluent_dismiss_24_regular.svg"
+  },
+  {
+    "id": "fluent-chevron-down",
+    "upstreamName": "Chevron Down",
+    "source": "ic_fluent_chevron_down_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Chevron%20Down/SVG/ic_fluent_chevron_down_24_regular.svg"
+  },
+  {
+    "id": "fluent-arrow-up",
+    "upstreamName": "Arrow Up",
+    "source": "ic_fluent_arrow_up_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Up/SVG/ic_fluent_arrow_up_24_regular.svg"
+  },
+  {
+    "id": "fluent-arrow-down",
+    "upstreamName": "Arrow Down",
+    "source": "ic_fluent_arrow_down_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Down/SVG/ic_fluent_arrow_down_24_regular.svg"
+  },
+  {
+    "id": "fluent-arrow-left",
+    "upstreamName": "Arrow Left",
+    "source": "ic_fluent_arrow_left_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Left/SVG/ic_fluent_arrow_left_24_regular.svg"
+  },
+  {
+    "id": "fluent-arrow-right",
+    "upstreamName": "Arrow Right",
+    "source": "ic_fluent_arrow_right_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Right/SVG/ic_fluent_arrow_right_24_regular.svg"
+  },
+  {
+    "id": "fluent-columns",
+    "upstreamName": "Column Triple",
+    "source": "ic_fluent_column_triple_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Column%20Triple/SVG/ic_fluent_column_triple_24_regular.svg"
+  },
+  {
+    "id": "fluent-resize",
+    "upstreamName": "Arrow Autofit Width",
+    "source": "ic_fluent_arrow_autofit_width_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Autofit%20Width/SVG/ic_fluent_arrow_autofit_width_24_regular.svg"
+  },
+  {
+    "id": "fluent-document",
+    "upstreamName": "Document Text",
+    "source": "ic_fluent_document_text_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Document%20Text/SVG/ic_fluent_document_text_24_regular.svg"
+  },
+  {
+    "id": "fluent-archive",
+    "upstreamName": "Archive",
+    "source": "ic_fluent_archive_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Archive/SVG/ic_fluent_archive_24_regular.svg"
+  },
+  {
+    "id": "fluent-video",
+    "upstreamName": "Video Clip",
+    "source": "ic_fluent_video_clip_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Video%20Clip/SVG/ic_fluent_video_clip_24_regular.svg"
+  },
+  {
+    "id": "fluent-audio",
+    "upstreamName": "Music Note 2",
+    "source": "ic_fluent_music_note_2_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Music%20Note%202/SVG/ic_fluent_music_note_2_24_regular.svg"
+  },
+  {
+    "id": "fluent-image",
+    "upstreamName": "Image",
+    "source": "ic_fluent_image_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Image/SVG/ic_fluent_image_24_regular.svg"
+  },
+  {
+    "id": "fluent-code",
+    "upstreamName": "Code",
+    "source": "ic_fluent_code_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Code/SVG/ic_fluent_code_24_regular.svg"
+  },
+  {
+    "id": "fluent-data",
+    "upstreamName": "Table",
+    "source": "ic_fluent_table_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Table/SVG/ic_fluent_table_24_regular.svg"
+  },
+  {
+    "id": "fluent-plugins",
+    "upstreamName": "Plug Connected",
+    "source": "ic_fluent_plug_connected_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Plug%20Connected/SVG/ic_fluent_plug_connected_24_regular.svg"
+  },
+  {
+    "id": "fluent-notifications",
+    "upstreamName": "Alert",
+    "source": "ic_fluent_alert_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Alert/SVG/ic_fluent_alert_24_regular.svg"
+  },
+  {
+    "id": "fluent-network",
+    "upstreamName": "Globe",
+    "source": "ic_fluent_globe_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Globe/SVG/ic_fluent_globe_24_regular.svg"
+  },
+  {
+    "id": "fluent-history",
+    "upstreamName": "History",
+    "source": "ic_fluent_history_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/History/SVG/ic_fluent_history_24_regular.svg"
+  },
+  {
+    "id": "fluent-stop",
+    "upstreamName": "Stop",
+    "source": "ic_fluent_stop_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Stop/SVG/ic_fluent_stop_24_regular.svg"
+  },
+  {
+    "id": "fluent-speed",
+    "upstreamName": "Gauge",
+    "source": "ic_fluent_gauge_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Gauge/SVG/ic_fluent_gauge_24_regular.svg"
+  },
+  {
+    "id": "fluent-calendar",
+    "upstreamName": "Calendar LTR",
+    "source": "ic_fluent_calendar_ltr_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Calendar%20LTR/SVG/ic_fluent_calendar_ltr_24_regular.svg"
+  },
+  {
+    "id": "fluent-panel",
+    "upstreamName": "Panel Right",
+    "source": "ic_fluent_panel_right_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Panel%20Right/SVG/ic_fluent_panel_right_24_regular.svg"
+  },
+  {
+    "id": "fluent-open",
+    "upstreamName": "Open",
+    "source": "ic_fluent_open_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Open/SVG/ic_fluent_open_24_regular.svg"
+  },
+  {
+    "id": "fluent-link",
+    "upstreamName": "Link",
+    "source": "ic_fluent_link_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Link/SVG/ic_fluent_link_24_regular.svg"
+  },
+  {
+    "id": "fluent-upload",
+    "upstreamName": "Arrow Upload",
+    "source": "ic_fluent_arrow_upload_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Arrow%20Upload/SVG/ic_fluent_arrow_upload_24_regular.svg"
+  },
+  {
+    "id": "fluent-chevron-right",
+    "upstreamName": "Chevron Right",
+    "source": "ic_fluent_chevron_right_24_regular.svg",
+    "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/a347af95478f989038cccbf085978865264c048a/assets/Chevron%20Right/SVG/ic_fluent_chevron_right_24_regular.svg"
+  }
+]

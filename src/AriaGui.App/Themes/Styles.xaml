@@ -57,4 +57,62 @@
         <Setter Property="Background" Value="{ThemeResource AriaBorderBrush}" />
         <Setter Property="Height" Value="1" />
     </Style>
+    <Style x:Key="AriaSidebarToggleStyle" TargetType="ToggleButton">
+        <Setter Property="MinHeight" Value="{StaticResource AriaRowHeightComfortable}" />
+        <Setter Property="Padding" Value="{StaticResource AriaSpace2}" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Grid Background="{ThemeResource AriaBackgroundBrush}">
+                        <Border x:Name="HoverFill" Background="{ThemeResource AriaSurfaceRaisedBrush}" CornerRadius="{StaticResource AriaControlCornerRadius}" Visibility="Collapsed" />
+                        <Border x:Name="SelectedFill" Background="{ThemeResource AriaSurfaceRaisedBrush}" CornerRadius="{StaticResource AriaControlCornerRadius}" Visibility="Collapsed" />
+                        <Border x:Name="SelectedRail" Background="{ThemeResource AriaAccentBrush}" Width="3" HorizontalAlignment="Left" Margin="0,8" Visibility="Collapsed" />
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver"><VisualState.Setters><Setter Target="HoverFill.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Pressed"><VisualState.Setters><Setter Target="HoverFill.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="CheckStates">
+                                <VisualState x:Name="Unchecked" />
+                                <VisualState x:Name="Checked"><VisualState.Setters><Setter Target="SelectedFill.Visibility" Value="Visible" /><Setter Target="SelectedRail.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Indeterminate"><VisualState.Setters><Setter Target="SelectedFill.Visibility" Value="Visible" /><Setter Target="SelectedRail.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="AriaSidebarFilterStyle" TargetType="ListViewItem">
+        <Setter Property="MinHeight" Value="{StaticResource AriaRowHeightComfortable}" />
+        <Setter Property="Padding" Value="{StaticResource AriaSpace2}" />
+        <Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <Grid Background="{ThemeResource AriaBackgroundBrush}">
+                        <Border x:Name="HoverFill" Background="{ThemeResource AriaSurfaceRaisedBrush}" CornerRadius="{StaticResource AriaControlCornerRadius}" Visibility="Collapsed" />
+                        <Border x:Name="SelectedFill" Background="{ThemeResource AriaSurfaceRaisedBrush}" CornerRadius="{StaticResource AriaControlCornerRadius}" Visibility="Collapsed" />
+                        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Margin="{TemplateBinding Padding}" HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver"><VisualState.Setters><Setter Target="HoverFill.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Pressed"><VisualState.Setters><Setter Target="HoverFill.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="Selected"><VisualState.Setters><Setter Target="SelectedFill.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="SelectedPointerOver"><VisualState.Setters><Setter Target="SelectedFill.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                                <VisualState x:Name="SelectedPressed"><VisualState.Setters><Setter Target="SelectedFill.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

@@ -1,0 +1,96 @@
+{
+  "name": "AriaGUI workspace",
+  "themes": {
+    "dark": {
+      "background": "#14292d",
+      "surface": "#101c20",
+      "surface-raised": "#1d3035",
+      "border": "#3d555d",
+      "text-primary": "#eff7f8",
+      "text-secondary": "#b5c8ce",
+      "text-disabled": "#80959c",
+      "accent": "#6cdec9",
+      "accent-ink": "#082d28",
+      "selection": "#244950",
+      "success": "#95d6ad",
+      "warning": "#f0cb80",
+      "danger": "#ffaaa4",
+      "focus-ring": "#9beaff",
+      "progress-track": "#263d45",
+      "waiting": "#b7c5cc"
+    },
+    "light": {
+      "background": "#e7efee",
+      "surface": "#ffffff",
+      "surface-raised": "#edf3f2",
+      "border": "#71878c",
+      "text-primary": "#142e33",
+      "text-secondary": "#496168",
+      "text-disabled": "#657b81",
+      "accent": "#006d5f",
+      "accent-ink": "#ffffff",
+      "selection": "#d7eae7",
+      "success": "#25683e",
+      "warning": "#795400",
+      "danger": "#a62e26",
+      "focus-ring": "#005baa",
+      "progress-track": "#e0eae8",
+      "waiting": "#526971"
+    },
+    "contrast": {
+      "background": "#000000",
+      "surface": "#000000",
+      "surface-raised": "#121212",
+      "border": "#ffffff",
+      "text-primary": "#ffffff",
+      "text-secondary": "#ffffff",
+      "text-disabled": "#bdbdbd",
+      "accent": "#00ffff",
+      "accent-ink": "#000000",
+      "selection": "#183e45",
+      "success": "#86ff9b",
+      "warning": "#ffff00",
+      "danger": "#ffb3b3",
+      "focus-ring": "#ffff00",
+      "progress-track": "#181818",
+      "waiting": "#ffffff"
+    }
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    20,
+    24,
+    32
+  ],
+  "radii": {
+    "surface": 12,
+    "control": 6,
+    "card": 8
+  },
+  "typography": {
+    "family": "Plus Jakarta Sans, Segoe UI Variable, Segoe UI, sans-serif",
+    "minimum": 12,
+    "body": 12,
+    "control": 12,
+    "heading": 18,
+    "numericVariant": "tabular-nums"
+  },
+  "dimensions": {
+    "compactRow": 32,
+    "comfortableRow": 40,
+    "header": 48,
+    "sidebar": 184,
+    "detailsWidth": 360,
+    "detailsHeight": 228,
+    "minimumViewport": [
+      560,
+      420
+    ],
+    "filtersBreakpoint": 800,
+    "detailsBreakpoint": 1100
+  },
+  "format": "AriaGUI semantic tokens v1"
+}

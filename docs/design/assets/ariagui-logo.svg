@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 246 64" role="img" aria-labelledby="title desc">
+  <title id="title">AriaGUI logo</title>
+  <desc id="desc">AriaGUI wordmark with a download-arrow letter A icon.</desc>
+  <defs>
+    <linearGradient id="surface" x1="8" y1="5" x2="56" y2="59" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF0D6"/>
+      <stop offset=".52" stop-color="#55D6CA"/>
+      <stop offset="1" stop-color="#6EB7F3"/>
+    </linearGradient>
+  </defs>
+  <rect x="5" y="5" width="54" height="54" rx="17" fill="url(#surface)"/>
+  <path d="M17 44 27.4 20.5a5 5 0 0 1 9.2 0L47 44M23 36h18" fill="none" stroke="#082C30" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32 14v19m-6-6 6 6 6-6" fill="none" stroke="#F6FFFD" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="74" y="41" fill="#EFF6F6" font-family="'Plus Jakarta Sans','Segoe UI',sans-serif" font-size="29" font-weight="700" letter-spacing="-1.2">AriaGUI</text>
+  <text x="76" y="55" fill="#9BB1B6" font-family="'Plus Jakarta Sans','Segoe UI',sans-serif" font-size="8" font-weight="600" letter-spacing="1.45">POWERED BY ARIA2</text>
+</svg>

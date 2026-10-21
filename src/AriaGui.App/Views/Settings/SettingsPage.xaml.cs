@@ -15,25 +15,25 @@ public sealed partial class SettingsPage : Page
         ViewModel = new(preferences, features);
         InitializeComponent();
         DataContext = ViewModel;
-        SectionList.SelectedIndex = 0;
-        SectionPicker.SelectedIndex = 0;
-        SectionList.SelectionChanged += SectionChanged;
-        SectionPicker.SelectionChanged += SectionChanged;
-        Loaded += (_, _) => ShowSection(0);
+        SectionTabs.SelectedItem = SectionTabs.Items[0];
     }
 
-    private void SectionChanged(object sender, SelectionChangedEventArgs args)
+    public void SelectSection(string name)
     {
-        var index = ReferenceEquals(sender, SectionList) ? SectionList.SelectedIndex : SectionPicker.SelectedIndex;
+        foreach (var item in SectionTabs.Items)
+            if (item.Text == name) { SectionTabs.SelectedItem = item; return; }
+    }
+
+    private void SectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        var index = sender.Items.IndexOf(sender.SelectedItem);
         if (index < 0) return;
-        if (SectionList.SelectedIndex != index) SectionList.SelectedIndex = index;
-        if (SectionPicker.SelectedIndex != index) SectionPicker.SelectedIndex = index;
         ShowSection(index);
     }
 
     private void ShowSection(int index)
     {
-        SectionTitle.Text = SectionList.Items[index]?.ToString() ?? string.Empty;
+        SectionTitle.Text = SectionTabs.Items[index].Text;
         FrameworkElement content = index switch
         {
             0 => new GeneralSettingsSection(), 1 => new AppearanceSettingsSection(), 2 => new DownloadsSettingsSection(),
@@ -48,10 +48,6 @@ public sealed partial class SettingsPage : Page
     {
         var narrow = args.NewSize.Width < 800;
         CompactBackButton.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
-        SectionColumn.Width = narrow ? new GridLength(0) : new GridLength(180);
-        SectionList.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
-        SectionPicker.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
-        Grid.SetColumn(SectionPicker, narrow ? 1 : 0);
     }
 
     private void CompactBackClick(object sender, RoutedEventArgs args) => BackRequested?.Invoke(this, args);

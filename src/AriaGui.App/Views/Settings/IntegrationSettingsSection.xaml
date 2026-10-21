@@ -1,18 +1,79 @@
-<UserControl x:Class="AriaGui.App.Views.Settings.IntegrationSettingsSection" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Loaded="OnLoaded">
-    <StackPanel Spacing="16">
-        <Border x:Name="ComingSoon" Style="{StaticResource AriaCardStyle}"><StackPanel><TextBlock Text="Browser integration" FontWeight="SemiBold" /><TextBlock Text="Coming soon" Foreground="{ThemeResource AriaTextSecondaryBrush}" /></StackPanel></Border>
-        <StackPanel x:Name="IntegrationContent" Spacing="16" Visibility="Collapsed">
-            <Border Style="{StaticResource AriaCardStyle}"><Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><FontIcon Glyph="&#xE73E;" FontFamily="Segoe Fluent Icons" Foreground="{ThemeResource AriaSuccessBrush}" /><TextBlock Grid.Column="1" Text="{Binding BrowserStatus}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" /><Button Grid.Column="2" Content="Refresh" Click="ReconnectClick" Style="{StaticResource AriaSecondaryButtonStyle}" /></Grid></Border>
-            <StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Register browser host" Click="RegisterClick" Style="{StaticResource AriaSecondaryButtonStyle}" /><Button Content="Unregister browser host" Click="UnregisterClick" Style="{StaticResource AriaSecondaryButtonStyle}" /></StackPanel>
-            <ToggleSwitch Header="Capture browser downloads" IsOn="{Binding BrowserEnabled, Mode=TwoWay}" OffContent="Off" OnContent="On" />
-            <ToggleSwitch Header="Automatically capture matching downloads" IsOn="{Binding BrowserAutoCapture, Mode=TwoWay}" OffContent="Off" OnContent="On" />
-            <ToggleSwitch Header="Hold Alt to bypass capture" IsOn="{Binding BrowserAltBypass, Mode=TwoWay}" OffContent="Off" OnContent="On" />
-            <ToggleSwitch Header="Start browser downloads paused" IsOn="{Binding BrowserStartPaused, Mode=TwoWay}" OffContent="Off" OnContent="On" />
-            <NumberBox Header="Minimum download size (MB; 0 captures all)" Minimum="0" Value="{Binding BrowserMinimumMb, Mode=TwoWay}" />
-            <TextBox Header="Capture file types (comma-separated, for example .zip, .iso)" Text="{Binding BrowserFileTypes, Mode=TwoWay}" />
-            <TextBox Header="Excluded sites (comma-separated hostnames)" Text="{Binding BrowserExcludedSites, Mode=TwoWay}" />
-            <TextBlock Text="Cookies are passed to this download only and aren't saved." FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" />
-            <HyperlinkButton Content="Reset this section to defaults" Click="ResetClick" HorizontalAlignment="Left" />
+<UserControl x:Class="AriaGui.App.Views.Settings.IntegrationSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Loaded="OnLoaded">
+    <StackPanel>
+        <InfoBar x:Name="ComingSoon" IsOpen="True" IsClosable="False" Severity="Informational"
+                 Title="Browser integration" Message="Browser integration is not available in this build." />
+        <StackPanel x:Name="IntegrationContent" Visibility="Collapsed">
+            <InfoBar IsOpen="True" IsClosable="False" Title="Browser extension"
+                     Severity="{Binding BrowserStatusSeverity}" Message="{Binding BrowserStatus}"
+                     AutomationProperties.LiveSetting="Polite">
+                <InfoBar.ActionButton>
+                    <Button Content="Refresh status" Click="ReconnectClick"
+                            Style="{StaticResource AriaSecondaryButtonStyle}" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+
+            <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace2}">
+                <StackPanel>
+                    <TextBlock Text="Browser host" FontWeight="SemiBold" />
+                    <TextBlock Text="Register this app with Chrome and Edge, then open the AriaGUI extension popup to check the connection."
+                               TextWrapping="Wrap" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                               Margin="{StaticResource AriaSpace2}" />
+                    <StackPanel Orientation="Horizontal" Margin="{StaticResource AriaSpace2}">
+                        <Button Content="Register host" Click="RegisterClick"
+                                IsEnabled="{Binding BrowserHostUnregistered}"
+                                Style="{StaticResource AriaSecondaryButtonStyle}"
+                                Margin="{StaticResource AriaSpace2}" />
+                        <Button Content="Unregister host" Click="UnregisterClick"
+                                IsEnabled="{Binding BrowserHostRegistered}"
+                                Style="{StaticResource AriaSecondaryButtonStyle}"
+                                Margin="{StaticResource AriaSpace2}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace2}">
+                <StackPanel>
+                    <TextBlock Text="Capture" FontWeight="SemiBold" />
+                    <TextBlock Text="Turn on capture here and in the extension popup. The popup also controls the current site."
+                               TextWrapping="Wrap" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                               Margin="{StaticResource AriaSpace2}" />
+                    <ToggleSwitch Header="Capture browser downloads" IsOn="{Binding BrowserEnabled, Mode=TwoWay}"
+                                  Margin="{StaticResource AriaSpace2}" />
+                    <ToggleSwitch Header="Automatically capture matching downloads" IsOn="{Binding BrowserAutoCapture, Mode=TwoWay}"
+                                  Margin="{StaticResource AriaSpace2}" />
+                    <ToggleSwitch Header="Hold Alt to keep a download in the browser" IsOn="{Binding BrowserAltBypass, Mode=TwoWay}"
+                                  Margin="{StaticResource AriaSpace2}" />
+                    <ToggleSwitch Header="Start handed-off downloads paused" IsOn="{Binding BrowserStartPaused, Mode=TwoWay}"
+                                  Margin="{StaticResource AriaSpace2}" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace2}">
+                <StackPanel>
+                    <TextBlock Text="Capture rules" FontWeight="SemiBold" />
+                    <NumberBox Header="Minimum download size (MB; 0 captures all)" Minimum="0"
+                               Value="{Binding BrowserMinimumMb, Mode=TwoWay}"
+                               Margin="{StaticResource AriaSpace2}" />
+                    <TextBox Header="File types (comma-separated, for example .zip, .iso)"
+                             Text="{Binding BrowserFileTypes, Mode=TwoWay}"
+                             Margin="{StaticResource AriaSpace2}" />
+                    <TextBox Header="Excluded sites (comma-separated hostnames)"
+                             Text="{Binding BrowserExcludedSites, Mode=TwoWay}"
+                             Margin="{StaticResource AriaSpace2}" />
+                    <TextBlock Text="Downloads from excluded sites stay in the browser."
+                               TextWrapping="Wrap" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                               Margin="{StaticResource AriaSpace2}" />
+                </StackPanel>
+            </Border>
+
+            <InfoBar IsOpen="True" IsClosable="False" Severity="Informational"
+                     Message="Cookies are used for the current handoff and are not saved by AriaGUI."
+                     Margin="{StaticResource AriaSpace2}" />
+            <HyperlinkButton Content="Reset this section to defaults" Click="ResetClick"
+                             HorizontalAlignment="Left" Margin="{StaticResource AriaSpace2}" />
         </StackPanel>
     </StackPanel>
 </UserControl>
