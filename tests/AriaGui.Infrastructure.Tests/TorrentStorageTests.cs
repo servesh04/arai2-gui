@@ -42,7 +42,7 @@ public sealed class TorrentStorageTests
         Assert.Equal(TorrentStage.AwaitingSelection, recovered.Stage);
         using var current = runtime.Db();
         Assert.False(current.Database.HasPendingModelChanges());
-        Assert.Equal(13, current.Database.GetAppliedMigrations().Count());
+        Assert.Equal(current.Database.GetMigrations().Count(), current.Database.GetAppliedMigrations().Count());
         Assert.Single(current.Jobs);
         Assert.Equal(2, current.TorrentFiles.Count());
         Assert.True(Directory.Exists(Path.Combine(runtime.Root, "Backups")));
