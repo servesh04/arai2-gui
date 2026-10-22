@@ -24,9 +24,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Locked dependency restore failed.' }
     & dotnet build AriaGui.slnx --no-restore -p:Platform=x64 -m:1 -nr:false
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
-    foreach ($project in @('tests/AriaGui.Core.Tests/AriaGui.Core.Tests.csproj', 'tests/AriaGui.Application.Tests/AriaGui.Application.Tests.csproj', 'tests/AriaGui.Infrastructure.Tests/AriaGui.Infrastructure.Tests.csproj', 'tests/AriaGui.Browser.Contracts.Tests/AriaGui.Browser.Contracts.Tests.csproj')) {
+    foreach ($project in @('tests/AriaGui.Core.Tests/AriaGui.Core.Tests.csproj', 'tests/AriaGui.Application.Tests/AriaGui.Application.Tests.csproj', 'tests/AriaGui.Browser.Contracts.Tests/AriaGui.Browser.Contracts.Tests.csproj')) {
         & dotnet test $project --no-build --no-restore --logger trx --results-directory artifacts/test-results
         if ($LASTEXITCODE -ne 0) { throw "Tests failed: $project" }
+    }
+    $infrastructure = 'tests/AriaGui.Infrastructure.Tests/AriaGui.Infrastructure.Tests.csproj'
+    # Process-boundary tests run in their own testhosts so a killed fixture's
+    # handles and the runner's constrained process budget cannot affect peers.
+    foreach ($filter in @('FullyQualifiedName!~RecoveryTests&FullyQualifiedName!~ContinuityPublicationTests',
+        'FullyQualifiedName~RecoveryTests', 'FullyQualifiedName~ContinuityPublicationTests')) {
+        & dotnet test $infrastructure --no-build --no-restore --filter $filter --logger trx --results-directory artifacts/test-results
+        if ($LASTEXITCODE -ne 0) { throw "Infrastructure tests failed: $filter" }
     }
     & node --test tests/AriaGui.Browser.Contracts.Tests/fixtures.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Browser contract JavaScript fixtures failed.' }

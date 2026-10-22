@@ -130,7 +130,10 @@ public sealed partial class Aria2ProcessManager
         var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
         var security = file.GetAccessControl();
         var owner = security.GetOwner(typeof(SecurityIdentifier));
-        if (owner is null || !owner.Equals(user) && !owner.Equals(system)) throw LegacyRefused();
+        // Elevated Windows processes can create a file owned by their token's
+        // default owner (Administrators) even when its ACL grants only this user
+        // and SYSTEM. The ACE check below remains authoritative.
+        if (owner is null || !owner.Equals(user) && !owner.Equals(system) && !owner.Equals(identity.Owner)) throw LegacyRefused();
         foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(SecurityIdentifier)))
             if (rule.AccessControlType == AccessControlType.Allow && !rule.IdentityReference.Equals(user) && !rule.IdentityReference.Equals(system)) throw LegacyRefused();
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);

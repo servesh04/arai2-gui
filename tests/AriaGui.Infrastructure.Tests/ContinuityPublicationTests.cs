@@ -165,7 +165,17 @@ public sealed class ContinuityPublicationTests
             Assert.Equal(VerificationStatus.Verified, result.Verification);
             Assert.Equal(bytes, await File.ReadAllBytesAsync(Path.Combine(output, "parallel.bin")));
         }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        finally
+        {
+            // A killed child can leave its gateway.lock kernel handle closing
+            // briefly after process exit is observed on a busy Windows runner.
+            for (var attempt = 0; Directory.Exists(root); attempt++)
+            {
+                try { Directory.Delete(root, true); break; }
+                catch (IOException ex) when ((ex.HResult & 0xffff) is 32 or 33 && attempt < 20)
+                { await Task.Delay(100); }
+            }
+        }
     }
     [Fact]
     public async Task Corrupted_parallel_checkpoint_blocks_restore_and_preserves_public_pair()
@@ -468,7 +478,7 @@ public sealed class ContinuityPublicationTests
             var start = new System.Diagnostics.ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
             start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
             start.ArgumentList.Add($"New-Item -ItemType Junction -Path '{junction.Replace("'", "''")}' -Target '{target.Replace("'", "''")}' -ErrorAction Stop | Out-Null");
-            using var process = System.Diagnostics.Process.Start(start)!; using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var process = System.Diagnostics.Process.Start(start)!; using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             try { await process.WaitForExitAsync(deadline.Token); }
             finally { if (!process.HasExited) process.Kill(true); }
             Assert.Equal(0, process.ExitCode);

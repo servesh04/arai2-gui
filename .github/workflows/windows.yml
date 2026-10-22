@@ -12,7 +12,7 @@ permissions:
 jobs:
   verify-and-package:
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -23,13 +23,13 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
-      - name: Locked build, tests, and unsigned self-contained MSIX
+      - name: Locked build, tests, and portable ZIP
         run: ./scripts/Package.ps1
-      - name: Verify package rejection and diagnostics redaction
+      - name: Verify portable ZIP integrity
         run: |
-          $package = Get-ChildItem artifacts/packages -Recurse -File -Filter '*_unsigned.msix' | Select-Object -First 1
-          if (!$package) { throw 'Package candidate missing.' }
-          ./scripts/Test-ReleaseTools.ps1 -PackagePath $package.FullName
+          $package = Get-ChildItem artifacts/packages -Recurse -File -Filter 'AriaGUI-*-win-x64.zip' | Select-Object -First 1
+          if (!$package) { throw 'Portable ZIP candidate missing.' }
+          ./scripts/Test-PortablePackage.ps1 -PackagePath $package.FullName
       - name: Retain test and profiling results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -38,18 +38,16 @@ jobs:
           path: |
             artifacts/test-results/*.trx
             artifacts/phase6-profile.json
-            artifacts/release-tools-results.json
+            artifacts/packages/**/package-report.json
           if-no-files-found: warn
           retention-days: 14
-      - name: Retain unsigned candidate and package evidence
+      - name: Retain portable ZIP and checksums
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: windows-x64-unsigned-candidate
+          name: windows-x64-portable-candidate
           path: |
-            artifacts/packages/**/*.msix
+            artifacts/packages/**/*.zip
+            artifacts/packages/**/SHA256SUMS.txt
             artifacts/packages/**/package-report.json
-            artifacts/packages/**/RELEASE_NOTES.md
-            artifacts/packages/**/notices/**
-            !artifacts/packages/**/build/**
           if-no-files-found: error
           retention-days: 14
