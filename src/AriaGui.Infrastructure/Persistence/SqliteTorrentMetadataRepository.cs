@@ -1,5 +1,6 @@
 using AriaGui.Core.Downloads;
 using AriaGui.Application.Downloads;
+using AriaGui.Application.Notifications;
 using AriaGui.Infrastructure.Aria2;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -157,13 +158,28 @@ public sealed class SqliteTorrentMetadataRepository(string databasePath)
 
     public Task SetStageAsync(Guid jobId, TorrentStage stage, CancellationToken token = default) => OnDatabaseThreadAsync(db =>
     {
+        using var transaction = db.Database.BeginTransaction();
         var row = db.TorrentSpecs.SingleOrDefault(item => item.JobId == jobId)
             ?? throw new DownloadStorageException("Torrent draft is missing.");
         if (row.Stage == TorrentStage.Completed && stage != TorrentStage.Completed)
             throw new DownloadStorageException("Completed torrent cannot become active again.");
+        if (row.Stage == TorrentStage.Failed && stage != TorrentStage.Failed)
+            NotificationPersistence.AdvanceRevision(db, $"torrent:{jobId:N}");
+        if (row.Stage != stage && stage is TorrentStage.Completed or TorrentStage.Failed)
+        {
+            var kind = stage == TorrentStage.Completed
+                ? NotificationKind.TransferCompleted : NotificationKind.TransferFailed;
+            var revision = NotificationPersistence.CurrentRevision(db, $"torrent:{jobId:N}");
+            NotificationPersistence.Stage(db, new NotificationDraft(
+                NotificationEventKeys.Torrent(jobId, revision, kind), kind, TransferKind.Torrent,
+                jobId, null, row.Name,
+                kind == NotificationKind.TransferCompleted ? "Torrent completed" : "Torrent failed; open AriaGUI for details",
+                DateTimeOffset.UtcNow));
+        }
         row.Stage = stage;
         row.UpdatedAtUtcTicks = DateTimeOffset.UtcNow.UtcTicks;
         db.SaveChanges();
+        transaction.Commit();
         return true;
     }, token);
 

@@ -40,7 +40,7 @@ public sealed class UpgradeTests
         var policy = await repository.LoadQueuePolicyAsync(default);
         Assert.Equal(migration == Queue ? 4 : 3, policy.Limit);
         if (migration == Queue) { Assert.Equal(6, policy.RequestedLimit); Assert.Equal(OperationStatus.Uncertain, policy.RequestStatus); }
-        using var current = runtime.Db(); Assert.Equal(13, current.Database.GetAppliedMigrations().Count());
+        using var current = runtime.Db(); Assert.Equal(14, current.Database.GetAppliedMigrations().Count());
         Assert.False(current.Database.HasPendingModelChanges());
 
         var backup = Assert.Single(Directory.GetFiles(Path.Combine(runtime.Root, "Backups"), "*.db"));
@@ -51,6 +51,24 @@ public sealed class UpgradeTests
         using var check = connection.CreateCommand(); check.CommandText = "PRAGMA quick_check;";
         Assert.Equal("ok", check.ExecuteScalar());
         await repository.InitializeAsync(default);
+        Assert.Single(Directory.GetFiles(Path.Combine(runtime.Root, "Backups"), "*.db"));
+    }
+
+    [Fact]
+    public async Task N1_notifications_upgrade_preserves_existing_torrent_schema_and_starts_empty()
+    {
+        using var runtime = new Runtime();
+        using var old = runtime.Db();
+        old.GetService<IMigrator>().Migrate("20261020163554_TorrentStorage");
+        var job = Seed(old, runtime.Root, "existing", DownloadStatus.Completed);
+
+        var notifications = new SqliteNotificationRepository(runtime.Path);
+        await notifications.InitializeAsync(default);
+        Assert.Empty(await notifications.ReadPageAsync(20, null, false, default));
+        Assert.Contains((await runtime.Repository().LoadAsync(default)), entry => entry.Job.Id == job);
+        using var upgraded = runtime.Db();
+        Assert.Equal(14, upgraded.Database.GetAppliedMigrations().Count());
+        Assert.False(upgraded.Database.HasPendingModelChanges());
         Assert.Single(Directory.GetFiles(Path.Combine(runtime.Root, "Backups"), "*.db"));
     }
 
@@ -87,7 +105,7 @@ public sealed class UpgradeTests
         using var db = runtime.Db();
         db.Database.ExecuteSqlRaw("INSERT INTO __EFMigrationsHistory VALUES ('20990101000000_Future', '99.0.0');");
         var error = await Assert.ThrowsAsync<DownloadStorageException>(() => runtime.Repository().InitializeAsync(default));
-        Assert.Contains("newer", error.Message); Assert.Equal(14, db.Database.GetAppliedMigrations().Count());
+        Assert.Contains("newer", error.Message); Assert.Equal(15, db.Database.GetAppliedMigrations().Count());
         Assert.False(Directory.Exists(Path.Combine(runtime.Root, "Backups")));
     }
 
@@ -104,7 +122,7 @@ public sealed class UpgradeTests
         var job = Guid.NewGuid(); var attempt = Guid.NewGuid(); var file = Guid.NewGuid(); var operation = Guid.NewGuid();
         var ticks = DateTimeOffset.UtcNow.UtcTicks; var path = System.IO.Path.Combine(root, name + ".bin"); var gid = Guid.NewGuid().ToString("N")[..16];
         var source = "https://example.invalid/file";
-        db.Database.ExecuteSqlInterpolated($"INSERT INTO Jobs VALUES ({job}, {name}, {source}, {path}, {path.ToUpperInvariant()}, {ticks});");
+        db.Database.ExecuteSqlInterpolated($"INSERT INTO Jobs (Id, DisplayName, Source, Destination, DestinationKey, CreatedAtUtcTicks) VALUES ({job}, {name}, {source}, {path}, {path.ToUpperInvariant()}, {ticks});");
         db.Database.ExecuteSqlInterpolated($"INSERT INTO Attempts (Id, JobId, EngineId, StartedAtUtcTicks, Status, DownloadedBytes, TotalBytes, UpdatedAtUtcTicks) VALUES ({attempt}, {job}, {gid}, {ticks}, {(int)status}, {12L}, {100L}, {ticks});");
         db.Database.ExecuteSqlInterpolated($"INSERT INTO Files VALUES ({file}, {job}, {attempt}, {name + ".bin"}, {100L});");
         if (action is not null) db.Database.ExecuteSqlInterpolated($"INSERT INTO Operations (Id, JobId, AttemptId, Action, Status, RequestedAtUtcTicks) VALUES ({operation}, {job}, {attempt}, {(int)action.Value}, {(int)OperationStatus.Pending}, {ticks});");

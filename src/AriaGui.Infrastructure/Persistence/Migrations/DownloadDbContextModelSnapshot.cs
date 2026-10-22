@@ -286,6 +286,94 @@ namespace AriaGui.Infrastructure.Persistence.Migrations
                     b.ToTable("Jobs");
                 });
 
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.NotificationEventRow", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("AttemptId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DeliveryState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("DeliveryUpdatedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DismissedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EventKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ReadAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TransferKind")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventKey")
+                        .IsUnique();
+
+                    b.HasIndex("DismissedAtUtcTicks", "Id");
+
+                    b.HasIndex("ReadAtUtcTicks", "Id");
+
+                    b.ToTable("NotificationEvents");
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.NotificationReceiptRow", b =>
+                {
+                    b.Property<string>("EventKey")
+                        .HasMaxLength(160)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("EventKey");
+
+                    b.ToTable("NotificationReceipts");
+                });
+
+            modelBuilder.Entity("AriaGui.Infrastructure.Persistence.NotificationSourceRevisionRow", b =>
+                {
+                    b.Property<string>("SourceKey")
+                        .HasMaxLength(160)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SourceKey");
+
+                    b.ToTable("NotificationSourceRevisions");
+                });
+
             modelBuilder.Entity("AriaGui.Infrastructure.Persistence.OperationRow", b =>
                 {
                     b.Property<Guid>("Id")

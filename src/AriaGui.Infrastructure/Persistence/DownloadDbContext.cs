@@ -18,9 +18,24 @@ public sealed class DownloadDbContext(DbContextOptions<DownloadDbContext> option
     public DbSet<TorrentSpecRow> TorrentSpecs => Set<TorrentSpecRow>();
     public DbSet<TorrentFileRow> TorrentFiles => Set<TorrentFileRow>();
     public DbSet<TorrentEngineRow> TorrentEngines => Set<TorrentEngineRow>();
+    public DbSet<NotificationEventRow> NotificationEvents => Set<NotificationEventRow>();
+    public DbSet<NotificationReceiptRow> NotificationReceipts => Set<NotificationReceiptRow>();
+    public DbSet<NotificationSourceRevisionRow> NotificationSourceRevisions => Set<NotificationSourceRevisionRow>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        model.Entity<NotificationEventRow>().HasKey(row => row.Id);
+        model.Entity<NotificationEventRow>().Property(row => row.Id).ValueGeneratedOnAdd();
+        model.Entity<NotificationEventRow>().HasIndex(row => row.EventKey).IsUnique();
+        model.Entity<NotificationEventRow>().HasIndex(row => new { row.DismissedAtUtcTicks, row.Id });
+        model.Entity<NotificationEventRow>().HasIndex(row => new { row.ReadAtUtcTicks, row.Id });
+        model.Entity<NotificationEventRow>().Property(row => row.EventKey).HasMaxLength(160);
+        model.Entity<NotificationEventRow>().Property(row => row.DisplayName).HasMaxLength(256);
+        model.Entity<NotificationEventRow>().Property(row => row.Detail).HasMaxLength(512);
+        model.Entity<NotificationReceiptRow>().HasKey(row => row.EventKey);
+        model.Entity<NotificationReceiptRow>().Property(row => row.EventKey).HasMaxLength(160);
+        model.Entity<NotificationSourceRevisionRow>().HasKey(row => row.SourceKey);
+        model.Entity<NotificationSourceRevisionRow>().Property(row => row.SourceKey).HasMaxLength(160);
         model.Entity<TorrentSpecRow>().HasKey(row => row.JobId);
         model.Entity<TorrentSpecRow>().HasIndex(row => row.DestinationKey).IsUnique();
         model.Entity<TorrentSpecRow>().HasIndex(row => row.InfoHash);

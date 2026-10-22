@@ -1,15 +1,17 @@
 using System.Text.Json.Serialization;
+using AriaGui.Application.Notifications;
 
 namespace AriaGui.Application.Downloads;
 
 public enum AppTheme { System, Light, Dark }
 public sealed record UserPreferences(AppTheme Theme = AppTheme.System, string DefaultFolder = "", DesktopLayout? Layout = null,
     BrowserIntegrationPreferences? Browser = null, SpeedLimitPreferences? SpeedLimits = null,
-    bool TorrentPrivacyNoticeAccepted = false)
+    bool TorrentPrivacyNoticeAccepted = false, NotificationPreferences? Notifications = null)
 {
     [JsonIgnore] public DesktopLayout EffectiveLayout => Layout ?? new();
     [JsonIgnore] public BrowserIntegrationPreferences EffectiveBrowser => Browser ?? new();
     [JsonIgnore] public SpeedLimitPreferences EffectiveSpeedLimits => SpeedLimits ?? new();
+    [JsonIgnore] public NotificationPreferences EffectiveNotifications => Notifications ?? new();
     public void Validate()
     {
         if (!Enum.IsDefined(Theme) || DefaultFolder is null || DefaultFolder.Length > 32760 || (!string.IsNullOrEmpty(DefaultFolder)

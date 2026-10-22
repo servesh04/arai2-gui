@@ -1,4 +1,5 @@
 using AriaGui.Application.Downloads;
+using AriaGui.Application.Notifications;
 using AriaGui.Core.Downloads;
 using AriaGui.Infrastructure.Aria2;
 using Microsoft.Data.Sqlite;
@@ -83,6 +84,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
 
     public Task<IReadOnlyList<Guid>> SaveAndReportCompletionsAsync(IReadOnlyList<DownloadEntry> entries, CancellationToken token) => OnDatabaseThreadAsync<IReadOnlyList<Guid>>(db =>
     {
+        using var transaction = db.Database.BeginTransaction();
         var completed = new List<Guid>();
         var ids = entries.Select(entry => entry.Attempt.Id).ToArray();
         var attempts = db.Attempts.Where(row => ids.Contains(row.Id)).ToDictionary(row => row.Id);
@@ -92,7 +94,16 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
         foreach (var entry in entries)
         {
             var attempt = attempts[entry.Attempt.Id];
-            // The attempt's persisted terminal transition is the notification receipt.
+            if (attempt.Status != entry.Progress.Status && entry.Progress.Status is DownloadStatus.Completed or DownloadStatus.Failed)
+            {
+                var kind = entry.Progress.Status == DownloadStatus.Completed
+                    ? NotificationKind.TransferCompleted : NotificationKind.TransferFailed;
+                NotificationPersistence.Stage(db, new NotificationDraft(
+                    NotificationEventKeys.Http(attempt.Id, kind), kind, TransferKind.Http,
+                    entry.Job.Id, attempt.Id, entry.Job.DisplayName,
+                    kind == NotificationKind.TransferCompleted ? "Download completed" : "Download failed; open AriaGUI for details",
+                    new DateTimeOffset(entry.ObservedAt?.UtcTicks ?? DateTimeOffset.UtcNow.UtcTicks, TimeSpan.Zero)));
+            }
             if (attempt.Status != DownloadStatus.Completed && entry.Progress.Status == DownloadStatus.Completed) completed.Add(attempt.Id);
             attempt.Status = entry.Progress.Status;
             attempt.Verification = entry.Verification;
@@ -109,6 +120,7 @@ public sealed partial class SqliteDownloadRepository(string databasePath, Extern
                 operation.Status = entry.PendingOperation?.Status ?? OperationStatus.Confirmed;
         }
         db.SaveChanges();
+        transaction.Commit();
         return completed;
     }, token);
 
