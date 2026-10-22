@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using AriaGui.Application.Notifications;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Microsoft.UI.Xaml;
 
 namespace AriaGui.App.ViewModels;
 
@@ -35,15 +34,7 @@ public sealed class NotificationsViewModel(INotificationRepository repository) :
     public ObservableCollection<NotificationRowViewModel> Items { get; } = [];
     public event Action<Guid>? ViewDownloadRequested;
     public bool IsBusy { get => _isBusy; private set => SetProperty(ref _isBusy, value); }
-    public bool HasMore
-    {
-        get => _hasMore;
-        private set
-        {
-            if (SetProperty(ref _hasMore, value)) OnPropertyChanged(nameof(LoadMoreVisibility));
-        }
-    }
-    public Visibility LoadMoreVisibility => HasMore ? Visibility.Visible : Visibility.Collapsed;
+    public bool HasMore { get => _hasMore; private set => SetProperty(ref _hasMore, value); }
     public bool HasItems => Items.Count > 0;
     public int UnreadCount { get => _unreadCount; private set => SetProperty(ref _unreadCount, value); }
     public string UnreadSummary => UnreadCount == 1 ? "1 unread" : $"{UnreadCount} unread";

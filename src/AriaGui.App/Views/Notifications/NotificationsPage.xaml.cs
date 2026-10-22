@@ -7,6 +7,7 @@ namespace AriaGui.App.Views.Notifications;
 public sealed partial class NotificationsPage : Page
 {
     public NotificationsViewModel ViewModel { get; }
+    public Visibility HasMoreVisibility(bool hasMore) => hasMore ? Visibility.Visible : Visibility.Collapsed;
 
     public NotificationsPage(NotificationsViewModel viewModel)
     {

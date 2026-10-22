@@ -94,7 +94,7 @@
 
         <Button Grid.Row="4" Content="Load older notifications" Click="LoadMoreClick"
                 IsEnabled="{x:Bind ViewModel.HasMore, Mode=OneWay}"
-                Visibility="{x:Bind ViewModel.LoadMoreVisibility, Mode=OneWay}"
+                Visibility="{x:Bind HasMoreVisibility(ViewModel.HasMore), Mode=OneWay}"
                 HorizontalAlignment="Left" Style="{StaticResource AriaSecondaryButtonStyle}"
                 Margin="{StaticResource AriaSpace2}" />
     </Grid>
