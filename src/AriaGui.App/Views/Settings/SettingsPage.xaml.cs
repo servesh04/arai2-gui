@@ -38,7 +38,7 @@ public sealed partial class SettingsPage : Page
         {
             0 => new GeneralSettingsSection(), 1 => new AppearanceSettingsSection(), 2 => new DownloadsSettingsSection(),
             3 => new NetworkSettingsSection(), 4 => new BitTorrentSettingsSection(), 5 => new IntegrationSettingsSection(),
-            6 => new AdvancedSettingsSection(), _ => new AboutSettingsSection()
+            6 => new NotificationsSettingsSection(), 7 => new AdvancedSettingsSection(), _ => new AboutSettingsSection()
         };
         content.DataContext = ViewModel;
         SectionContent.Content = content;

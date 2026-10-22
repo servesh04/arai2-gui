@@ -8,6 +8,9 @@ using AriaGui.Infrastructure.Persistence;
 using AriaGui.Infrastructure.Downloads;
 using AriaGui.Infrastructure.Browser;
 using AriaGui.App.Features;
+using AriaGui.Application.Notifications;
+using AriaGui.App.Views.Notifications;
+using Microsoft.Windows.AppNotifications;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -25,6 +28,16 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     private Task? _reservationCleanup;
     private Task? _engineLoop;
     private Task? _preferencesLoad;
+    private DispatcherTimer? _notificationTimer;
+    private bool _notificationTickRunning;
+    private bool _windowActive;
+    private DispatcherQueue? _uiQueue;
+    private WindowsNotificationService? _windowsNotifications;
+    private NotificationActivationTarget? _pendingNotification;
+    private DownloadsPage? _downloadsPage;
+    private readonly Guid _engineNotificationSession = Guid.NewGuid();
+    private int _engineFailed;
+    private EngineStateStore? _observedEngine;
     private SingleInstanceLease? _instance;
     private bool _closing;
     private bool _allowClose;
@@ -47,6 +60,10 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        _uiQueue = DispatcherQueue.GetForCurrentThread();
+        _windowsNotifications = new WindowsNotificationService();
+        _windowsNotifications.Activated += QueueNotificationActivation;
+        _windowsNotifications.Start();
         var activation = _activationInstance.GetActivatedEventArgs();
         var supported = IsSupportedActivation(activation);
         WriteSyntheticActivationReceipt(activation, supported);
@@ -77,6 +94,11 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         registrations.AddSingleton<IAria2Client>(services => new ManagedAria2Client((Aria2ProcessManager)services.GetRequiredService<IManagedAria2Engine>()));
         registrations.AddSingleton<IDownloadRepository>(new SqliteDownloadRepository(Path.Combine(runtimeDirectory, "downloads.db")));
         registrations.AddSingleton(new SqliteTorrentMetadataRepository(Path.Combine(runtimeDirectory, "downloads.db")));
+        registrations.AddSingleton<INotificationRepository>(new SqliteNotificationRepository(Path.Combine(runtimeDirectory, "downloads.db")));
+        registrations.AddSingleton(_windowsNotifications);
+        registrations.AddSingleton<INotificationDesktopSink>(_windowsNotifications);
+        registrations.AddSingleton<NotificationCoordinator>();
+        registrations.AddSingleton<NotificationsViewModel>();
         registrations.AddSingleton<IDownloadDestination, FileDownloadDestination>();
         registrations.AddSingleton<IDownloadFileActions, WindowsDownloadFileActions>();
         registrations.AddSingleton<IUserPreferencesRepository>(new JsonUserPreferencesRepository(Path.Combine(runtimeDirectory, "preferences.json")));
@@ -117,6 +139,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         _services = registrations.BuildServiceProvider();
 
         var downloadsPage = _services.GetRequiredService<DownloadsPage>();
+        _downloadsPage = downloadsPage;
         _window = new MainWindow(downloadsPage);
         downloadsPage.TorrentWindowId = _window.AppWindow.Id;
         var dispatcher = DispatcherQueue.GetForCurrentThread();
@@ -134,6 +157,7 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         _preferencesLoad = preferences.LoadAsync(_lifetime.Token);
         folderPicker.WindowId = _window.AppWindow.Id;
         _window.AppWindow.Closing += OnWindowClosing;
+        _window.Activated += (_, eventArgs) => _windowActive = eventArgs.WindowActivationState != WindowActivationState.Deactivated;
         _desktop = new DesktopLifetimeController(this);
         _openActivation.Ready();
         _window.ExitRequested += RequestExit;
@@ -150,6 +174,12 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         }
         catch (Exception) { _window.SetDesktopStatus("Tray unavailable. Close will keep this window visible; use Exit to stop."); }
         _window.Activate();
+        var notificationActivation = _windowsNotifications.CurrentActivation() ?? _pendingNotification;
+        if (notificationActivation is not null) QueueNotificationActivation(notificationActivation);
+        _notificationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _notificationTimer.Tick += NotificationTimerTick;
+        _notificationTimer.Start();
+        _ = RefreshNotificationsAsync();
         if (OpenProtocolActivation.ClassifyLaunch(Environment.GetCommandLineArgs().Skip(1).ToArray()) == GuiLaunchKind.BrowserWake)
             _window.AppWindow.Hide();
         if (storageFailure is null && _instance is { IsPrimary: true })
@@ -166,6 +196,8 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         _reservationCleanup = RunReservationCleanupAsync(_services.GetRequiredService<DownloadCoordinator>(),
             (IPreparedTakeoverRepository)_services.GetRequiredService<IDownloadRepository>(), _lifetime.Token);
         var lifecycle = _services.GetRequiredService<EngineLifecycleService>();
+        _observedEngine = _services.GetRequiredService<EngineStateStore>();
+        _observedEngine.Changed += EngineStateChanged;
         if (storageFailure is not null) lifecycle.ReportStartupFailure(storageFailure);
         else _engineLoop = RunEngineAsync(lifecycle, _lifetime.Token);
 #if DEBUG || ARIAGUI_VERIFICATION
@@ -181,6 +213,10 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
 
     private static bool IsSupportedActivation(Microsoft.Windows.AppLifecycle.AppActivationArguments activation)
     {
+        if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.AppNotification)
+            return activation.Data is AppNotificationActivatedEventArgs args
+                && args.Arguments.TryGetValue("route", out var route)
+                && NotificationActivation.TryParse(route, out _);
         if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Protocol)
             return activation.Data is Windows.ApplicationModel.Activation.IProtocolActivatedEventArgs protocol &&
                 OpenProtocolActivation.IsOpen(protocol.Uri.OriginalString);
@@ -207,11 +243,71 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     }
     private void OnProtocolActivated(object? sender, Microsoft.Windows.AppLifecycle.AppActivationArguments activation)
     {
+        if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.AppNotification
+            && activation.Data is AppNotificationActivatedEventArgs notification
+            && notification.Arguments.TryGetValue("route", out var route)
+            && NotificationActivation.TryParse(route, out var target) && target is not null)
+        {
+            QueueNotificationActivation(target);
+            return;
+        }
         if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Protocol && IsSupportedActivation(activation))
             _openActivation?.RequestOpen();
         else if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.Launch
             && activation.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch
             && string.IsNullOrWhiteSpace(launch.Arguments)) _openActivation?.RequestOpen();
+    }
+
+    private void QueueNotificationActivation(NotificationActivationTarget target)
+    {
+        _pendingNotification = target;
+        _uiQueue?.TryEnqueue(async () =>
+        {
+            if (_closing || _downloadsPage is null || _window is null || _pendingNotification is null) return;
+            var pending = _pendingNotification;
+            _pendingNotification = null;
+            _window.ShowFromTray();
+            try { await _downloadsPage.OpenNotificationAsync(pending, _lifetime.Token); }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+            await RefreshNotificationsAsync();
+        });
+    }
+
+    private async void NotificationTimerTick(object? sender, object args) => await RefreshNotificationsAsync();
+
+    private async Task RefreshNotificationsAsync()
+    {
+        if (_notificationTickRunning || _closing || _services is null || _downloadsPage is null) return;
+        _notificationTickRunning = true;
+        try
+        {
+            if (_preferencesLoad is not null) await _preferencesLoad;
+            var repository = _services.GetRequiredService<INotificationRepository>();
+            await repository.InitializeAsync(_lifetime.Token);
+            await _services.GetRequiredService<NotificationCoordinator>().ProcessPendingAsync(
+                _services.GetRequiredService<PreferencesViewModel>().NotificationSettings, _windowActive, _lifetime.Token);
+            _downloadsPage.SetNotificationUnreadCount(await repository.CountUnreadAsync(_lifetime.Token));
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception) { /* The next tick retries; downloads remain usable. */ }
+        finally { _notificationTickRunning = false; }
+    }
+
+    private async void EngineStateChanged(object? sender, EngineState state)
+    {
+        var enteringFailure = Interlocked.Exchange(ref _engineFailed, state.Status == EngineStatus.Failed ? 1 : 0) == 0;
+        if (!enteringFailure || state.Status != EngineStatus.Failed || _closing || _services is null) return;
+        try
+        {
+            var repository = _services.GetRequiredService<INotificationRepository>();
+            await repository.InitializeAsync(_lifetime.Token);
+            await repository.TryAppendAsync(new NotificationDraft(
+                $"engine:{_engineNotificationSession:N}:{state.Revision}", NotificationKind.EngineAttention,
+                null, null, null, "Download engine", state.Message[..Math.Min(state.Message.Length, 512)],
+                DateTimeOffset.UtcNow), _lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception) { /* Engine status remains visible in the banner if storage is unavailable. */ }
     }
 
     private async Task RedirectToPrimaryAsync(Microsoft.Windows.AppLifecycle.AppInstance primary,
@@ -324,6 +420,8 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
     {
         if (_closing) return;
         _closing = true;
+        _notificationTimer?.Stop();
+        if (_observedEngine is not null) _observedEngine.Changed -= EngineStateChanged;
         _openActivation?.Stop();
         _browserBridge?.StopAdmission();
         _window?.DisableInput();
@@ -392,6 +490,11 @@ public partial class App : Microsoft.UI.Xaml.Application, IDesktopLifetimeHost
         finally
         {
             _activationInstance.Activated -= OnProtocolActivated;
+            if (_windowsNotifications is not null)
+            {
+                _windowsNotifications.Activated -= QueueNotificationActivation;
+                _windowsNotifications.Dispose();
+            }
             _openReceiver?.Dispose();
             _tray?.Dispose();
             _instance?.Dispose();

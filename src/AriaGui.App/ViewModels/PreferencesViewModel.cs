@@ -1,4 +1,5 @@
 using AriaGui.Application.Downloads;
+using AriaGui.Application.Notifications;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -8,6 +9,7 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
 {
     private int _themeIndex; private string _defaultFolder = "", _message = "Theme and default folder apply when you save.";
     private DesktopLayout _layout = new();
+    private NotificationPreferences _notificationSettings = new();
     private UserPreferences _saved = new();
     private bool _browserEnabled;
     private bool _browserAutoCapture, _browserStartPaused, _browserAltBypass = true;
@@ -26,6 +28,11 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
     public string BrowserInstallationId { get => _browserInstallationId; set => SetProperty(ref _browserInstallationId, value); }
     public string BrowserStatus { get => _browserStatus; private set => SetProperty(ref _browserStatus, value); }
     public bool TorrentPrivacyNoticeAccepted => _saved.TorrentPrivacyNoticeAccepted;
+    public NotificationPreferences NotificationSettings
+    {
+        get => _notificationSettings;
+        set => SetProperty(ref _notificationSettings, value);
+    }
     public async Task RememberTorrentPrivacyNoticeAsync(CancellationToken token)
     {
         await _saveGate.WaitAsync(token);
@@ -120,7 +127,7 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
         {
             await _saveGate.WaitAsync(token); acquired = true;
             var preferences = _saved with { Theme = (AppTheme)ThemeIndex, DefaultFolder = DefaultFolder.Trim(),
-                Layout = _layout, Browser = BrowserSettings() };
+                Layout = _layout, Browser = BrowserSettings(), Notifications = NotificationSettings };
             await repository.SaveAsync(preferences, token); _saved = preferences; Applied?.Invoke(preferences); Message = "Saved. The folder applies to new downloads.";
         }
         catch (OperationCanceledException) { }
@@ -134,6 +141,7 @@ public sealed class PreferencesViewModel(IUserPreferencesRepository repository, 
         {
             var preferences = await repository.LoadAsync(token); ThemeIndex = (int)preferences.Theme; DefaultFolder = preferences.DefaultFolder;
             _saved = preferences; OnPropertyChanged(nameof(TorrentPrivacyNoticeAccepted)); UpdateLayout(preferences.EffectiveLayout);
+            NotificationSettings = preferences.EffectiveNotifications;
             BrowserEnabled = preferences.EffectiveBrowser.Enabled; BrowserInstallRoot = preferences.EffectiveBrowser.InstallRoot;
             BrowserAutoCapture = preferences.EffectiveBrowser.AutomaticTakeoverEnabled;
             BrowserStartPaused = preferences.EffectiveBrowser.StartPaused;

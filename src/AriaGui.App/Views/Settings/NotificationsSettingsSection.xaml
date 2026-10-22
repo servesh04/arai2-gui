@@ -1,0 +1,44 @@
+<UserControl x:Class="AriaGui.App.Views.Settings.NotificationsSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <InfoBar IsOpen="True" IsClosable="False" Severity="Informational"
+                 Message="Transfer updates remain in the notification center even when desktop alerts are off." />
+
+        <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace2}">
+            <StackPanel>
+                <TextBlock Text="Desktop alerts" FontWeight="SemiBold" />
+                <ToggleSwitch Header="Show desktop notifications"
+                              IsOn="{Binding NotificationDesktopEnabled, Mode=TwoWay}"
+                              Margin="{StaticResource AriaSpace2}" />
+                <ToggleSwitch Header="Completed transfers"
+                              IsOn="{Binding NotificationCompletedEnabled, Mode=TwoWay}"
+                              Margin="{StaticResource AriaSpace2}" />
+                <ToggleSwitch Header="Failed transfers"
+                              IsOn="{Binding NotificationFailedEnabled, Mode=TwoWay}"
+                              Margin="{StaticResource AriaSpace2}" />
+                <ToggleSwitch Header="Engine needs attention"
+                              IsOn="{Binding NotificationEngineEnabled, Mode=TwoWay}"
+                              Margin="{StaticResource AriaSpace2}" />
+            </StackPanel>
+        </Border>
+
+        <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace2}">
+            <StackPanel>
+                <TextBlock Text="Privacy and timing" FontWeight="SemiBold" />
+                <ToggleSwitch Header="Hide file names in desktop notifications"
+                              IsOn="{Binding NotificationHideFileNames, Mode=TwoWay}"
+                              Margin="{StaticResource AriaSpace2}" />
+                <ToggleSwitch Header="Show desktop alerts only when AriaGUI is inactive"
+                              IsOn="{Binding NotificationOnlyWhenInactive, Mode=TwoWay}"
+                              Margin="{StaticResource AriaSpace2}" />
+                <TextBlock Text="Recent alerts are grouped. Older alerts stay in the notification center without appearing on the desktop."
+                           TextWrapping="Wrap" Foreground="{ThemeResource AriaTextSecondaryBrush}"
+                           Margin="{StaticResource AriaSpace2}" />
+            </StackPanel>
+        </Border>
+
+        <HyperlinkButton Content="Reset this section to defaults" Click="ResetClick"
+                         HorizontalAlignment="Left" Margin="{StaticResource AriaSpace2}" />
+    </StackPanel>
+</UserControl>

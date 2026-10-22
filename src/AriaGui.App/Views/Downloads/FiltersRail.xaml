@@ -60,9 +60,13 @@
                         <TextBlock x:Name="HistoryCount" Grid.Column="1" />
                     </Grid>
                 </ToggleButton>
-                <Button IsEnabled="False" Style="{StaticResource AriaSecondaryButtonStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" ToolTipService.ToolTip="Notifications are not available in this build." AutomationProperties.Name="Notifications, unavailable">
-                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="Notifications" /><TextBlock Text="Notifications" /></StackPanel>
-                </Button>
+                <ToggleButton x:Name="NotificationsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="NotificationsClick" AutomationProperties.Name="Notifications">
+                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="Notifications" /><TextBlock Text="Notifications" /></StackPanel>
+                        <TextBlock x:Name="NotificationsCount" Grid.Column="1" />
+                    </Grid>
+                </ToggleButton>
             </StackPanel>
         </ScrollViewer>
         <ToggleButton x:Name="SettingsButton" Grid.Row="2" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" Click="SettingsClick" AutomationProperties.Name="Settings">

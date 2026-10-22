@@ -21,12 +21,14 @@ public sealed partial class FiltersRail : UserControl
 
     public ListView Filters => StatusFilters;
     public event RoutedEventHandler? SettingsRequested;
+    public event RoutedEventHandler? NotificationsRequested;
     public event RoutedEventHandler? ViewChanged;
     public void UpdateSelection(bool history)
     {
         TransferFilters.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
         DownloadsButton.IsChecked = !history;
         HistoryButton.IsChecked = history;
+        NotificationsButton.IsChecked = false;
         SettingsButton.IsChecked = false;
         RefreshCounts();
     }
@@ -41,6 +43,21 @@ public sealed partial class FiltersRail : UserControl
         DownloadsButton.IsChecked = false;
         TransferFilters.Visibility = Visibility.Collapsed;
         HistoryButton.IsChecked = false;
+        NotificationsButton.IsChecked = false;
+    }
+    public void SetNotificationsSelected(bool selected)
+    {
+        NotificationsButton.IsChecked = selected;
+        if (!selected) { UpdateSelection(_page?.ViewModel.IsHistoryView == true); return; }
+        DownloadsButton.IsChecked = false;
+        HistoryButton.IsChecked = false;
+        SettingsButton.IsChecked = false;
+        TransferFilters.Visibility = Visibility.Collapsed;
+    }
+    public void SetNotificationUnreadCount(int count)
+    {
+        NotificationsCount.Text = count > 0 ? count.ToString() : string.Empty;
+        AutomationProperties.SetName(NotificationsButton, $"Notifications, {count} unread");
     }
     private void DownloadsClick(object sender, RoutedEventArgs args)
     {
@@ -53,6 +70,7 @@ public sealed partial class FiltersRail : UserControl
         UpdateSelection(true); ViewChanged?.Invoke(this, args);
     }
     private void SettingsClick(object sender, RoutedEventArgs args) => SettingsRequested?.Invoke(this, args);
+    private void NotificationsClick(object sender, RoutedEventArgs args) => NotificationsRequested?.Invoke(this, args);
 
     private void FiltersRailLoaded(object sender, RoutedEventArgs args) => AttachPage();
 

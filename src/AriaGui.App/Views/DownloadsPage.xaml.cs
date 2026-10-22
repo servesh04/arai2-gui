@@ -18,6 +18,8 @@ using AriaGui.App.Features;
 using AriaGui.App.Services;
 using AriaGui.Infrastructure.Aria2;
 using AriaGui.Infrastructure.Persistence;
+using AriaGui.Application.Notifications;
+using AriaGui.App.Views.Notifications;
 using Microsoft.UI;
 
 namespace AriaGui.App.Views;
@@ -88,12 +90,16 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     private readonly HashSet<CheckBox> _rowChecks = [];
     private bool _exiting;
     private bool _settingsVisible;
+    private bool _notificationsVisible;
+    private readonly INotificationRepository _notificationRepository;
+    private readonly NotificationsViewModel _notificationsViewModel;
     private DownloadItemViewModel? _observedSelected;
     private readonly DispatcherTimer _layoutSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
 
     public DownloadsPage(DownloadsViewModel viewModel, DownloadSummaryViewModel summary, EngineViewModel engine, PreferencesViewModel preferences,
         FeatureFlags features, IHandoffNotifier handoffNotifier, IEngineControl engineControl, ISpeedLimitService speedLimitService,
-        IManagedAria2Engine managedEngine, SqliteTorrentMetadataRepository torrentRepository)
+        IManagedAria2Engine managedEngine, SqliteTorrentMetadataRepository torrentRepository,
+        INotificationRepository notificationRepository, NotificationsViewModel notificationsViewModel)
     {
         ViewModel = viewModel;
         Summary = summary;
@@ -102,6 +108,9 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         Features = features;
         _torrentEngine = (Aria2ProcessManager)managedEngine;
         _torrentRepository = torrentRepository;
+        _notificationRepository = notificationRepository;
+        _notificationsViewModel = notificationsViewModel;
+        _notificationsViewModel.ViewDownloadRequested += ShowNotificationDownload;
 #if DEBUG
         if (AriaGui.App.Services.AppDataPaths.VerificationDirectory is not null)
         {
@@ -128,6 +137,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         _removeAndDeleteMenu.Click += RemoveAndDeleteSelectionClick;
         MoreMenu.Items.Add(_removeAndDeleteMenu);
         FiltersRailControl.ViewChanged += (_, _) => ShowDownloads();
+        FiltersRailControl.NotificationsRequested += (_, _) => ShowNotifications();
 #if DEBUG
         var debugHandoff = new MenuFlyoutItem { Text = "Show browser handoff toast" };
         debugHandoff.Click += (_, _) => HandoffToastControl.TriggerDebug();
@@ -284,6 +294,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
             SettingsHost.Content = settings;
         }
         _settingsVisible = true;
+        _notificationsVisible = false;
         DownloadsContent.Visibility = Visibility.Collapsed;
         HandoffToastControl.Visibility = Visibility.Collapsed;
         SettingsHost.Visibility = Visibility.Visible;
@@ -293,6 +304,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     {
         DownloadsToolbarControl.Visibility = Visibility.Visible;
         _settingsVisible = false;
+        _notificationsVisible = false;
         SettingsHost.Visibility = Visibility.Collapsed;
         DownloadsContent.Visibility = Visibility.Visible;
         HandoffToastControl.Visibility = Visibility.Visible;
@@ -300,6 +312,39 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFilterIndex)));
         RefreshSelectionPresentation();
     }
+    private void ShowNotifications()
+    {
+        if (SettingsHost.Content is not NotificationsPage)
+            SettingsHost.Content = new NotificationsPage(_notificationsViewModel);
+        _settingsVisible = false;
+        _notificationsVisible = true;
+        DownloadsContent.Visibility = Visibility.Collapsed;
+        HandoffToastControl.Visibility = Visibility.Collapsed;
+        SettingsHost.Visibility = Visibility.Visible;
+        FiltersRailControl.SetNotificationsSelected(true);
+        _ = _notificationsViewModel.RefreshAsync();
+    }
+    public void SetNotificationUnreadCount(int count) => FiltersRailControl.SetNotificationUnreadCount(count);
+    public async Task OpenNotificationAsync(NotificationActivationTarget target, CancellationToken token)
+    {
+        if (target.EventId is long id)
+        {
+            try
+            {
+                var entry = await _notificationRepository.GetAsync(id, token);
+                if (entry is { JobId: Guid jobId })
+                {
+                    await _notificationRepository.MarkReadAsync(id, token);
+                    ShowNotificationDownload(jobId);
+                    return;
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+            catch (Exception) { /* The inbox remains available if its target has gone. */ }
+        }
+        ShowNotifications();
+    }
+    private void ShowNotificationDownload(Guid jobId) => ShowHandoffItem(this, jobId);
     private void ShowHandoffItem(object? sender, Guid itemId)
     {
         ShowDownloads();
@@ -525,6 +570,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         var index = Math.Clamp(ViewModel.FilterIndex, 0, FilterLabels.Length - 1);
         FiltersRailControl.UpdateSelection(ViewModel.IsHistoryView);
         if (_settingsVisible) FiltersRailControl.SetSettingsSelected(true);
+        else if (_notificationsVisible) FiltersRailControl.SetNotificationsSelected(true);
         FilterCaption.Text = $"Filters: {FilterLabels[index]}";
         ToolTipService.SetToolTip(FiltersButton, $"{FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");
         AutomationProperties.SetName(FiltersButton, $"Filters: {FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");

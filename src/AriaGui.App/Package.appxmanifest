@@ -5,8 +5,10 @@
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap10 rescap">
+  IgnorableNamespaces="uap uap10 rescap com desktop">
 
   <Identity
     Name="BC1C2CFD-F4A5-45B7-82AD-26C6210B635D"
@@ -46,6 +48,16 @@
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
       <Extensions>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="6F79DA05-92E7-4714-965B-FB12CD034249" />
+        </desktop:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="AriaGui.App.exe" Arguments="----AppNotificationActivated:" DisplayName="AriaGUI">
+              <com:Class Id="6F79DA05-92E7-4714-965B-FB12CD034249" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
         <uap:Extension Category="windows.protocol">
           <uap:Protocol Name="ariagui"><uap:DisplayName>Open AriaGUI</uap:DisplayName></uap:Protocol>
         </uap:Extension>

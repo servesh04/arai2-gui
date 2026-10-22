@@ -1,6 +1,7 @@
 using AriaGui.App.Features;
 using AriaGui.App.ViewModels;
 using AriaGui.Application.Downloads;
+using AriaGui.Application.Notifications;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml.Controls;
 
@@ -36,6 +37,53 @@ public sealed class SettingsViewModel : ObservableObject
     public bool BrowserHostRegistered => HandoffRegistration.RegisteredAppPath() is not null;
     public bool BrowserHostUnregistered => !HandoffRegistration.IsRegistered();
     public bool IsSaving { get => _saving; private set => SetProperty(ref _saving, value); }
+
+    public bool NotificationDesktopEnabled
+    {
+        get => _preferences.NotificationSettings.DesktopEnabled;
+        set => SetNotificationSetting(value, settings => settings.DesktopEnabled,
+            (settings, enabled) => settings with { DesktopEnabled = enabled }, nameof(NotificationDesktopEnabled));
+    }
+    public bool NotificationCompletedEnabled
+    {
+        get => _preferences.NotificationSettings.CompletedEnabled;
+        set => SetNotificationSetting(value, settings => settings.CompletedEnabled,
+            (settings, enabled) => settings with { CompletedEnabled = enabled }, nameof(NotificationCompletedEnabled));
+    }
+    public bool NotificationFailedEnabled
+    {
+        get => _preferences.NotificationSettings.FailedEnabled;
+        set => SetNotificationSetting(value, settings => settings.FailedEnabled,
+            (settings, enabled) => settings with { FailedEnabled = enabled }, nameof(NotificationFailedEnabled));
+    }
+    public bool NotificationEngineEnabled
+    {
+        get => _preferences.NotificationSettings.EngineAttentionEnabled;
+        set => SetNotificationSetting(value, settings => settings.EngineAttentionEnabled,
+            (settings, enabled) => settings with { EngineAttentionEnabled = enabled }, nameof(NotificationEngineEnabled));
+    }
+    public bool NotificationHideFileNames
+    {
+        get => _preferences.NotificationSettings.HideFileNames;
+        set => SetNotificationSetting(value, settings => settings.HideFileNames,
+            (settings, enabled) => settings with { HideFileNames = enabled }, nameof(NotificationHideFileNames));
+    }
+    public bool NotificationOnlyWhenInactive
+    {
+        get => _preferences.NotificationSettings.OnlyWhenInactive;
+        set => SetNotificationSetting(value, settings => settings.OnlyWhenInactive,
+            (settings, enabled) => settings with { OnlyWhenInactive = enabled }, nameof(NotificationOnlyWhenInactive));
+    }
+
+    private void SetNotificationSetting(bool value, Func<NotificationPreferences, bool> read,
+        Func<NotificationPreferences, bool, NotificationPreferences> update, string property)
+    {
+        var old = _preferences.NotificationSettings;
+        if (read(old) == value) return;
+        _preferences.NotificationSettings = update(old, value);
+        OnPropertyChanged(property);
+        _ = SaveOrRevertAsync(() => _preferences.NotificationSettings = old, property);
+    }
 
     public int ThemeIndex
     {
@@ -134,6 +182,13 @@ public sealed class SettingsViewModel : ObservableObject
             case "Integration" when BrowserHandoffAvailable: BrowserEnabled = false; BrowserAutoCapture = false;
                 BrowserAltBypass = true; BrowserStartPaused = false; BrowserMinimumMb = 0;
                 BrowserFileTypes = string.Empty; BrowserExcludedSites = string.Empty; break;
+            case "Notifications":
+                var old = _preferences.NotificationSettings;
+                _preferences.NotificationSettings = new NotificationPreferences();
+                NotifyNotificationSettings();
+                await SaveOrRevertAsync(() => { _preferences.NotificationSettings = old; NotifyNotificationSettings(); },
+                    nameof(NotificationDesktopEnabled));
+                break;
         }
         await Task.CompletedTask;
     }
@@ -162,6 +217,13 @@ public sealed class SettingsViewModel : ObservableObject
             FolderStatus = "The folder could not be checked.";
             return false;
         }
+    }
+
+    private void NotifyNotificationSettings()
+    {
+        foreach (var property in new[] { nameof(NotificationDesktopEnabled), nameof(NotificationCompletedEnabled),
+            nameof(NotificationFailedEnabled), nameof(NotificationEngineEnabled), nameof(NotificationHideFileNames),
+            nameof(NotificationOnlyWhenInactive) }) OnPropertyChanged(property);
     }
 
     private async Task SaveOrRevertAsync(Action revert, string property)

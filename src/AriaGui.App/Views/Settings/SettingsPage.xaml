@@ -15,17 +15,20 @@
         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
             <SelectorBar x:Name="SectionTabs" HorizontalAlignment="Left" SelectionChanged="SectionChanged" AutomationProperties.Name="Settings sections">
                 <SelectorBarItem Text="General" /><SelectorBarItem Text="Appearance" /><SelectorBarItem Text="Downloads" /><SelectorBarItem Text="Network" />
-                <SelectorBarItem Text="BitTorrent" /><SelectorBarItem Text="Integration" /><SelectorBarItem Text="Advanced" /><SelectorBarItem Text="About" />
+                <SelectorBarItem Text="BitTorrent" /><SelectorBarItem Text="Integration" /><SelectorBarItem Text="Notifications" /><SelectorBarItem Text="Advanced" /><SelectorBarItem Text="About" />
             </SelectorBar>
         </ScrollViewer>
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel MaxWidth="720" HorizontalAlignment="Stretch" Spacing="8">
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="720" /></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Spacing="8">
                 <Grid>
                     <TextBlock x:Name="SectionTitle" Text="General" FontSize="20" FontWeight="SemiBold" />
                     <TextBlock Text="{x:Bind ViewModel.SaveStatus, Mode=OneWay}" HorizontalAlignment="Right" Foreground="{ThemeResource AriaTextSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
                 </Grid>
-                <ContentControl x:Name="SectionContent" />
+                <ContentControl x:Name="SectionContent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" />
             </StackPanel>
+            </Grid>
         </ScrollViewer>
     </Grid>
 </Page>

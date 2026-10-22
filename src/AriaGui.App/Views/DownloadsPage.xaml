@@ -73,7 +73,7 @@
                 <downloads:StatusBar x:Name="StatusBarControl" Grid.Row="5" EngineRequested="EngineClick" />
             </Grid>
             <downloads:HandoffToast x:Name="HandoffToastControl" VerticalAlignment="Bottom" HorizontalAlignment="Left" />
-            <ContentControl x:Name="SettingsHost" Visibility="Collapsed" />
+            <ContentControl x:Name="SettingsHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
             </Grid>
         </Border>
     </Grid>
