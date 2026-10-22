@@ -11,6 +11,8 @@
         <local:HttpStatusLabelConverter x:Key="HttpStatusLabel" />
         <local:DownloadTypeLabelConverter x:Key="DownloadType" />
         <local:DetailsDateConverter x:Key="DetailsDate" />
+        <local:TorrentKindVisibilityConverter x:Key="TorrentKindVisibility" />
+        <local:TorrentMetricTextConverter x:Key="TorrentMetricText" />
         <Style x:Key="DetailLabel" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{ThemeResource AriaTextSecondaryBrush}" />
             <Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" />
@@ -78,7 +80,7 @@
                         <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;" FontSize="{StaticResource AriaMinimumFontSize}" />
                     </Button>
                 </Grid>
-                <Border Style="{StaticResource AriaCardStyle}" BorderBrush="{ThemeResource AriaDangerBrush}" Visibility="{Binding Converter={StaticResource FailureVisibility}}">
+                <Border Style="{StaticResource AriaCardStyle}" BorderBrush="{ThemeResource AriaDangerBrush}" Visibility="{Binding RawStatus, Converter={StaticResource FailureVisibility}}">
                     <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" Foreground="{ThemeResource AriaDangerBrush}" FontSize="20" AutomationProperties.AccessibilityView="Raw" />
@@ -90,6 +92,11 @@
                         <Button Grid.Column="2" Content="Retry" Command="{Binding RetryCommand}" Style="{StaticResource AriaSecondaryButtonStyle}" VerticalAlignment="Top" />
                     </Grid>
                 </Border>
+                <StackPanel x:Name="TorrentActivity" Spacing="{StaticResource AriaRadiusControl}" Visibility="Collapsed">
+                    <TextBlock x:Name="TorrentActivityLabel" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
+                    <ProgressBar x:Name="TorrentActivityProgress" Maximum="100" />
+                    <TextBlock x:Name="TorrentActivityProgressText" Text="{Binding SizeLabel}" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaTextSecondaryBrush}" />
+                </StackPanel>
                 <TabView x:Name="DetailsTabs" IsAddTabButtonVisible="False" CanReorderTabs="False" TabWidthMode="SizeToContent" HorizontalAlignment="Stretch">
                     <TabViewItem Header="Overview" IsClosable="False">
                         <Grid x:Name="OverviewCards" ColumnSpacing="{StaticResource AriaRadiusControl}" RowSpacing="{StaticResource AriaRadiusControl}">
@@ -107,6 +114,25 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                         <TextBlock Text="Downloaded" Style="{StaticResource DetailLabel}" />
                                         <TextBlock Grid.Column="1" Text="{Binding SizeLabel}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}" Visibility="{Binding Kind, Converter={StaticResource TorrentKindVisibility}}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Peers / seeds" Style="{StaticResource DetailLabel}" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBlock Text="{Binding Peers, Converter={StaticResource TorrentMetricText}}" Style="{StaticResource DetailValue}" />
+                                            <TextBlock Text=" / " Style="{StaticResource DetailValue}" />
+                                            <TextBlock Text="{Binding Seeds, Converter={StaticResource TorrentMetricText}}" Style="{StaticResource DetailValue}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}" Visibility="{Binding Kind, Converter={StaticResource TorrentKindVisibility}}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Upload" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding UploadBytesPerSecond, Converter={StaticResource TorrentMetricText}, ConverterParameter=Rate}" Style="{StaticResource DetailValue}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}" Visibility="{Binding Kind, Converter={StaticResource TorrentKindVisibility}}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Ratio" Style="{StaticResource DetailLabel}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Ratio, Converter={StaticResource TorrentMetricText}, ConverterParameter=Ratio}" Style="{StaticResource DetailValue}" />
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -171,6 +197,29 @@
                                 </StackPanel>
                             </Border>
                         </Grid>
+                    </TabViewItem>
+                    <TabViewItem x:Name="TorrentFilesTab" Header="Files" IsClosable="False">
+                        <StackPanel Spacing="{StaticResource AriaRadiusControl}" Padding="{StaticResource AriaSpace2}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}">
+                                <TextBlock Text="Selected files" FontWeight="SemiBold" />
+                                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE946;" FontSize="{StaticResource AriaMinimumFontSize}" ToolTipService.ToolTip="Selected files are published after verification." AutomationProperties.Name="Selected files are published after verification" />
+                            </StackPanel>
+                            <ItemsControl x:Name="TorrentFiles" AutomationProperties.Name="Torrent files">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="local:TorrentDetailFileRow">
+                                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}" RowSpacing="{StaticResource AriaRadiusControl}" Padding="{StaticResource AriaSpace1}">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                            <CheckBox IsChecked="{Binding Selected}" IsHitTestVisible="False" IsTabStop="False" AutomationProperties.Name="File selected state" />
+                                            <local:MeasuredMiddleEllipsisTextBlock Grid.Column="1" FullText="{Binding RelativePath}" ToolTipService.ToolTip="{Binding RelativePath}" />
+                                            <TextBlock Grid.Column="2" Text="{Binding SizeLabel}" Style="{StaticResource DetailValue}" />
+                                            <ProgressBar Grid.Row="1" Grid.Column="1" Value="{Binding Progress}" Maximum="100" />
+                                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ProgressLabel}" Style="{StaticResource DetailValue}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                     </TabViewItem>
                     <TabViewItem Header="Options" IsClosable="False">
                         <StackPanel Spacing="{StaticResource AriaRadiusControl}" Padding="{StaticResource AriaSpace2}">

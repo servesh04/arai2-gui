@@ -152,7 +152,7 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     private bool CanExecuteEntry(DownloadEntry entry, DownloadAction action) => entry.Kind == TransferKind.Torrent
         ? _connected && (action switch
         {
-            DownloadAction.Pause => entry.Progress.Status == DownloadStatus.Downloading,
+            DownloadAction.Pause => entry.TorrentStage is TorrentStage.Waiting or TorrentStage.Checking or TorrentStage.Downloading,
             DownloadAction.Resume => entry.Progress.Status == DownloadStatus.Paused,
             DownloadAction.Remove => true,
             DownloadAction.Retry => entry.Progress.Status == DownloadStatus.Failed,

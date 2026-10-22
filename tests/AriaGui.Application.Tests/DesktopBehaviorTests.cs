@@ -7,6 +7,33 @@ namespace AriaGui.Application.Tests;
 
 public sealed class DesktopBehaviorTests
 {
+    [Fact]
+    public void Torrent_waiting_pause_and_checking_publication_progress_use_one_row()
+    {
+        var id = Guid.NewGuid();
+        var draft = TorrentTransferProjection.Map(new(id, "bundle", new string('a', 40),
+            @"C:\Downloads", DateTimeOffset.UtcNow, TorrentStage.AwaitingSelection, 200, 100, 0, 0, 2, 1));
+        var item = new DownloadItemViewModel(draft, (_, _, _) => Task.CompletedTask);
+        item.Update(draft, connected: true);
+        Assert.False(item.PauseCommand.CanExecute(null));
+
+        var waiting = TorrentTransferProjection.Map(new(id, "bundle", new string('a', 40),
+            @"C:\Downloads", DateTimeOffset.UtcNow, TorrentStage.Waiting, 200, 100, 20, 0, 2, 1));
+        item.Update(waiting, connected: true);
+        Assert.True(item.PauseCommand.CanExecute(null));
+        Assert.True(item.ShowPause);
+
+        var checking = TorrentTransferProjection.Map(new(id, "bundle", new string('a', 40),
+            @"C:\Downloads", DateTimeOffset.UtcNow, TorrentStage.Checking, 200, 100, 20, 0, 2, 1,
+            VerifiedBytes: 75));
+        Assert.Equal(75, checking.TorrentVerifiedBytes);
+        var publishing = TorrentTransferProjection.Publishing(checking, 65, 100);
+        Assert.Equal(TorrentStage.Publishing, publishing.TorrentStage);
+        Assert.Equal("Publishing to Downloads", publishing.SubstateText);
+        Assert.Equal(65, publishing.Progress.DownloadedBytes);
+        Assert.Equal(100, publishing.Progress.TotalBytes);
+    }
+
     [Theory]
     [InlineData(TorrentStage.AwaitingSelection, null, DownloadStatus.Queued, null)]
     [InlineData(TorrentStage.Checking, null, DownloadStatus.Downloading, "Checking files")]
@@ -140,6 +167,15 @@ public sealed class DesktopBehaviorTests
         var id = Guid.NewGuid(); var attempt = Guid.NewGuid(); var time = DateTimeOffset.UtcNow;
         return new(new(id, "file.bin", new("https://example.com/file.bin"), @"C:\Downloads\file.bin", time),
             new(attempt, id, "0000000000000001", time), new(Guid.NewGuid(), id, attempt, "file.bin", 100), new(status, 0, 100, 0));
+    }
+    [Fact]
+    public async Task Batch_remove_is_confirmed_when_entry_disappears()
+    {
+        var row = Entry(DownloadStatus.Downloading);
+        DownloadEntry? current = row;
+        var results = await DownloadBatch.ExecuteAsync([row.Job.Id], DownloadAction.Remove,
+            _ => current, () => true, (_, _, _) => { current = null; return Task.CompletedTask; }, default);
+        Assert.Equal(BatchOutcome.Confirmed, Assert.Single(results).Outcome);
     }
     [Fact]
     public async Task Batch_rechecks_mixed_stale_and_disconnected_selection_and_deduplicates()

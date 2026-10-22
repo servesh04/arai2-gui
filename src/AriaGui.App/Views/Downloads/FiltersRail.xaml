@@ -12,15 +12,6 @@
             <ToggleButton x:Name="DownloadsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" Click="DownloadsClick" AutomationProperties.Name="Downloads">
                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusOuter}"><icons:FluentIcon IconName="Download" /><TextBlock Text="Downloads" /></StackPanel>
             </ToggleButton>
-            <ToggleButton x:Name="TorrentsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="TorrentsClick" AutomationProperties.Name="Torrents">
-                <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}">
-                        <icons:FluentIcon IconName="List" /><TextBlock Text="Torrents" />
-                    </StackPanel>
-                    <TextBlock x:Name="TorrentCount" Grid.Column="1" />
-                </Grid>
-            </ToggleButton>
         </StackPanel>
         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="{StaticResource AriaRadiusOuter}">

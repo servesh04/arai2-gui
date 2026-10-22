@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 using AriaGui.Application.Engine;
 using AriaGui.Application.Downloads;
 using AriaGui.Core.Downloads;
@@ -9,6 +10,12 @@ namespace AriaGui.Infrastructure.Aria2;
 
 public sealed partial class Aria2ProcessManager
 {
+    private readonly ConcurrentDictionary<Guid, TorrentPublicationProgress> _publicationProgress = new();
+    public event EventHandler<TorrentPublicationProgress>? TorrentPublicationProgressChanged;
+
+    public TorrentPublicationProgress? GetTorrentPublicationProgress(Guid jobId) =>
+        _publicationProgress.TryGetValue(jobId, out var progress) ? progress : null;
+
     public async Task PauseTorrentAsync(Guid jobId, CancellationToken token)
     {
         await _gate.WaitAsync(token).ConfigureAwait(false);
@@ -93,6 +100,12 @@ public sealed partial class Aria2ProcessManager
     {
         if (!privacyNoticeAccepted)
             throw new EngineException(EngineFailure.RequestRejected, "Review the torrent IP exposure and firewall notice before adding a torrent.");
+        if (!Path.IsPathFullyQualified(destinationRoot))
+            throw new EngineException(EngineFailure.RequestRejected, "Torrent destination folder is unsafe.");
+        var publicRoot = Path.GetFullPath(destinationRoot);
+        if (!Directory.Exists(publicRoot)
+            || publicRoot.StartsWith(Path.GetFullPath(_options.RuntimeDirectory) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new EngineException(EngineFailure.RequestRejected, "Torrent destination folder is unsafe.");
         var repository = _torrentRepository ?? throw new EngineException(EngineFailure.RequestRejected, "Torrent storage is unavailable.");
         var payloadRoot = Path.Combine(_options.RuntimeDirectory, "torrent-payloads", Guid.NewGuid().ToString("N"));
         return await repository.CreateDraftAsync(metainfo, fileIndices, payloadRoot, destinationRoot, token).ConfigureAwait(false);
@@ -211,15 +224,29 @@ public sealed partial class Aria2ProcessManager
         }
     }
 
-    private static async Task PublishTorrentCoreAsync(SqliteTorrentMetadataRepository repository,
+    private async Task PublishTorrentCoreAsync(SqliteTorrentMetadataRepository repository,
         StoredTorrentDraft draft, TorrentEngineObservation observed, CancellationToken token,
         IProgress<TorrentPublicationProgress>? progress = null)
     {
-        try { await new TorrentPublisher(repository).PublishAsync(draft, observed, token, progress).ConfigureAwait(false); }
+        try { await new TorrentPublisher(repository).PublishAsync(draft, observed, token,
+            new PublicationReporter(this, progress)).ConfigureAwait(false); }
         catch (IOException)
         {
             await repository.SetStageAsync(draft.JobId, TorrentStage.Failed, token).ConfigureAwait(false);
             throw;
+        }
+        finally { _publicationProgress.TryRemove(draft.JobId, out _); }
+    }
+
+    private sealed class PublicationReporter(Aria2ProcessManager engine, IProgress<TorrentPublicationProgress>? other)
+        : IProgress<TorrentPublicationProgress>
+    {
+        public void Report(TorrentPublicationProgress value)
+        {
+            engine._publicationProgress[value.JobId] = value;
+            try { engine.TorrentPublicationProgressChanged?.Invoke(engine, value); }
+            catch { /* A view callback must not interrupt publication. */ }
+            other?.Report(value);
         }
     }
 

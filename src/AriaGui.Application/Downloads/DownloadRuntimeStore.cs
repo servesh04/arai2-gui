@@ -19,6 +19,8 @@ public sealed record DownloadEntry(DownloadJob Job, TransferAttempt Attempt,
     public int? FileCount { get; init; }
     public int? SelectedFileCount { get; init; }
     public long? TorrentTotalBytes { get; init; }
+    public TorrentStage? TorrentStage { get; init; }
+    public long? TorrentVerifiedBytes { get; init; }
 }
 public sealed record CompletionNotice(Guid AttemptId, string FileName, VerificationStatus Verification = VerificationStatus.NotSupplied);
 

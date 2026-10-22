@@ -101,6 +101,7 @@ public sealed partial class Aria2RpcClient
         var state = Text(status, "status");
         var stage = state switch
         {
+            "waiting" when Text(status, "verifyIntegrityPending", optional: true) == "true" => TorrentStage.Checking,
             "waiting" => TorrentStage.Waiting,
             "paused" => TorrentStage.Stopped,
             "active" when status.TryGetProperty("verifiedLength", out _) ||

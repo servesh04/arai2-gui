@@ -12,6 +12,13 @@
         <local:DownloadProgressBrushConverter x:Key="ProgressBrush" />
         <local:DownloadDateLabelConverter x:Key="DateLabel" />
         <local:DownloadDateTooltipConverter x:Key="DateTooltip" />
+        <local:TorrentKindVisibilityConverter x:Key="TorrentKindVisibility" />
+        <local:NonemptyTextVisibilityConverter x:Key="NonemptyTextVisibility" />
+        <local:TorrentMetricTextConverter x:Key="TorrentMetricText" />
+        <local:CurrentStatusVisibilityConverter x:Key="CurrentStatusVisibility" />
+        <local:CurrentStatusLabelConverter x:Key="CurrentStatusLabel" />
+        <local:CurrentStatusGlyphConverter x:Key="CurrentStatusGlyph" />
+        <local:BooleanVisibilityConverter x:Key="BooleanVisibility" />
         <Style x:Key="CellText" TargetType="TextBlock">
             <Setter Property="FontSize" Value="{StaticResource AriaMinimumFontSize}" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -33,32 +40,34 @@
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="5" /></Grid.RowDefinitions>
                 <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <TextBlock Text="{Binding Converter={StaticResource ProgressText}}" FontSize="{StaticResource AriaMinimumFontSize}" TextTrimming="CharacterEllipsis" Typography.NumeralAlignment="Tabular" />
+                    <TextBlock Text="{Binding Path=., Converter={StaticResource ProgressText}}" FontSize="{StaticResource AriaMinimumFontSize}" TextTrimming="CharacterEllipsis" Typography.NumeralAlignment="Tabular" />
                     <TextBlock Grid.Column="1" Text="{Binding ProgressLabel}" FontSize="{StaticResource AriaMinimumFontSize}" HorizontalAlignment="Right" TextAlignment="Right" Typography.NumeralAlignment="Tabular" />
                 </Grid>
-                <ProgressBar Grid.Row="1" Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" Maximum="100" Height="5" Foreground="{Binding Converter={StaticResource ProgressBrush}}" CornerRadius="3" />
+                <ProgressBar Grid.Row="1" Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" Maximum="100" Height="5" Foreground="{Binding Path=., Converter={StaticResource ProgressBrush}}" CornerRadius="3" />
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="StatusCellTemplate" x:DataType="vm:DownloadItemViewModel">
             <Grid Margin="8,3" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="5" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=Plain}" AutomationProperties.AccessibilityView="Raw">
-                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding Converter={StaticResource StatusGlyph}}" FontSize="12" />
-                    <TextBlock Text="{Binding Converter={StaticResource StatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" />
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" Spacing="5" Visibility="{Binding RawStatus, Converter={StaticResource CurrentStatusVisibility}, ConverterParameter=Plain}" AutomationProperties.AccessibilityView="Raw">
+                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding RawStatus, Converter={StaticResource CurrentStatusGlyph}}" FontSize="12" />
+                    <TextBlock Text="{Binding RawStatus, Converter={StaticResource CurrentStatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" />
                 </StackPanel>
-                <Border Style="{StaticResource AriaStatusPillStyle}" HorizontalAlignment="Left" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=Pill}" AutomationProperties.AccessibilityView="Raw">
+                <Border Style="{StaticResource AriaStatusPillStyle}" HorizontalAlignment="Left" Visibility="{Binding RawStatus, Converter={StaticResource CurrentStatusVisibility}, ConverterParameter=Pill}" AutomationProperties.AccessibilityView="Raw">
                     <StackPanel Orientation="Horizontal" Spacing="5">
-                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding Converter={StaticResource StatusGlyph}}" FontSize="12" />
-                        <TextBlock Text="{Binding Converter={StaticResource StatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" />
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding RawStatus, Converter={StaticResource CurrentStatusGlyph}}" FontSize="12" />
+                        <TextBlock Text="{Binding RawStatus, Converter={StaticResource CurrentStatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
-                <StackPanel Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=Failed}" Spacing="2">
+                <StackPanel Visibility="{Binding RawStatus, Converter={StaticResource CurrentStatusVisibility}, ConverterParameter=Failed}" Spacing="2">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="12" Foreground="{ThemeResource AriaDangerBrush}" AutomationProperties.AccessibilityView="Raw" />
                         <TextBlock Text="Failed" FontSize="{StaticResource AriaMinimumFontSize}" FontWeight="SemiBold" VerticalAlignment="Center" />
                         <Button Content="Retry" Command="{Binding RetryCommand}" Style="{StaticResource AriaSecondaryButtonStyle}" MinHeight="26" Padding="8,2" AutomationProperties.Name="Retry failed download" />
                     </StackPanel>
-                    <TextBlock Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=FailedReason}" />
+                    <TextBlock Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding FailureReason, Converter={StaticResource NonemptyTextVisibility}}" />
                 </StackPanel>
+                <TextBlock Text="{Binding SubstateText}" Grid.Row="1" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaTextSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding SubstateText}" Visibility="{Binding SubstateText, Converter={StaticResource NonemptyTextVisibility}}" />
             </Grid>
         </DataTemplate>
     </UserControl.Resources>
@@ -103,40 +112,55 @@
                                 <Grid Tag="1">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                     <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding FileName, Converter={StaticResource FileGlyph}}" FontSize="16" Margin="8,0,2,0" AutomationProperties.AccessibilityView="Raw" />
-                                    <local:MeasuredMiddleEllipsisTextBlock Grid.Column="1" FullText="{Binding FileName}" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" Margin="6,0" ToolTipService.ToolTip="{Binding FileName}" AutomationProperties.AccessibilityView="Raw" />
+                                    <Grid Grid.Column="1" VerticalAlignment="Center" ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="BT" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaTextSecondaryBrush}" ToolTipService.ToolTip="BitTorrent transfer" Visibility="{Binding Kind, Converter={StaticResource TorrentKindVisibility}}" AutomationProperties.Name="BitTorrent transfer" />
+                                        <local:MeasuredMiddleEllipsisTextBlock Grid.Column="1" FullText="{Binding FileName}" FontSize="{StaticResource AriaMinimumFontSize}" VerticalAlignment="Center" Margin="6,0" ToolTipService.ToolTip="{Binding FileName}" AutomationProperties.AccessibilityView="Raw" />
+                                    </Grid>
                                     <StackPanel Tag="HoverActions" Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="2" Visibility="Collapsed" Background="{ThemeResource AriaSurfaceBrush}">
-                                        <Button Style="{StaticResource RowIconButton}" Command="{Binding RetryCommand}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=Retry}" ToolTipService.ToolTip="Retry" AutomationProperties.Name="Retry download"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" /></Button>
-                                        <Button Style="{StaticResource RowIconButton}" Command="{Binding PauseCommand}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=Pause}" ToolTipService.ToolTip="Pause" AutomationProperties.Name="Pause download"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE769;" FontSize="12" /></Button>
-                                        <Button Style="{StaticResource RowIconButton}" Command="{Binding ResumeCommand}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=Resume}" ToolTipService.ToolTip="Resume" AutomationProperties.Name="Resume download"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE768;" FontSize="12" /></Button>
+                                        <Button Style="{StaticResource RowIconButton}" Command="{Binding RetryCommand}" Visibility="{Binding ShowRetry, Converter={StaticResource BooleanVisibility}}" ToolTipService.ToolTip="Retry" AutomationProperties.Name="Retry download"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" /></Button>
+                                        <Button Style="{StaticResource RowIconButton}" Command="{Binding PauseCommand}" Visibility="{Binding ShowPause, Converter={StaticResource BooleanVisibility}}" ToolTipService.ToolTip="Pause" AutomationProperties.Name="Pause download"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE769;" FontSize="12" /></Button>
+                                        <Button Style="{StaticResource RowIconButton}" Command="{Binding ResumeCommand}" Visibility="{Binding ShowResume, Converter={StaticResource BooleanVisibility}}" ToolTipService.ToolTip="Resume" AutomationProperties.Name="Resume download"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE768;" FontSize="12" /></Button>
                                         <Button Style="{StaticResource RowIconButton}" Command="{Binding OpenFolderCommand}" ToolTipService.ToolTip="Open folder" AutomationProperties.Name="Open download folder"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE838;" FontSize="12" /></Button>
                                         <Button Style="{StaticResource RowIconButton}" Click="RowOverflowClick" ToolTipService.ToolTip="More actions" AutomationProperties.Name="More download actions"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE712;" FontSize="12" /></Button>
                                     </StackPanel>
                                 </Grid>
-                                <ContentControl Tag="3" Content="{Binding}" ContentTemplate="{StaticResource ProgressCellTemplate}" />
-                                <ContentControl Tag="4" Content="{Binding}" ContentTemplate="{StaticResource StatusCellTemplate}" />
+                                <ContentControl Tag="3" Content="{Binding Path=.}" ContentTemplate="{StaticResource ProgressCellTemplate}" />
+                                <ContentControl Tag="4" Content="{Binding Path=.}" ContentTemplate="{StaticResource StatusCellTemplate}" />
                                 <TextBlock Tag="5" Text="{Binding SpeedLabel}" Style="{StaticResource NumericCellText}" AutomationProperties.AccessibilityView="Raw" />
                                 <TextBlock Tag="6" Text="{Binding EtaLabel}" Style="{StaticResource NumericCellText}" AutomationProperties.AccessibilityView="Raw" />
                                 <TextBlock Tag="100" Text="{Binding Entry.Job.CreatedAt, Converter={StaticResource DateLabel}}" ToolTipService.ToolTip="{Binding Entry.Job.CreatedAt, Converter={StaticResource DateTooltip}}" Style="{StaticResource CellText}" AutomationProperties.AccessibilityView="Raw" />
                                 <TextBlock Tag="2" Text="{Binding TotalSizeLabel}" Style="{StaticResource NumericCellText}" AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock Tag="101" Text="{Binding Peers, Converter={StaticResource TorrentMetricText}}" Style="{StaticResource NumericCellText}" />
+                                <TextBlock Tag="102" Text="{Binding Seeds, Converter={StaticResource TorrentMetricText}}" Style="{StaticResource NumericCellText}" />
+                                <TextBlock Tag="103" Text="{Binding UploadBytesPerSecond, Converter={StaticResource TorrentMetricText}, ConverterParameter=Rate}" Style="{StaticResource NumericCellText}" />
+                                <TextBlock Tag="104" Text="{Binding Ratio, Converter={StaticResource TorrentMetricText}, ConverterParameter=Ratio}" Style="{StaticResource NumericCellText}" />
                             </Grid>
                             <Grid x:Name="NarrowRow" Tag="NarrowRow" Visibility="Collapsed" Padding="8,5" RowSpacing="5">
                                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                 <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding FileName, Converter={StaticResource FileGlyph}}" FontSize="16" Margin="0,0,6,0" AutomationProperties.AccessibilityView="Raw" />
-                                    <local:MeasuredMiddleEllipsisTextBlock Grid.Column="1" FullText="{Binding FileName}" FontSize="{StaticResource AriaMinimumFontSize}" ToolTipService.ToolTip="{Binding FileName}" AutomationProperties.AccessibilityView="Raw" />
-                                    <Button Grid.Column="2" Style="{StaticResource RowIconButton}" Click="RowOverflowClick" ToolTipService.ToolTip="More actions" AutomationProperties.Name="More download actions"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE712;" FontSize="12" /></Button>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding FileName, Converter={StaticResource FileGlyph}}" FontSize="16" Margin="0,0,6,0" AutomationProperties.AccessibilityView="Raw" />
+                                        <Grid Grid.Column="1" ColumnSpacing="{StaticResource AriaRadiusControl}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="BT" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaTextSecondaryBrush}" ToolTipService.ToolTip="BitTorrent transfer" Visibility="{Binding Kind, Converter={StaticResource TorrentKindVisibility}}" AutomationProperties.Name="BitTorrent transfer" />
+                                        <local:MeasuredMiddleEllipsisTextBlock Grid.Column="1" FullText="{Binding FileName}" FontSize="{StaticResource AriaMinimumFontSize}" ToolTipService.ToolTip="{Binding FileName}" AutomationProperties.AccessibilityView="Raw" />
+                                    </Grid>
+                                        <Button Grid.Column="2" Style="{StaticResource RowIconButton}" Click="RowOverflowClick" ToolTipService.ToolTip="More actions" AutomationProperties.Name="More download actions"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE712;" FontSize="12" /></Button>
                                 </Grid>
                                 <Grid Grid.Row="1" ColumnSpacing="8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" Maximum="100" Height="5" Foreground="{Binding Converter={StaticResource ProgressBrush}}" CornerRadius="3" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+                                    <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" Maximum="100" Height="5" Foreground="{Binding Path=., Converter={StaticResource ProgressBrush}}" CornerRadius="3" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
                                     <TextBlock Grid.Column="1" Text="{Binding ProgressLabel}" FontSize="{StaticResource AriaMinimumFontSize}" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
-                                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding Converter={StaticResource StatusGlyph}}" FontSize="12" />
-                                        <TextBlock Text="{Binding Converter={StaticResource StatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" />
+                                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding RawStatus, Converter={StaticResource CurrentStatusGlyph}}" FontSize="12" />
+                                        <TextBlock Text="{Binding RawStatus, Converter={StaticResource CurrentStatusLabel}}" FontSize="{StaticResource AriaMinimumFontSize}" />
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Grid.Row="2" Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding Converter={StaticResource RowVisibility}, ConverterParameter=FailedReason}" />
+                                <StackPanel Grid.Row="2">
+                                    <TextBlock Text="{Binding SubstateText}" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaTextSecondaryBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding SubstateText}" Visibility="{Binding SubstateText, Converter={StaticResource NonemptyTextVisibility}}" />
+                                    <TextBlock Text="{Binding FailureReason}" Foreground="{ThemeResource AriaDangerBrush}" FontSize="{StaticResource AriaMinimumFontSize}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FailureReason}" Visibility="{Binding FailureReason, Converter={StaticResource NonemptyTextVisibility}}" />
+                                </StackPanel>
                             </Grid>
                         </Grid>
                     </DataTemplate>

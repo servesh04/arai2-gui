@@ -40,6 +40,10 @@ public sealed partial class SelectionBar : UserControl
     {
         _page ??= FindAncestor<DownloadsPage>(this);
         if (_page is null) return;
+        OverflowRetry.Command = _page.ViewModel.BatchRetryCommand;
+        RecoverItem.Command = _page.ViewModel.BatchRecoverCommand;
+        RestartFreshItem.Command = _page.ViewModel.BatchRestartFreshCommand;
+        RemoveItem.Command = _page.ViewModel.BatchRemoveCommand;
         _page.ViewModel.PropertyChanged -= ViewModelChanged;
         _page.ViewModel.PropertyChanged += ViewModelChanged;
         _page.ViewModel.Downloads.CollectionChanged -= DownloadsChanged;

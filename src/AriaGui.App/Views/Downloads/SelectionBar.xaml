@@ -19,13 +19,13 @@
                 <MenuFlyout x:Name="MoreMenu">
                     <MenuFlyoutItem x:Name="OverflowRetry" Text="Retry" Command="{Binding ViewModel.BatchRetryCommand}" Visibility="Collapsed" />
                     <MenuFlyoutItem x:Name="RecoverItem" Text="Recover" Command="{Binding ViewModel.BatchRecoverCommand}" />
-                    <MenuFlyoutItem Text="Restart fresh (keep partial files)" Command="{Binding ViewModel.BatchRestartFreshCommand}" />
+                    <MenuFlyoutItem x:Name="RestartFreshItem" Text="Restart fresh (keep partial files)" Command="{Binding ViewModel.BatchRestartFreshCommand}" />
                     <MenuFlyoutItem Text="Move earlier in queue" Click="SingleActionClick" Tag="MoveUp" />
                     <MenuFlyoutItem Text="Move later in queue" Click="SingleActionClick" Tag="MoveDown" />
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem Text="Open file" Click="SingleActionClick" Tag="OpenFile" />
                     <MenuFlyoutItem Text="Open folder" Click="SingleActionClick" Tag="OpenFolder" />
-                    <MenuFlyoutItem Text="Remove from list" Command="{Binding ViewModel.BatchRemoveCommand}" />
+                    <MenuFlyoutItem x:Name="RemoveItem" Text="Remove from list" Command="{Binding ViewModel.BatchRemoveCommand}" />
                 </MenuFlyout>
             </DropDownButton.Flyout>
         </DropDownButton>

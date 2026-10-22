@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Windows.System;
 using AriaGui.Application.Downloads;
+using AriaGui.Core.Downloads;
 using AriaGui.Application.Engine;
 using System.ComponentModel;
 using Microsoft.UI.Xaml.Media;
@@ -30,22 +31,18 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     public PreferencesViewModel Preferences { get; }
     public FeatureFlags Features { get; }
     public WindowId TorrentWindowId { get; set; }
-    private bool _torrentMode;
-    public bool TorrentMode => _torrentMode;
-    public IReadOnlyDictionary<DownloadFilter, int> TorrentCounts => TorrentWorkspaceControl?.Counts
-        ?? new Dictionary<DownloadFilter, int>();
     public int ActiveFilterIndex
     {
-        get => _torrentMode ? TorrentWorkspaceControl?.FilterIndex ?? 0 : ViewModel.FilterIndex;
+        get => ViewModel.FilterIndex;
         set
         {
-            if (_torrentMode) TorrentWorkspaceControl.FilterIndex = value;
-            else ViewModel.FilterIndex = value;
+            ViewModel.FilterIndex = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFilterIndex)));
         }
     }
     private readonly Aria2ProcessManager _torrentEngine;
     private readonly SqliteTorrentMetadataRepository _torrentRepository;
+    private MenuFlyoutItem? _removeAndDeleteMenu;
     private Grid Toolbar => DownloadsToolbarControl.LayoutRoot;
     private StackPanel PrimaryActions => DownloadsToolbarControl.Primary;
     private StackPanel SelectedActions => SelectionBarControl.Actions;
@@ -126,11 +123,10 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         StatusBarControl.ApplyServices(engineControl, speedLimitService, features);
         HandoffToastControl.Initialize(handoffNotifier, features);
         HandoffToastControl.ShowRequested += ShowHandoffItem;
-        TorrentWorkspaceControl.Initialize(_torrentRepository, _torrentEngine);
-        TorrentWorkspaceControl.AddRequested += (_, _) => _ = AddTorrentAsync();
-        TorrentWorkspaceControl.DownloadsRequested += (_, _) => ShowDownloads();
-        TorrentWorkspaceControl.CountsChanged += (_, _) => FiltersRailControl.RefreshCounts();
-        FiltersRailControl.TorrentsRequested += (_, _) => ShowTorrents();
+        DetailsPaneControl.Initialize(_torrentRepository, _torrentEngine);
+        _removeAndDeleteMenu = new MenuFlyoutItem { Text = "Remove and delete torrent files…" };
+        _removeAndDeleteMenu.Click += RemoveAndDeleteSelectionClick;
+        MoreMenu.Items.Add(_removeAndDeleteMenu);
         FiltersRailControl.ViewChanged += (_, _) => ShowDownloads();
 #if DEBUG
         var debugHandoff = new MenuFlyoutItem { Text = "Show browser handoff toast" };
@@ -212,7 +208,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
             if (e.PropertyName == nameof(ViewModel.BatchMessage)) UpdateBatchNotice();
             if (e.PropertyName == nameof(ViewModel.BatchResults)) BatchDetailsButton.Visibility = ViewModel.BatchResults.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             if (e.PropertyName == nameof(ViewModel.IsEmpty)) EmptyStateControl.SetVisible(ViewModel.IsEmpty);
-            if (e.PropertyName == nameof(ViewModel.FilterIndex) && !_torrentMode)
+            if (e.PropertyName == nameof(ViewModel.FilterIndex))
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFilterIndex)));
         };
     }
@@ -227,44 +223,46 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     private void MainMenuInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     { AppMenuButton.Flyout?.ShowAt(AppMenuButton); args.Handled = true; }
     private async void AddInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-    { args.Handled = true; await ShowDialogAsync(new Downloads.AddDownloadDialog(ViewModel)); }
-    private async void AddClick(object sender, RoutedEventArgs args) => await ShowDialogAsync(new Downloads.AddDownloadDialog(ViewModel));
-    private async Task AddTorrentAsync()
+    { args.Handled = true; await AddDownloadAsync(); }
+    private async void AddClick(object sender, RoutedEventArgs args) => await AddDownloadAsync();
+    private Downloads.AddDownloadDialog CreateAddDialog(string? torrentPath = null)
+    {
+        if (!string.IsNullOrWhiteSpace(Preferences.DefaultFolder)) ViewModel.DirectoryPath = Preferences.DefaultFolder;
+        return new Downloads.AddDownloadDialog(ViewModel,
+        TorrentWindowId, AppDataPaths.RuntimeDirectory, Preferences.TorrentPrivacyNoticeAccepted,
+        async (metainfo, indices, destination, accepted, token) =>
+        {
+            var id = await _torrentEngine.CreateTorrentDraftAsync(metainfo, indices, destination, accepted, token);
+            try { await Preferences.RememberTorrentPrivacyNoticeAsync(token); }
+            catch (Exception ex) when (ex is DownloadRequestException or IOException or UnauthorizedAccessException)
+            { /* The accepted draft remains valid; show the notice again if saving fails. */ }
+            return id;
+        }, torrentPath);
+    }
+    private async Task AddDownloadAsync(string? torrentPath = null)
     {
         if (_dialogOpen || _exiting || TorrentWindowId.Value == 0) return;
-        var dialog = new Downloads.TorrentAddDialog(TorrentWindowId, ViewModel.DirectoryPath,
-            AppDataPaths.RuntimeDirectory, Preferences.TorrentPrivacyNoticeAccepted,
-            async (metainfo, indices, destination, accepted, token) =>
-            {
-                var id = await _torrentEngine.CreateTorrentDraftAsync(metainfo, indices, destination, accepted, token);
-                try { await Preferences.RememberTorrentPrivacyNoticeAsync(token); }
-                catch (Exception ex) when (ex is AriaGui.Application.Downloads.DownloadRequestException or IOException
-                    or UnauthorizedAccessException)
-                { /* The accepted draft remains valid; the notice is shown again if saving fails. */ }
-                return id;
-            });
+        var dialog = CreateAddDialog(torrentPath);
         await ShowDialogAsync(dialog);
         if (dialog.AddedJobId is not { } id) return;
-        ShowTorrents();
-        await TorrentWorkspaceControl.SelectAsync(id);
         try { await _torrentEngine.DispatchTorrentAsync(id, CancellationToken.None); }
         catch (Exception ex) when (ex is AriaGui.Application.Engine.EngineException
             or AriaGui.Application.Downloads.DownloadStorageException or IOException)
-        { TorrentWorkspaceControl.ShowOperationError(ex.Message); }
-        await TorrentWorkspaceControl.SelectAsync(id);
+        { await ShowDialogAsync(new ContentDialog { Title = "Torrent could not start", Content = ex.Message, CloseButtonText = "Close" }); }
+        ShowHandoffItem(this, id);
     }
-
-    private void ShowTorrents()
+    private void WorkspaceDragOver(object sender, DragEventArgs args)
     {
-        if (_settingsVisible) ShowDownloads();
-        _torrentMode = true;
-        TransferWorkspace.Visibility = Visibility.Collapsed;
-        TorrentWorkspaceControl.Visibility = Visibility.Visible;
-        DownloadsToolbarControl.Visibility = Visibility.Collapsed;
-        SelectionBarControl.Visibility = Visibility.Collapsed;
-        FiltersRailControl.SetTorrentSelected();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFilterIndex)));
-        TorrentWorkspaceControl.SetActive(true);
+        if (!args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+        args.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        args.DragUIOverride.Caption = "Add torrent";
+    }
+    private async void WorkspaceDrop(object sender, DragEventArgs args)
+    {
+        if (!args.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+        var files = await args.DataView.GetStorageItemsAsync();
+        var torrent = files.FirstOrDefault(file => Path.GetExtension(file.Path).Equals(".torrent", StringComparison.OrdinalIgnoreCase));
+        if (torrent is not null) { args.Handled = true; await AddDownloadAsync(torrent.Path); }
     }
     private void HistoryMenuClick(object sender, RoutedEventArgs args)
     {
@@ -279,8 +277,6 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     }
     private void PreferencesClick(object sender, RoutedEventArgs args)
     {
-        TorrentWorkspaceControl.SetActive(false);
-        _torrentMode = false;
         if (SettingsHost.Content is not Settings.SettingsPage)
         {
             var settings = new Settings.SettingsPage(Preferences, Features);
@@ -295,10 +291,6 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     }
     private void ShowDownloads()
     {
-        _torrentMode = false;
-        TorrentWorkspaceControl.SetActive(false);
-        TorrentWorkspaceControl.Visibility = Visibility.Collapsed;
-        TransferWorkspace.Visibility = Visibility.Visible;
         DownloadsToolbarControl.Visibility = Visibility.Visible;
         _settingsVisible = false;
         SettingsHost.Visibility = Visibility.Collapsed;
@@ -353,7 +345,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         catch (System.Runtime.InteropServices.COMException) when (_exiting || XamlRoot is null) { }
         finally { _activeDialog = null; _dialogOpen = false; }
     }
-    public void PrepareForExit() { _exiting = true; TorrentWorkspaceControl.SetActive(false); _layoutSaveTimer.Stop(); _activeDialog?.Hide(); Preferences.PropertyChanged -= PreferencesChanged; }
+    public void PrepareForExit() { _exiting = true; _layoutSaveTimer.Stop(); _activeDialog?.Hide(); Preferences.PropertyChanged -= PreferencesChanged; }
     public Task SaveLayoutAsync() => Preferences.SaveLayoutAsync();
 
     private void SizeActiveDialog()
@@ -445,6 +437,13 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         TransferMenu.IsEnabled = selected is not null;
         foreach (var item in TransferMenu.Items) item.DataContext = selected;
         foreach (var item in MoreMenu.Items) item.DataContext = selected;
+        if (_removeAndDeleteMenu is not null)
+        {
+            var torrentSelection = TransferList.SelectedItems.Cast<DownloadItemViewModel>().ToArray();
+            _removeAndDeleteMenu.Visibility = torrentSelection.Length > 0
+                && torrentSelection.All(item => item.Kind == TransferKind.Torrent && item.RemoveAndDeleteCommand.CanExecute(null))
+                ? Visibility.Visible : Visibility.Collapsed;
+        }
         foreach (var item in TransferMenu.Items.Concat(MoreMenu.Items).OfType<MenuFlyoutItem>())
             if (item.Tag is string tag) item.IsEnabled = TransferList.SelectedItems.Count == 1 && SingleCommand(selected, tag)?.CanExecute(null) == true;
         DetailsHost.DataContext = selected;
@@ -765,7 +764,28 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
             var entry = new MenuFlyoutItem { Text = label, Tag = tag, IsEnabled = TransferList.SelectedItems.Count == 1 && SingleCommand(TransferList.SelectedItem as DownloadItemViewModel, tag)?.CanExecute(null) == true };
             entry.Click += SingleActionClick; menu.Items.Add(entry);
         }
+        if (TransferList.SelectedItems.Count > 0 && TransferList.SelectedItems.Cast<DownloadItemViewModel>()
+            .All(selected => selected.Kind == TransferKind.Torrent && selected.RemoveAndDeleteCommand.CanExecute(null)))
+        {
+            var delete = new MenuFlyoutItem { Text = "Remove and delete torrent files…" };
+            delete.Click += RemoveAndDeleteSelectionClick;
+            menu.Items.Add(delete);
+        }
         menu.ShowAt(TransferList, new FlyoutShowOptions { Position = args.GetPosition(TransferList) }); args.Handled = true;
+    }
+
+    private async void RemoveAndDeleteSelectionClick(object sender, RoutedEventArgs args)
+    {
+        var selected = TransferList.SelectedItems.Cast<DownloadItemViewModel>().ToArray();
+        if (selected.Length == 0 || selected.Any(item => item.Kind != TransferKind.Torrent
+            || !item.RemoveAndDeleteCommand.CanExecute(null))) return;
+        var dialog = new ContentDialog { XamlRoot = XamlRoot,
+            Title = selected.Length == 1 ? "Remove torrent and delete files?" : $"Remove {selected.Length} torrents and delete files?",
+            Content = "This deletes app-owned private payloads and published copies for the selected torrents.",
+            PrimaryButtonText = "Remove and delete", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        foreach (var item in selected)
+            if (item.RemoveAndDeleteCommand.CanExecute(null)) await item.RemoveAndDeleteCommand.ExecuteAsync(null);
     }
     private void PreferencesChanged(object? sender, PropertyChangedEventArgs args) => ApplyLayout();
     private void ScheduleLayoutSave() { _layoutSaveTimer.Stop(); _layoutSaveTimer.Start(); }

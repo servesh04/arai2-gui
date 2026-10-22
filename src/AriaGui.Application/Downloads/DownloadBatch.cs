@@ -36,7 +36,8 @@ public static class DownloadBatch
             {
                 await execute(id, action, token);
                 var updated = resolve(id);
-                var confirmed = updated is not null && updated.PendingOperation is null && (action switch
+                var confirmed = action == DownloadAction.Remove && updated is null
+                    || updated is not null && updated.PendingOperation is null && (action switch
                 {
                     DownloadAction.Pause => updated.Progress.Status == DownloadStatus.Paused,
                     DownloadAction.Resume => updated.Progress.Status is DownloadStatus.Downloading or DownloadStatus.Queued,

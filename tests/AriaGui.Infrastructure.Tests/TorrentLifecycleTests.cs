@@ -15,6 +15,48 @@ namespace AriaGui.Infrastructure.Tests;
 public sealed class TorrentLifecycleTests
 {
     [Fact]
+    public async Task Unsafe_torrent_destination_does_not_persist_a_draft()
+    {
+        using var runtime = new Runtime();
+        var privateDestination = Path.Combine(runtime.Root, "inside");
+        Directory.CreateDirectory(privateDestination);
+        var repository = new SqliteTorrentMetadataRepository(runtime.DatabasePath);
+        await repository.InitializeAsync();
+        await using var engine = new Aria2ProcessManager(
+            new Aria2ProcessOptions(Path.Combine(runtime.Root, "aria2c.exe"), runtime.Root), torrentRepository: repository);
+
+        await Assert.ThrowsAsync<EngineException>(() => engine.CreateTorrentDraftAsync(
+            Metainfo(), [2], privateDestination, true, default));
+        Assert.Empty(await repository.LoadDraftIdsAsync());
+    }
+
+    [Theory]
+    [InlineData("waiting", "true", TorrentStage.Checking)]
+    [InlineData("waiting", "false", TorrentStage.Waiting)]
+    public async Task Queued_hash_check_has_checking_substate(string status, string pending, TorrentStage expected)
+    {
+        var manifest = TorrentManifestParser.Parse(Metainfo());
+        var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.TorrentRpcTests", "checking"));
+        const string gid = "1234567890abcdef";
+        using var http = new HttpClient(new Handler(async (request, token) =>
+        {
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            return Json(new { jsonrpc = "2.0", id = body.RootElement.GetProperty("id").GetString(), result = new
+            {
+                gid, status, verifyIntegrityPending = pending, infoHash = manifest.InfoHash, dir = root,
+                totalLength = "5", completedLength = "0", downloadSpeed = "0",
+                files = new[]
+                {
+                    new { index = "1", path = Path.Combine(root, "bundle", "first.bin"), length = "2", completedLength = "0", selected = "false" },
+                    new { index = "2", path = Path.Combine(root, "bundle", "second.bin"), length = "3", completedLength = "0", selected = "true" }
+                }
+            } });
+        }));
+        var rpc = new Aria2RpcClient(http, new("http://127.0.0.1:16800/jsonrpc"), "secret", TimeSpan.FromSeconds(1));
+        Assert.Equal(expected, (await rpc.GetTorrentAsync(gid, manifest, manifest.SelectFiles([2]), root, default))!.Stage);
+    }
+
+    [Fact]
     public async Task Torrent_file_progress_preserves_manifest_order_completion_and_selection()
     {
         var manifest = TorrentManifestParser.Parse(Metainfo());

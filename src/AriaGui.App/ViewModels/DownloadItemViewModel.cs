@@ -44,7 +44,8 @@ public sealed class DownloadItemViewModel : ObservableObject
     private bool CanExecute(DownloadAction action) => _entry.Kind == TransferKind.Torrent
         ? _connected && (action switch
         {
-            DownloadAction.Pause => _entry.Progress.Status == DownloadStatus.Downloading,
+            DownloadAction.Pause => _entry.TorrentStage is AriaGui.Core.Downloads.TorrentStage.Waiting
+                or AriaGui.Core.Downloads.TorrentStage.Checking or AriaGui.Core.Downloads.TorrentStage.Downloading,
             DownloadAction.Resume => _entry.Progress.Status == DownloadStatus.Paused,
             DownloadAction.Remove => true,
             DownloadAction.Retry => _entry.Progress.Status == DownloadStatus.Failed,
@@ -66,6 +67,8 @@ public sealed class DownloadItemViewModel : ObservableObject
     public int? FileCount => _entry.FileCount;
     public int? SelectedFileCount => _entry.SelectedFileCount;
     public long? TorrentTotalBytes => _entry.TorrentTotalBytes;
+    public TorrentStage? TorrentStage => _entry.TorrentStage;
+    public long? TorrentVerifiedBytes => _entry.TorrentVerifiedBytes;
     public long? TotalBytes => _entry.Progress.TotalBytes;
     public long DownloadedBytes => _entry.Progress.DownloadedBytes;
     public long BytesPerSecond => _entry.Progress.BytesPerSecond;
@@ -130,7 +133,7 @@ public sealed class DownloadItemViewModel : ObservableObject
         _connected = connected;
         foreach (var command in Commands) command.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(Status));
-        foreach (var name in new[] { nameof(Kind), nameof(SubstateText), nameof(Peers), nameof(Seeds), nameof(UploadBytesPerSecond), nameof(Ratio), nameof(FileCount), nameof(SelectedFileCount), nameof(TorrentTotalBytes) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(Kind), nameof(SubstateText), nameof(Peers), nameof(Seeds), nameof(UploadBytesPerSecond), nameof(Ratio), nameof(FileCount), nameof(SelectedFileCount), nameof(TorrentTotalBytes), nameof(TorrentStage), nameof(TorrentVerifiedBytes) }) OnPropertyChanged(name);
         foreach (var name in new[] { nameof(Entry), nameof(TotalBytes), nameof(DownloadedBytes), nameof(BytesPerSecond), nameof(EstimatedTimeRemaining), nameof(RawStatus), nameof(SourceUrl) }) OnPropertyChanged(name);
         OnPropertyChanged(nameof(Progress));
         OnPropertyChanged(nameof(IsIndeterminate));

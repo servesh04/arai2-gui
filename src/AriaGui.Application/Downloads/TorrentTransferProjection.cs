@@ -6,10 +6,25 @@ public sealed record TorrentTransferState(Guid JobId, string Name, string InfoHa
     DateTimeOffset CreatedAt, TorrentStage Stage, long TotalBytes, long SelectedBytes,
     long SelectedCompletedBytes, long DownloadBytesPerSecond, int FileCount, int SelectedFileCount,
     string? FailureReason = null, string? Activity = null, int? Peers = null, int? Seeds = null,
-    long? UploadBytesPerSecond = null, double? Ratio = null, bool IsPaused = false, bool IsRemoved = false);
+    long? UploadBytesPerSecond = null, double? Ratio = null, bool IsPaused = false, bool IsRemoved = false,
+    long? VerifiedBytes = null);
 
 public static class TorrentTransferProjection
 {
+    public static DownloadEntry Publishing(DownloadEntry row, long publishedBytes, long selectedBytes)
+    {
+        if (row.Kind != TransferKind.Torrent || publishedBytes < 0 || selectedBytes < 0)
+            throw new ArgumentException("Publication progress must belong to a torrent.");
+        var folder = Path.GetFileName(Path.GetDirectoryName(row.Job.Destination));
+        return row with
+        {
+            Progress = new DownloadSnapshot(DownloadStatus.Downloading,
+                Math.Min(publishedBytes, selectedBytes), selectedBytes, 0),
+            TorrentStage = TorrentStage.Publishing,
+            SubstateText = $"Publishing to {folder}"
+        };
+    }
+
     public static DownloadEntry Map(TorrentTransferState torrent)
     {
         var status = torrent.IsRemoved ? DownloadStatus.Removed : torrent.IsPaused ? DownloadStatus.Paused
@@ -56,7 +71,9 @@ public static class TorrentTransferProjection
             Ratio = torrent.Ratio,
             FileCount = torrent.FileCount,
             SelectedFileCount = torrent.SelectedFileCount,
-            TorrentTotalBytes = torrent.TotalBytes
+            TorrentTotalBytes = torrent.TotalBytes,
+            TorrentStage = torrent.Stage,
+            TorrentVerifiedBytes = torrent.Stage == TorrentStage.Checking ? torrent.VerifiedBytes : null
         };
     }
 }

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Globalization;
 using AriaGui.App.ViewModels;
 using AriaGui.Application.Downloads;
 using AriaGui.Core.Downloads;
@@ -23,6 +24,10 @@ public sealed partial class DownloadsTable : UserControl
     public bool IsEngineReady { get => (bool)GetValue(IsEngineReadyProperty); set => SetValue(IsEngineReadyProperty, value); }
 
     private const int DateColumnKey = 100;
+    private const int PeersColumnKey = 101;
+    private const int SeedsColumnKey = 102;
+    private const int UploadColumnKey = 103;
+    private const int RatioColumnKey = 104;
     private const double DateColumnWidth = 132;
     private DownloadsViewModel ViewModel = null!;
     private PreferencesViewModel Preferences = null!;
@@ -75,8 +80,6 @@ public sealed partial class DownloadsTable : UserControl
         var table = (DownloadsTable)sender;
         var ready = (bool)args.NewValue;
         table._engineReady = ready;
-        table.TransferList.IsEnabled = ready;
-        table.TransferList.Opacity = ready ? 1 : 0.62;
         foreach (var row in table._cellColumns.Keys) table.ApplyEngineVisualState(row);
     }
 
@@ -128,7 +131,9 @@ public sealed partial class DownloadsTable : UserControl
     {
         if (sender is not DownloadItemViewModel item) return;
         if (args.PropertyName is nameof(DownloadItemViewModel.Entry) or nameof(DownloadItemViewModel.RawStatus))
+        {
             SyncDisplayItems();
+        }
         if (TransferList.ContainerFromItem(item) is ListViewItem container)
         {
             AutomationProperties.SetName(container, AccessibleName(item));
@@ -247,15 +252,26 @@ public sealed partial class DownloadsTable : UserControl
         var dataColumns = Preferences.Columns
             .Where(column => column.Visible && (column.Column != DownloadSortColumn.Size || _showSizeColumn))
             .ToArray();
-        var availableForData = Math.Max(0, viewport - DateColumnWidth);
+        var torrentColumns = VisibleTorrentColumns();
+        var torrentWidth = torrentColumns.Count * DateColumnWidth;
+        var availableForData = Math.Max(0, viewport - DateColumnWidth - torrentWidth);
         var resolved = DownloadTableWidthResolver.Resolve(dataColumns, availableForData,
             _tableLeadingInset + _tableTrailingInset, _tableSizingMode);
-        _resolvedColumns = resolved.Columns;
+        var columns = resolved.Columns.ToArray();
+        if (_tableSizingMode == DownloadTableSizingMode.Manual)
+        {
+            var nameIndex = Array.FindIndex(columns, column => column.Column == DownloadSortColumn.Name);
+            var spare = availableForData - _tableLeadingInset - _tableTrailingInset - columns.Sum(column => column.Width);
+            if (nameIndex >= 0 && spare > 0)
+                columns[nameIndex] = columns[nameIndex] with { Width = columns[nameIndex].Width + spare };
+        }
+        _resolvedColumns = columns;
         _displayColumns = dataColumns
             .Select(column => new DisplayColumn((int)column.Column, ColumnLabel(column.Column), ResolvedWidth(column.Column), column.Column))
             .Append(new DisplayColumn(DateColumnKey, "Date added", DateColumnWidth))
+            .Concat(torrentColumns.Select(column => new DisplayColumn(column.Key, column.Label, DateColumnWidth)))
             .ToArray();
-        TableCanvas.Width = resolved.CanvasWidth + DateColumnWidth;
+        TableCanvas.Width = resolved.CanvasWidth + DateColumnWidth + torrentWidth;
         TableHeader.Padding = new Thickness(_tableLeadingInset, 0, _tableTrailingInset, 0);
         BuildHeader();
         RefreshRealizedRows();
@@ -263,6 +279,45 @@ public sealed partial class DownloadsTable : UserControl
     }
 
     private double ResolvedWidth(DownloadSortColumn column) => _resolvedColumns.FirstOrDefault(c => c.Column == column)?.Width ?? 0;
+
+    private IReadOnlyList<(int Key, string Label)> VisibleTorrentColumns()
+    {
+        var choice = Preferences.Layout.EffectiveTorrentColumns;
+        return new[]
+        {
+            (PeersColumnKey, "Peers", choice.Peers), (SeedsColumnKey, "Seeds", choice.Seeds),
+            (UploadColumnKey, "Upload", choice.Upload), (RatioColumnKey, "Ratio", choice.Ratio)
+        }.Where(column => column.Item3 == TorrentColumnVisibility.Visible)
+            .Select(column => (column.Item1, column.Item2)).ToArray();
+    }
+
+    private TorrentColumnVisibility MetricChoice(int key)
+    {
+        var choice = Preferences.Layout.EffectiveTorrentColumns;
+        return key switch
+        {
+            PeersColumnKey => choice.Peers, SeedsColumnKey => choice.Seeds,
+            UploadColumnKey => choice.Upload, RatioColumnKey => choice.Ratio,
+            _ => TorrentColumnVisibility.Automatic
+        };
+    }
+
+    private void SetMetricChoice(int key, TorrentColumnVisibility visibility)
+    {
+        var choice = Preferences.Layout.EffectiveTorrentColumns;
+        var updated = key switch
+        {
+            PeersColumnKey => choice with { Peers = visibility },
+            SeedsColumnKey => choice with { Seeds = visibility },
+            UploadColumnKey => choice with { Upload = visibility },
+            RatioColumnKey => choice with { Ratio = visibility },
+            _ => choice
+        };
+        Preferences.UpdateLayout(Preferences.Layout with { TorrentColumns = updated });
+        ScheduleLayoutSave();
+        _headerLayout = "";
+        ResolveTableWidths();
+    }
 
     private void RowLoaded(object sender, RoutedEventArgs args) => RegisterRowGrid((Grid)sender);
 
@@ -385,7 +440,7 @@ public sealed partial class DownloadsTable : UserControl
 
     private double RowHeight(DownloadItemViewModel item) => item.RawStatus == DownloadStatus.Failed
         ? 58
-        : Preferences.CompactRows ? 32 : 40;
+        : !string.IsNullOrWhiteSpace(item.SubstateText) ? 52 : Preferences.CompactRows ? 32 : 40;
 
     private static string ColumnLabel(DownloadSortColumn column) => column switch
     {
@@ -503,6 +558,16 @@ public sealed partial class DownloadsTable : UserControl
             menu.Items.Add(entry);
         }
         menu.Items.Add(new MenuFlyoutSeparator());
+        foreach (var (key, label) in new[] { (PeersColumnKey, "Peers"), (SeedsColumnKey, "Seeds"),
+                     (UploadColumnKey, "Upload"), (RatioColumnKey, "Ratio") })
+        {
+            var entry = new ToggleMenuFlyoutItem { Text = $"{label} (BitTorrent)",
+                IsChecked = MetricChoice(key) == TorrentColumnVisibility.Visible };
+            entry.Click += (_, _) => SetMetricChoice(key, entry.IsChecked
+                ? TorrentColumnVisibility.Visible : TorrentColumnVisibility.Hidden);
+            menu.Items.Add(entry);
+        }
+        menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(new ToggleMenuFlyoutItem { Text = "Date added", IsChecked = true, IsEnabled = false });
         return menu;
     }
@@ -525,7 +590,8 @@ public sealed partial class DownloadsTable : UserControl
 
     private void ResizeColumn(DownloadSortColumn column, double delta)
     {
-        var columns = Preferences.Columns.Select(c => c.Visible
+        var wasFit = _tableSizingMode == DownloadTableSizingMode.Fit;
+        var columns = Preferences.Columns.Select(c => c.Visible && wasFit
             ? c with { Width = Math.Clamp(ResolvedWidth(c.Column), DesktopLayout.MinimumColumnWidth, DesktopLayout.MaximumColumnWidth) }
             : c).ToArray();
         _tableSizingMode = DownloadTableSizingMode.Manual;
@@ -602,7 +668,9 @@ public sealed partial class DownloadsTable : UserControl
             DownloadStatus.Removed => "Stopped",
             _ => item.RawStatus.ToString()
         };
-        return $"{item.FileName}, {status}, {item.ProgressLabel}, {item.SpeedLabel}";
+        return $"{item.FileName}, {(item.Kind == TransferKind.Torrent ? "BitTorrent, " : "")}{status}"
+            + (string.IsNullOrWhiteSpace(item.SubstateText) ? "" : $", {item.SubstateText}")
+            + $", {item.ProgressLabel}, {item.SpeedLabel}";
     }
 
     private void PrepareContextMenu(ListViewItem container, DownloadItemViewModel item, MenuFlyout menu)
@@ -660,14 +728,27 @@ public sealed partial class DownloadsTable : UserControl
         menu.Items.Add(copy);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(CommandItem("Remove from list", item.RemoveCommand));
-        var delete = new MenuFlyoutItem { Text = "Delete files from disk…", IsEnabled = false };
-        ToolTipService.SetToolTip(delete, "File deletion is unavailable in this build.");
-        menu.Items.Add(delete);
+        if (item.Kind == TransferKind.Torrent && item.RemoveAndDeleteCommand.CanExecute(null))
+        {
+            var delete = new MenuFlyoutItem { Text = "Remove and delete files…", Tag = item };
+            delete.Click += RemoveAndDeleteClick;
+            menu.Items.Add(delete);
+        }
         return menu;
     }
 
     private static MenuFlyoutItem CommandItem(string text, System.Windows.Input.ICommand command) =>
         new() { Text = text, Command = command };
+
+    private async void RemoveAndDeleteClick(object sender, RoutedEventArgs args)
+    {
+        if ((sender as FrameworkElement)?.Tag is not DownloadItemViewModel item || !item.RemoveAndDeleteCommand.CanExecute(null)) return;
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = "Remove torrent and delete files?",
+            Content = "This deletes the app-owned private payload and published copies for this torrent.",
+            PrimaryButtonText = "Remove and delete", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && item.RemoveAndDeleteCommand.CanExecute(null))
+            await item.RemoveAndDeleteCommand.ExecuteAsync(null);
+    }
 
     private void CopyLinkClick(object sender, RoutedEventArgs args)
     {
@@ -807,8 +888,90 @@ public sealed partial class DownloadsTable : UserControl
             }
             var date = new CheckBox { Content = "Date added", IsChecked = true, IsEnabled = false, Width = 160 };
             panel.Children.Add(date);
+            foreach (var (key, label) in new[] { (PeersColumnKey, "Peers"), (SeedsColumnKey, "Seeds"),
+                         (UploadColumnKey, "Upload"), (RatioColumnKey, "Ratio") })
+            {
+                var check = new CheckBox { Content = $"{label} (BitTorrent)",
+                    IsChecked = MetricChoice(key) == TorrentColumnVisibility.Visible };
+                check.Click += (_, _) => SetMetricChoice(key, check.IsChecked == true
+                    ? TorrentColumnVisibility.Visible : TorrentColumnVisibility.Hidden);
+                panel.Children.Add(check);
+            }
         }
         Refresh();
         await showDialog(new ContentDialog { Title = "Transfer columns", Content = panel, CloseButtonText = "Close" });
     }
+}
+
+public sealed class TorrentKindVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is TransferKind.Torrent ? Visibility.Visible : Visibility.Collapsed;
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
+}
+
+public sealed class CurrentStatusVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        if (value is not DownloadStatus status) return Visibility.Collapsed;
+        var visible = (parameter as string) switch
+        {
+            "Plain" => status is DownloadStatus.Downloading or DownloadStatus.Completed,
+            "Pill" => status is DownloadStatus.Queued or DownloadStatus.Paused or DownloadStatus.Interrupted or DownloadStatus.Removed,
+            "Failed" => status == DownloadStatus.Failed,
+            _ => false
+        };
+        return visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
+}
+
+public sealed class CurrentStatusLabelConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) => value is DownloadStatus status
+        ? status switch { DownloadStatus.Queued => "Waiting", DownloadStatus.Removed => "Stopped", _ => status.ToString() }
+        : string.Empty;
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
+}
+
+public sealed class CurrentStatusGlyphConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) => value is DownloadStatus status
+        ? status switch
+        {
+            DownloadStatus.Downloading => "\uE896", DownloadStatus.Completed => "\uE73E",
+            DownloadStatus.Failed => "\uE711", DownloadStatus.Queued => "\uE823",
+            DownloadStatus.Paused => "\uE769", DownloadStatus.Interrupted => "\uE7BA",
+            DownloadStatus.Removed => "\uE71A", _ => "\uE946"
+        }
+        : "\uE946";
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
+}
+
+public sealed class BooleanVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) => value is true ? Visibility.Visible : Visibility.Collapsed;
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
+}
+
+public sealed class NonemptyTextVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is string text && !string.IsNullOrWhiteSpace(text) ? Visibility.Visible : Visibility.Collapsed;
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
+}
+
+public sealed class TorrentMetricTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) => value switch
+    {
+        long rate when parameter is "Rate" => $"{FormatBytes(rate)}/s",
+        double ratio when parameter is "Ratio" => ratio.ToString("0.00", CultureInfo.CurrentCulture),
+        int count => count.ToString(CultureInfo.CurrentCulture),
+        _ => "—"
+    };
+    private static string FormatBytes(long bytes) => bytes >= 1_073_741_824 ? $"{bytes / 1_073_741_824d:0.#} GiB"
+        : bytes >= 1_048_576 ? $"{bytes / 1_048_576d:0.#} MiB" : bytes >= 1024 ? $"{bytes / 1024d:0.#} KiB" : $"{bytes} B";
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
 }

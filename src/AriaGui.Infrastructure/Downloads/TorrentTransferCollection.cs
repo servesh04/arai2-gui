@@ -17,7 +17,20 @@ public sealed class TorrentTransferCollection(
     private Task? _loop;
     private bool _initialized;
 
-    public void Start() => _loop ??= RunAsync(_lifetime.Token);
+    public void Start()
+    {
+        if (_loop is not null) return;
+        _engine.TorrentPublicationProgressChanged += PublicationProgressChanged;
+        _loop = RunAsync(_lifetime.Token);
+    }
+
+    private void PublicationProgressChanged(object? sender, TorrentPublicationProgress progress)
+    {
+        var rows = store.Current.Torrents;
+        if (!rows.Any(row => row.Job.Id == progress.JobId)) return;
+        store.PublishTorrents(rows.Select(row => row.Job.Id == progress.JobId
+            ? TorrentTransferProjection.Publishing(row, progress.PublishedBytes, progress.TotalBytes) : row));
+    }
 
     public async Task RefreshAsync(CancellationToken token = default)
     {
@@ -51,7 +64,8 @@ public sealed class TorrentTransferCollection(
                     UploadBytesPerSecond: observed?.UploadBytesPerSecond,
                     Ratio: observed?.UploadedBytes is long uploaded && observed.CompletedBytes > 0
                         ? uploaded / (double)observed.CompletedBytes : null,
-                    IsPaused: draft.Stage == TorrentStage.Stopped);
+                    IsPaused: draft.Stage == TorrentStage.Stopped,
+                    VerifiedBytes: observed?.Stage == TorrentStage.Checking ? observed.VerifiedBytes : null);
                 rows.Add(TorrentTransferProjection.Map(state));
             }
             store.PublishTorrents(rows);
@@ -75,6 +89,7 @@ public sealed class TorrentTransferCollection(
 
     public async ValueTask DisposeAsync()
     {
+        _engine.TorrentPublicationProgressChanged -= PublicationProgressChanged;
         _lifetime.Cancel();
         if (_loop is not null)
             try { await _loop.ConfigureAwait(false); }
