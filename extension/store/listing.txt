@@ -1,0 +1,22 @@
+Name: AriaGUI Download Handoff
+Short description: Send eligible Chrome downloads to the AriaGUI desktop app when both are enabled.
+
+Single purpose:
+Hand off eligible Chrome downloads to the locally installed AriaGUI download manager.
+
+Detailed description:
+AriaGUI Download Handoff connects Chrome to the AriaGUI desktop app on Windows. Once you enable capture in both places, eligible HTTP and HTTPS downloads can be handed to AriaGUI. Chrome keeps its download if the app is unavailable or declines the handoff. You can turn capture off, exclude the current site, or hold Alt while clicking a link to keep that download in Chrome. The extension can use matching site cookies for a download that needs them. AriaGUI stores download history locally; it does not save handoff cookies there. Install and register the AriaGUI desktop app before enabling capture.
+
+Permissions rationale:
+downloads: detect eligible downloads and remove Chrome's copy only after AriaGUI accepts a handoff.
+nativeMessaging: communicate with the locally installed AriaGUI app.
+cookies: use cookies matching the download URL for authenticated handoff.
+storage: remember capture settings, excluded sites, and short-lived duplicate/bypass markers.
+contextMenus: offer Download with AriaGUI for a link.
+webRequest and HTTP/HTTPS site access: confirm the request method and detect Alt bypass on links before handoff.
+
+Review instructions:
+Install the AriaGUI Windows app and register its browser host in Settings > Integration. Enable capture there and in the extension popup. A public GET download should appear in AriaGUI; if the app is stopped, Chrome should retain the download. Use a separate test browser profile and a local test origin. The store-assigned extension ID must be added to the app's native-host allowlist before this test can pass.
+
+Submission assets still needed in the developer dashboard:
+A publicly hosted URL for privacy.html, at least one accurate screenshot of the installed extension, and the required store listing image. Confirm the store-assigned extension ID before submitting for review.

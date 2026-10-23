@@ -30,6 +30,11 @@ jobs:
           $package = Get-ChildItem artifacts/packages -Recurse -File -Filter 'AriaGUI-*-win-x64.zip' | Select-Object -First 1
           if (!$package) { throw 'Portable ZIP candidate missing.' }
           ./scripts/Test-PortablePackage.ps1 -PackagePath $package.FullName
+      - name: Build Chrome Web Store upload candidate
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'AriaGUI-Chrome-Web-Store.zip'
+          ./scripts/Build-ChromeStorePackage.ps1 -OutputPath $package
+          ./scripts/Test-ChromeStorePackage.ps1 -PackagePath $package
       - name: Retain test and profiling results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -49,5 +54,12 @@ jobs:
             artifacts/packages/**/*.zip
             artifacts/packages/**/SHA256SUMS.txt
             artifacts/packages/**/package-report.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain Chrome Web Store upload candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: chrome-web-store-candidate
+          path: ${{ runner.temp }}/AriaGUI-Chrome-Web-Store.zip
           if-no-files-found: error
           retention-days: 14
