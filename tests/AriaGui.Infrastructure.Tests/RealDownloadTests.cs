@@ -261,7 +261,7 @@ public sealed class RealDownloadTests
         Assert.Single(db.Attempts);
         Assert.Single(db.Files);
         Assert.Equal(OperationStatus.Confirmed, Assert.Single(db.Operations).Status);
-        Assert.Equal(13, db.Database.GetAppliedMigrations().Count());
+        Assert.Equal(db.Database.GetMigrations().Count(), db.Database.GetAppliedMigrations().Count());
         Assert.False(db.Database.HasPendingModelChanges());
         db.Database.OpenConnection();
         using var command = db.Database.GetDbConnection().CreateCommand();

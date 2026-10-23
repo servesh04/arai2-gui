@@ -93,8 +93,6 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
         await coordinator.RemoveAsync(active.Job.Id);
         await WaitAsync(coordinator, () => store.Current.Downloads.Single(row => row.Job.Id == last.Job.Id).Progress.Status == DownloadStatus.Downloading);
         Assert.Single(store.Current.Downloads, row => row.Progress.Status == DownloadStatus.Downloading);
-        foreach (var row in store.Current.Downloads.Where(row => row.Progress.Status is DownloadStatus.Queued or DownloadStatus.Downloading).ToArray())
-            await coordinator.RemoveAsync(row.Job.Id);
         var reopened = runtime.Repository();
         Assert.Equal(1, (await reopened.LoadQueuePolicyAsync(default)).Limit);
     }
