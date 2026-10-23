@@ -298,17 +298,31 @@ public sealed class RealDownloadTests
     public async Task Http_outcomes_and_unknown_totals_are_saved(string route, DownloadStatus expected)
     {
         using var runtime = new DownloadTestRuntime();
-        await using var server = new LocalHttpServer();
+        await using var server = new LocalHttpServer { ChunkedPauseAfterBytes = route == "chunked" ? 64 * 1024 : 0 };
         await using var engine = new Aria2ProcessManager(runtime.Options);
         await engine.StartAsync(CancellationToken.None);
         var store = new DownloadRuntimeStore();
         var coordinator = runtime.Coordinator(new ManagedAria2Client(engine), store);
         await coordinator.AddAsync(new Uri(new Uri(server.Url), route).AbsoluteUri, directory: runtime.Output, fileName: route + ".bin");
-        var sawUnknownTotal = false;
-        var entry = await WaitForTerminalAsync(coordinator, store, observation =>
+        if (route == "chunked")
         {
-            if (observation.Progress.DownloadedBytes > 0 && observation.Progress.TotalBytes is null) sawUnknownTotal = true;
-        });
+            try
+            {
+                await server.ChunkedPaused.WaitAsync(TimeSpan.FromSeconds(30));
+                var deadline = Stopwatch.StartNew();
+                var sawUnknownTotal = false;
+                while (deadline.Elapsed < TimeSpan.FromSeconds(30) && !sawUnknownTotal)
+                {
+                    await coordinator.RefreshAsync();
+                    var progress = Assert.Single(store.Current.Downloads).Progress;
+                    sawUnknownTotal = progress.DownloadedBytes > 0 && progress.TotalBytes is null;
+                    if (!sawUnknownTotal) await Task.Delay(40);
+                }
+                Assert.True(sawUnknownTotal);
+            }
+            finally { server.ReleaseChunked(); }
+        }
+        var entry = await WaitForTerminalAsync(coordinator, store);
         Assert.Equal(expected, entry.Progress.Status);
         var saved = Assert.Single(await runtime.Repository().LoadAsync(CancellationToken.None));
         Assert.Equal(expected, saved.Progress.Status);
@@ -316,7 +330,6 @@ public sealed class RealDownloadTests
         if (route == "empty") { Assert.Equal(0, saved.Progress.TotalBytes); Assert.Equal(100, saved.Progress.Percentage); }
         if (route == "chunked")
         {
-            Assert.True(sawUnknownTotal);
             Assert.Equal(server.Payload, await File.ReadAllBytesAsync(saved.Job.Destination));
         }
     }
