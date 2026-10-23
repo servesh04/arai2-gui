@@ -39,7 +39,7 @@ public static class TorrentManifestParser
     public static async Task<TorrentManifest> ParseAsync(Stream source, CancellationToken token = default)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(TimeSpan.FromSeconds(2));
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
         using var buffer = new MemoryStream();
         var chunk = new byte[64 * 1024];
         while (true)

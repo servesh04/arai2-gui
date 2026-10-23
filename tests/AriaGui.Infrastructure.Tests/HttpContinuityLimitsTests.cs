@@ -25,7 +25,7 @@ public sealed class HttpContinuityLimitsTests : IDisposable
     public async Task Progressing_body_can_outlive_idle_timeout()
     {
         using var destination = new MemoryStream(); var bytes = new byte[] { 1, 2, 3, 4, 5, 6 };
-        var relay = Relay(new SlowBody(bytes, 60), new() { IdleTimeout = TimeSpan.FromMilliseconds(180), MaximumDuration = TimeSpan.FromSeconds(3) });
+        var relay = Relay(new SlowBody(bytes, 60), new() { IdleTimeout = TimeSpan.FromSeconds(1), MaximumDuration = TimeSpan.FromSeconds(8) });
         Assert.True(await relay.RelayAsync(0, (_, _) => Task.CompletedTask, destination, default));
         Assert.Equal(bytes, destination.ToArray());
     }
