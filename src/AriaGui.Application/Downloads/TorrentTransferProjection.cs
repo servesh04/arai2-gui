@@ -43,6 +43,7 @@ public static class TorrentTransferProjection
             "Fetching metadata" or "Connecting" or "No peers yet" or "Verifying" or "Seeding" => torrent.Activity,
             _ => torrent.Stage switch
             {
+                TorrentStage.Waiting => "Waiting to start",
                 TorrentStage.Checking => "Checking files",
                 TorrentStage.Downloading when torrent.Peers == 0 => "No peers yet",
                 TorrentStage.Publishing => $"Publishing to {Path.GetFileName(Path.TrimEndingDirectorySeparator(torrent.DestinationRoot))}",

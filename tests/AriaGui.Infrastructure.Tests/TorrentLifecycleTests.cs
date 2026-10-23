@@ -481,6 +481,36 @@ public sealed class TorrentLifecycleTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Completed_torrent_can_be_removed_after_engine_stops(bool deleteFiles)
+    {
+        using var runtime = new Runtime();
+        Directory.CreateDirectory(runtime.PublicRoot);
+        var repository = new SqliteTorrentMetadataRepository(runtime.DatabasePath);
+        await repository.InitializeAsync();
+        var payloadRoot = Path.Combine(runtime.Root, "torrent-payloads", Guid.NewGuid().ToString("N"));
+        var id = await repository.CreateDraftAsync(Metainfo(), [2], payloadRoot, runtime.PublicRoot);
+        await repository.PrepareDispatchAsync(id, "generation", "1234567890abcdef");
+        var source = Path.Combine(payloadRoot, "bundle", "second.bin");
+        var published = Path.Combine(runtime.PublicRoot, "bundle", "second.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(published)!);
+        await File.WriteAllBytesAsync(source, [1, 2, 3]);
+        await File.WriteAllBytesAsync(published, [1, 2, 3]);
+        await repository.MarkPublishedAsync(id, 2, 3);
+        await repository.SetStageAsync(id, TorrentStage.Completed);
+
+        await using var engine = new Aria2ProcessManager(
+            new Aria2ProcessOptions(Path.Combine(runtime.Root, "aria2c.exe"), runtime.Root), torrentRepository: repository);
+        await engine.RemoveTorrentAsync(id, deleteFiles, default);
+
+        Assert.Null(await repository.LoadDraftAsync(id));
+        Assert.Equal(!deleteFiles, File.Exists(source));
+        Assert.Equal(!deleteFiles, File.Exists(published));
+    }
+
     private static int FreePort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);

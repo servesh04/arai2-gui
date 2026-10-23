@@ -24,7 +24,8 @@ public sealed class DownloadItemViewModel : ObservableObject
         RetryCommand = Create(DownloadAction.Retry, () => CanExecute(DownloadAction.Retry));
         RecoverCommand = Create(DownloadAction.Recover, () => CanExecute(DownloadAction.Recover));
         RemoveAndDeleteCommand = new AsyncRelayCommand(token => removeAndDelete is null ? Task.CompletedTask : removeAndDelete(Id, token),
-            () => removeAndDelete is not null && Kind == TransferKind.Torrent && _connected);
+            () => removeAndDelete is not null && Kind == TransferKind.Torrent
+                && (_connected || _entry.Progress.Status == DownloadStatus.Completed));
         MoveUpCommand = new AsyncRelayCommand(token => move is null ? Task.CompletedTask : move(Id, -1, token), () => move is not null && CanMove && _entry.QueuePosition > 0);
         MoveDownCommand = new AsyncRelayCommand(token => move is null ? Task.CompletedTask : move(Id, 1, token), () => move is not null && CanMove);
         IAsyncRelayCommand Create(DownloadAction action, Func<bool> canExecute) => new AsyncRelayCommand(
@@ -42,7 +43,7 @@ public sealed class DownloadItemViewModel : ObservableObject
     public IAsyncRelayCommand MoveDownCommand { get; }
     public IReadOnlyList<IAsyncRelayCommand> Commands => [PauseCommand, ResumeCommand, RemoveCommand, RetryCommand, RecoverCommand, RemoveAndDeleteCommand, MoveUpCommand, MoveDownCommand, OpenFileCommand, OpenFolderCommand];
     private bool CanExecute(DownloadAction action) => _entry.Kind == TransferKind.Torrent
-        ? _connected && (action switch
+        ? (_connected || action == DownloadAction.Remove && _entry.Progress.Status == DownloadStatus.Completed) && (action switch
         {
             DownloadAction.Pause => _entry.TorrentStage is AriaGui.Core.Downloads.TorrentStage.Waiting
                 or AriaGui.Core.Downloads.TorrentStage.Checking or AriaGui.Core.Downloads.TorrentStage.Downloading,

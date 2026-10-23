@@ -34,8 +34,22 @@ public sealed class DesktopBehaviorTests
         Assert.Equal(100, publishing.Progress.TotalBytes);
     }
 
+    [Fact]
+    public void Completed_torrent_can_be_removed_while_engine_is_stopped()
+    {
+        var row = TorrentTransferProjection.Map(new(Guid.NewGuid(), "bundle", new string('a', 40),
+            @"C:\Downloads", DateTimeOffset.UtcNow, TorrentStage.Completed, 100, 100, 100, 0, 1, 1));
+        var item = new DownloadItemViewModel(row, (_, _, _) => Task.CompletedTask,
+            removeAndDelete: (_, _) => Task.CompletedTask);
+        item.Update(row, connected: false);
+        Assert.True(item.RemoveCommand.CanExecute(null));
+        Assert.True(item.RemoveAndDeleteCommand.CanExecute(null));
+        Assert.False(item.PauseCommand.CanExecute(null));
+    }
+
     [Theory]
     [InlineData(TorrentStage.AwaitingSelection, null, DownloadStatus.Queued, null)]
+    [InlineData(TorrentStage.Waiting, null, DownloadStatus.Queued, "Waiting to start")]
     [InlineData(TorrentStage.Checking, null, DownloadStatus.Downloading, "Checking files")]
     [InlineData(TorrentStage.Downloading, "Fetching metadata", DownloadStatus.Downloading, "Fetching metadata")]
     [InlineData(TorrentStage.Downloading, "Connecting", DownloadStatus.Downloading, "Connecting")]
