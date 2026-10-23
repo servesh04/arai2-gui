@@ -610,7 +610,12 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
         {
             var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.QueueTests")) + Path.DirectorySeparatorChar;
             if (!Path.GetFullPath(Root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unsafe test cleanup path.");
-            if (Directory.Exists(Root)) Directory.Delete(Root, true);
+            var elapsed = Stopwatch.StartNew();
+            while (Directory.Exists(Root))
+            {
+                try { Directory.Delete(Root, true); }
+                catch (IOException) when (elapsed.Elapsed < TimeSpan.FromSeconds(3)) { Thread.Sleep(100); }
+            }
         }
     }
 }
