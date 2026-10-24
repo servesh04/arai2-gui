@@ -80,14 +80,22 @@ public sealed partial class Aria2ProcessManager
                 await repository.LoadSelectedFilesAsync(jobId, token).ConfigureAwait(false), token).ConfigureAwait(false);
             if (binding is not null)
             {
-                var rpc = ConnectedClient();
-                var observed = await rpc.GetTorrentAsync(binding.EngineId, draft.Manifest, draft.Selection, draft.PayloadRoot, token).ConfigureAwait(false);
-                if (draft.Stage == TorrentStage.Completed || observed?.Stage is TorrentStage.Publishing or TorrentStage.Failed
-                    || observed?.Stage == TorrentStage.Stopped && draft.Stage != TorrentStage.Stopped)
-                    await rpc.RemoveFailedTorrentResultAsync(binding.EngineId, token).ConfigureAwait(false);
-                else if (observed is not null)
-                    await rpc.ExecuteAsync(binding.EngineId, DownloadAction.Remove, null, token).ConfigureAwait(false);
-                await rpc.SaveSessionAsync(token).ConfigureAwait(false);
+                if (_process is null && _rpc is null && _info is null && !File.Exists(OwnershipPath))
+                {
+                    if (draft.Stage != TorrentStage.Completed)
+                        throw new EngineException(EngineFailure.RpcUnavailable, "Start the engine before removing an unfinished torrent.");
+                }
+                else
+                {
+                    var rpc = ConnectedClient();
+                    var observed = await rpc.GetTorrentAsync(binding.EngineId, draft.Manifest, draft.Selection, draft.PayloadRoot, token).ConfigureAwait(false);
+                    if (draft.Stage == TorrentStage.Completed || observed?.Stage is TorrentStage.Publishing or TorrentStage.Failed
+                        || observed?.Stage == TorrentStage.Stopped && draft.Stage != TorrentStage.Stopped)
+                        await rpc.RemoveFailedTorrentResultAsync(binding.EngineId, token).ConfigureAwait(false);
+                    else if (observed is not null)
+                        await rpc.ExecuteAsync(binding.EngineId, DownloadAction.Remove, null, token).ConfigureAwait(false);
+                    await rpc.SaveSessionAsync(token).ConfigureAwait(false);
+                }
             }
             if (deleteFiles) await TorrentOwnedFileDeletion.DeleteAsync(_options.RuntimeDirectory, draft,
                 await repository.LoadSelectedFilesAsync(jobId, token).ConfigureAwait(false), token).ConfigureAwait(false);

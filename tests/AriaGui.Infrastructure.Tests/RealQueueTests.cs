@@ -76,7 +76,7 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
     [InlineData(true)]
     public async Task Concurrency_and_waiting_reorder_use_the_real_engine_queue_without_preemption(bool continuity)
     {
-        using var runtime = new Runtime(); await using var server = new LocalHttpServer();
+        using var runtime = new Runtime(); await using var server = new LocalHttpServer(payloadBytes: 4 * 1024 * 1024);
         var options = continuity ? Aria2ProcessOptions.ForApplication(runtime.Options.ExecutablePath, runtime.Options.RuntimeDirectory) with { RpcPort = runtime.Options.RpcPort } : runtime.Options;
         await using var manager = new Aria2ProcessManager(options, runtime.Repository()); await manager.StartAsync(default);
         var store = new DownloadRuntimeStore(); var coordinator = runtime.Coordinator(new ManagedAria2Client(manager), store);
@@ -610,7 +610,12 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
         {
             var allowed = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "AriaGUI.QueueTests")) + Path.DirectorySeparatorChar;
             if (!Path.GetFullPath(Root).StartsWith(allowed, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unsafe test cleanup path.");
-            if (Directory.Exists(Root)) Directory.Delete(Root, true);
+            var elapsed = Stopwatch.StartNew();
+            while (Directory.Exists(Root))
+            {
+                try { Directory.Delete(Root, true); }
+                catch (IOException) when (elapsed.Elapsed < TimeSpan.FromSeconds(3)) { Thread.Sleep(100); }
+            }
         }
     }
 }

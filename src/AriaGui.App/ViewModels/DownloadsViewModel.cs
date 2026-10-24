@@ -150,7 +150,7 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     private IAsyncRelayCommand BatchCommand(DownloadAction action) => new AsyncRelayCommand(token => ExecuteBatchAsync(action, token),
         () => !IsBatchRunning && _selectedIds.Any(id => ResolveBatchEntry(id) is { } entry && CanExecuteEntry(entry, action)));
     private bool CanExecuteEntry(DownloadEntry entry, DownloadAction action) => entry.Kind == TransferKind.Torrent
-        ? _connected && (action switch
+        ? (_connected || action == DownloadAction.Remove && entry.Progress.Status == DownloadStatus.Completed) && (action switch
         {
             DownloadAction.Pause => entry.TorrentStage is TorrentStage.Waiting or TorrentStage.Checking or TorrentStage.Downloading,
             DownloadAction.Resume => entry.Progress.Status == DownloadStatus.Paused,
@@ -172,7 +172,8 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         {
             Func<Guid, DownloadAction, CancellationToken, Task> execute = freshRestart ? (id, _, cancellation) => _coordinator.RestartFreshAsync(id, cancellation) : ExecuteCoordinatorAsync;
             _batchResults = await DownloadBatch.ExecuteAsync(selection, action, ResolveBatchEntry,
-                () => _runtimeStore.Current.Connection == EngineConnectionState.Connected, execute, linked.Token,
+                () => _runtimeStore.Current.Connection == EngineConnectionState.Connected || action == DownloadAction.Remove,
+                execute, linked.Token,
                 freshRestart ? CanRestartFresh : entry => CanExecuteEntry(entry, action));
             _dispatcher.Enqueue(() =>
             {

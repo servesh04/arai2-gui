@@ -137,6 +137,22 @@
     <ProjectReference Include="../AriaGui.NativeHost/AriaGui.NativeHost.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <Target Name="IncludeUnpackagedNotificationResource" BeforeTargets="AssignTargetPaths"
+          Condition="'$(WindowsPackageType)' == 'None' and '$(WindowsAppSDKSelfContained)' == 'true'">
+    <Error Condition="!Exists('$(PkgMicrosoft_WindowsAppSDK_Runtime)\tools\MSIX\win10-$(PlatformTarget)\Microsoft.WindowsAppRuntime.2.msix')"
+           Text="The Windows App SDK runtime package containing Microsoft.WindowsAppRuntime.Insights.Resource.dll is missing." />
+    <MakeDir Directories="$(IntermediateOutputPath)NotificationResource" />
+    <Exec Command="tar -xf &quot;$(PkgMicrosoft_WindowsAppSDK_Runtime)\tools\MSIX\win10-$(PlatformTarget)\Microsoft.WindowsAppRuntime.2.msix&quot; -C &quot;$(IntermediateOutputPath)NotificationResource&quot; Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
+    <Error Condition="!Exists('$(IntermediateOutputPath)NotificationResource\Microsoft.WindowsAppRuntime.Insights.Resource.dll')"
+           Text="Microsoft.WindowsAppRuntime.Insights.Resource.dll was not found in the Windows App SDK runtime package." />
+    <ItemGroup>
+      <Content Include="$(IntermediateOutputPath)NotificationResource\Microsoft.WindowsAppRuntime.Insights.Resource.dll"
+               Link="Microsoft.WindowsAppRuntime.Insights.Resource.dll"
+               CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+               Condition="Exists('$(IntermediateOutputPath)NotificationResource\Microsoft.WindowsAppRuntime.Insights.Resource.dll')" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="CopyBrowserHandoffHost" AfterTargets="Build">
     <ItemGroup>
       <_BrowserHandoffHostFiles Include="$(MSBuildProjectDirectory)\..\AriaGui.NativeHost\bin\$(Platform)\$(Configuration)\net10.0\*.*"

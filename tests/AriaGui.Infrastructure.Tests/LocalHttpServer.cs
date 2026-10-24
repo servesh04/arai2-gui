@@ -17,6 +17,11 @@ public sealed class LocalHttpServer : IAsyncDisposable
     public int Requests;
     public ConcurrentQueue<(string Route, long RequestedOffset, int Status)> Observations { get; } = new();
     private readonly ConcurrentDictionary<string, int> _routeRequests = new();
+    private readonly TaskCompletionSource<bool> _chunkedPaused = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<bool> _releaseChunked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public int ChunkedPauseAfterBytes { get; init; }
+    public Task ChunkedPaused => _chunkedPaused.Task;
+    public void ReleaseChunked() => _releaseChunked.TrySetResult(true);
     public bool RecoverPartial;
     public bool IgnoreRange;
     public bool ChangeEntity;
@@ -86,12 +91,20 @@ public sealed class LocalHttpServer : IAsyncDisposable
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(headers), _stop.Token);
                 if (chunked)
                 {
+                    var paused = false;
                     for (var offset = 0; offset < body.Length; offset += 8192)
                     {
                         var size = Math.Min(8192, body.Length - offset);
                         await stream.WriteAsync(Encoding.ASCII.GetBytes($"{size:x}\r\n"), _stop.Token);
                         await stream.WriteAsync(body.AsMemory(offset, size), _stop.Token);
                         await stream.WriteAsync("\r\n"u8.ToArray(), _stop.Token);
+                        if (!paused && ChunkedPauseAfterBytes > 0 && offset + size >= ChunkedPauseAfterBytes)
+                        {
+                            paused = true;
+                            await stream.FlushAsync(_stop.Token);
+                            _chunkedPaused.TrySetResult(true);
+                            await _releaseChunked.Task.WaitAsync(_stop.Token);
+                        }
                         await Task.Delay(30, _stop.Token);
                     }
                     await stream.WriteAsync("0\r\n\r\n"u8.ToArray(), _stop.Token);
