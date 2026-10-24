@@ -51,3 +51,37 @@ jobs:
             artifacts/packages/**/package-report.json
           if-no-files-found: error
           retention-days: 14
+  chrome-extension-package:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Build Chrome Web Store upload candidate
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'AriaGUI-Chrome-Web-Store.zip'
+          ./scripts/Build-ChromeStorePackage.ps1 -OutputPath $package
+          ./scripts/Test-ChromeStorePackage.ps1 -PackagePath $package
+      - name: Build unpacked Chrome extension candidate
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'AriaGUI-Chrome-Unpacked.zip'
+          ./scripts/Build-ChromeUnpackedPackage.ps1 -OutputPath $package
+          ./scripts/Test-ChromeUnpackedPackage.ps1 -PackagePath $package
+      - name: Retain Chrome Web Store upload candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: chrome-web-store-candidate
+          path: ${{ runner.temp }}/AriaGUI-Chrome-Web-Store.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain unpacked Chrome extension candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: chrome-unpacked-candidate
+          path: ${{ runner.temp }}/AriaGUI-Chrome-Unpacked.zip
+          if-no-files-found: error
+          retention-days: 14

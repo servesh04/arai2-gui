@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AriaGUI Download Handoff Privacy</title>
+</head>
+<body>
+  <h1>AriaGUI Download Handoff Privacy</h1>
+  <p>AriaGUI Download Handoff sends eligible downloads from Chrome to the AriaGUI app installed on your Windows device. Capture is off until you enable it in the extension and the app.</p>
+  <h2>Information used</h2>
+  <p>For a download handoff, the extension may read the download URL, file name, size, MIME type, referring page, browser user agent, request method, and cookies matching the download URL. It sends this information to the local AriaGUI app through Chrome native messaging. The app uses it to request the download. If the app does not accept the handoff, Chrome keeps its download.</p>
+  <p>AriaGUI retains the download URL, file name, destination, status, and progress in its local history. Matching cookies are used for the current handoff and are not saved in that history. The extension stores its on/off setting and excluded sites locally in Chrome. It keeps short-lived URL markers in Chrome session storage to avoid duplicate handoffs.</p>
+  <h2>Control</h2>
+  <p>You can turn capture off in the extension popup or the AriaGUI app, and you can exclude a site in the popup. Removing the extension clears its browser storage. AriaGUI's download history is managed separately in the app.</p>
+  <h2>Sharing</h2>
+  <p>The extension does not send data to an AriaGUI cloud service or analytics provider. The local app contacts the download website to retrieve the file. The extension requires access to download events, site requests, and matching cookies to perform handoff.</p>
+</body>
+</html>

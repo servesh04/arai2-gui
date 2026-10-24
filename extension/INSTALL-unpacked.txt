@@ -1,0 +1,25 @@
+AriaGUI Chrome extension — unpacked installation
+
+1. Download chrome-unpacked-candidate from a successful Chrome extension package
+   job. Extract the downloaded Actions artifact ZIP, then extract
+   AriaGUI-Chrome-Unpacked.zip to a folder you will keep. Use an AriaGUI portable
+   app that includes the browser native host (from a successful Windows build).
+2. Start AriaGUI from its stable portable app folder. Open Settings > Integration,
+   register the browser host, and turn on browser capture.
+3. If an older unpacked AriaGUI entry is present, remove it. In Chrome, open
+   chrome://extensions, enable Developer mode, choose Load unpacked,
+   and select the AriaGUI-Chrome-Extension folder from this ZIP. Select the folder
+   containing manifest.json, not the ZIP or its parent folder.
+4. Confirm Chrome shows extension ID fipdcdbkjacoejdioahbjajjpcadiepm. Open its
+   toolbar popup, confirm Connected, and enable Capture downloads. If the popup
+   says Host not registered, repeat step 2 with the running portable app.
+5. Test with a public HTTP/HTTPS download. Chrome keeps a download whenever the
+   app is unavailable or declines the handoff. Capture starts off by default.
+
+Keep both extracted folders in place. If you move the app, register its browser
+host again. If you move the extension folder, load it again in Chrome. After an
+extension update, extract it over the existing extension folder and click Reload
+on its chrome://extensions card. Do not load this ZIP through Pack extension.
+
+Unpacked developer-mode installation is for local testing. It is not a Chrome
+Web Store release and Chrome does not update it automatically.
