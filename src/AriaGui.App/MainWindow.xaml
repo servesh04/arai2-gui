@@ -7,6 +7,6 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <TitleBar x:Name="AppTitleBar" Title="AriaGUI" Subtitle="Close to tray · Exit to stop" />
         <ContentControl x:Name="PageHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-        <TextBlock x:Name="DesktopStatus" Grid.Row="2" Visibility="Collapsed" Margin="10,5" TextWrapping="Wrap" FontSize="12" />
+        <TextBlock x:Name="DesktopStatus" Grid.Row="2" Visibility="Collapsed" Margin="{StaticResource AriaSpace2}" TextWrapping="Wrap" FontSize="{StaticResource AriaMinimumFontSize}" />
     </Grid>
 </Window>

@@ -1,8 +1,27 @@
-<UserControl x:Class="AriaGui.App.Views.Settings.DownloadsSettingsSection" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel Spacing="16">
-        <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Message="Download limits are managed from the Downloads toolbar in this version." />
-        <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Concurrent downloads" /><TextBlock Text="Maximum transfers that can run at once." Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" /></StackPanel><NumberBox Grid.Column="1" Minimum="1" Maximum="64" IsEnabled="False" ToolTipService.ToolTip="Not available yet" AutomationProperties.Name="Concurrent downloads" /></Grid>
-        <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Retry failed downloads" /><TextBlock Text="Retry transient network failures automatically." Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" /></StackPanel><ToggleSwitch Grid.Column="1" IsEnabled="False" ToolTipService.ToolTip="Not available yet" OffContent="Off" OnContent="On" /></Grid>
-        <HyperlinkButton Content="Reset this section to defaults" IsEnabled="False" ToolTipService.ToolTip="No saved settings in this section yet" HorizontalAlignment="Left" />
+<UserControl x:Class="AriaGui.App.Views.Settings.DownloadsSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Margin="{StaticResource AriaSpace1}"
+                 Message="Concurrent download limit configuration is unavailable in this build." />
+
+        <StackPanel Margin="{StaticResource AriaSpace1}">
+            <TextBlock Text="Concurrent downloads" Style="{StaticResource AriaBodyTextStyle}" Margin="{StaticResource AriaSpace1}" />
+            <TextBlock Text="Maximum transfers that can run at once." Style="{StaticResource AriaMetadataTextStyle}" TextWrapping="Wrap" Margin="{StaticResource AriaSpace1}" />
+            <NumberBox Minimum="1" Maximum="64" IsEnabled="False"
+                       ToolTipService.ToolTip="Concurrent download limit configuration is unavailable in this build."
+                       AutomationProperties.Name="Concurrent downloads" Margin="{StaticResource AriaSpace1}" HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+        <StackPanel Margin="{StaticResource AriaSpace1}">
+            <TextBlock Text="Retry failed downloads" Style="{StaticResource AriaBodyTextStyle}" Margin="{StaticResource AriaSpace1}" />
+            <TextBlock Text="Retry transient network failures automatically." Style="{StaticResource AriaMetadataTextStyle}" TextWrapping="Wrap" Margin="{StaticResource AriaSpace1}" />
+            <ToggleSwitch IsEnabled="False" ToolTipService.ToolTip="Automatic retries are not available in this version."
+                          OffContent="Off" OnContent="On" AutomationProperties.Name="Retry failed downloads"
+                          Margin="{StaticResource AriaSpace1}" />
+        </StackPanel>
+
+        <HyperlinkButton Content="Reset this section to defaults" IsEnabled="False" ToolTipService.ToolTip="No saved settings exist in this section yet."
+                         HorizontalAlignment="Left" Margin="{StaticResource AriaSpace1}" />
     </StackPanel>
 </UserControl>

@@ -16,7 +16,7 @@
         <Thumb Grid.Column="1" x:Name="SidebarSplitter" IsTabStop="True" UseSystemFocusVisuals="True" DragDelta="SidebarDragDelta" KeyDown="SidebarKeyDown" AutomationProperties.Name="Resize sidebar; use left and right arrows" AutomationProperties.HelpText="Preferred sidebar width in device-independent pixels" Background="{ThemeResource AriaBorderBrush}">
             <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{TemplateBinding Background}" /></ControlTemplate></Thumb.Template>
         </Thumb>
-        <Border x:Name="ContentSurface" Grid.Column="2" Margin="0,8,8,0" Background="{ThemeResource AriaSurfaceBrush}" BorderBrush="{ThemeResource AriaBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource AriaOuterCornerRadius}">
+        <Border x:Name="ContentSurface" Grid.Column="2" Margin="{StaticResource AriaSpace2}" Background="{ThemeResource AriaSurfaceBrush}" BorderBrush="{ThemeResource AriaBorderBrush}" BorderThickness="{StaticResource AriaStandardBorderThickness}" CornerRadius="{StaticResource AriaOuterCornerRadius}">
             <Grid>
             <Grid x:Name="DownloadsContent">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -47,15 +47,15 @@
                 <downloads:SelectionBar x:Name="SelectionBarControl" Grid.Row="1" Visibility="Collapsed" SingleActionRequested="SingleActionClick" />
                 <downloads:EngineBanner x:Name="EngineBannerControl" Grid.Row="2" />
                 <ScrollViewer x:Name="NoticeScroller" Grid.Row="3" MaxHeight="120" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"><StackPanel>
-                    <TextBlock x:Name="BatchMessageText" TextWrapping="Wrap" Text="{x:Bind ViewModel.BatchMessage, Mode=OneWay}" FontSize="{StaticResource AriaMinimumFontSize}" Margin="10,2" AutomationProperties.LiveSetting="Polite" />
-                    <Button x:Name="BatchDetailsButton" Content="Batch results..." Click="BatchDetailsClick" Visibility="Collapsed" HorizontalAlignment="Left" Margin="10,0" Style="{StaticResource AriaSecondaryButtonStyle}" />
+                    <TextBlock x:Name="BatchMessageText" TextWrapping="Wrap" Text="{x:Bind ViewModel.BatchMessage, Mode=OneWay}" FontSize="{StaticResource AriaMinimumFontSize}" Margin="{StaticResource AriaRowPadding}" AutomationProperties.LiveSetting="Polite" />
+                    <Button x:Name="BatchDetailsButton" Content="Batch results..." Click="BatchDetailsClick" Visibility="Collapsed" HorizontalAlignment="Left" Margin="{StaticResource AriaSpace2}" Style="{StaticResource AriaSecondaryButtonStyle}" />
                     <InfoBar IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}" IsClosable="False" Severity="Error" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
                     <InfoBar IsOpen="{x:Bind ViewModel.HasCompletion, Mode=OneWay}" Severity="Success" IsClosable="True" Message="{x:Bind ViewModel.CompletionMessage, Mode=OneWay}" />
                 </StackPanel></ScrollViewer>
                 <Grid x:Name="TransferWorkspace" Grid.Row="4" SizeChanged="WorkspaceSizeChanged">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition x:Name="DetailsGripRow" Height="6" /><RowDefinition x:Name="DetailsRow" Height="180" /></Grid.RowDefinitions>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition x:Name="DetailsGripColumn" Width="0" /><ColumnDefinition x:Name="DetailsColumn" Width="0" /></Grid.ColumnDefinitions>
-                    <Grid x:Name="HistoryBar" Grid.ColumnSpan="3" Padding="10,4" ColumnSpacing="8"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid x:Name="HistoryBar" Grid.ColumnSpan="3" Padding="{StaticResource AriaRowPadding}" ColumnSpacing="8"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <TextBlock Text="{x:Bind ViewModel.BrowserMessage, Mode=OneWay}" FontSize="{StaticResource AriaMinimumFontSize}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTipService.ToolTip="{x:Bind ViewModel.BrowserMessage, Mode=OneWay}" />
                         <StackPanel x:Name="HistoryActions" Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="{x:Bind ViewModel.IsHistoryView, Mode=OneWay}">

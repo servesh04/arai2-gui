@@ -47,7 +47,6 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     private MenuFlyoutItem? _removeAndDeleteMenu;
     private Grid Toolbar => DownloadsToolbarControl.LayoutRoot;
     private StackPanel PrimaryActions => DownloadsToolbarControl.Primary;
-    private StackPanel SelectedActions => SelectionBarControl.Actions;
     private Button AddButton => DownloadsToolbarControl.Add;
     private Button FiltersButton => DownloadsToolbarControl.Filters;
     private TextBlock FilterCaption => DownloadsToolbarControl.FilterText;
@@ -124,6 +123,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
 #endif
         InitializeComponent();
         DataContext = this;
+        SelectionBarControl.SelectionCountChanged += SelectionCountChanged;
         DownloadsTableControl.Initialize(ViewModel, Preferences, ScheduleLayoutSave, RefreshRowChecks);
         DownloadsTableControl.SelectionChanged += TransferSelectionChanged;
         DownloadsTableControl.RowRightTapped += TransferRightTapped;
@@ -503,8 +503,25 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         }
         DetailsHost.Visibility = selected is null ? Visibility.Collapsed : Visibility.Visible;
         SelectionHint.Visibility = selected is null ? Visibility.Visible : Visibility.Collapsed;
-        SelectionBarControl.Visibility = _selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SelectionBarControl.Visibility = SelectionBarControl.HasSelection ? Visibility.Visible : Visibility.Collapsed;
         UpdatePaneLayout();
+    }
+    private void SelectionCountChanged(object? sender, EventArgs args)
+    {
+        var hasSelection = SelectionBarControl.HasSelection;
+        var restoreTransferFocus = !hasSelection && SelectionBarControl.SelectedCount == 0
+            && XamlRoot is { } root
+            && IsDescendantOf(FocusManager.GetFocusedElement(root) as DependencyObject, SelectionBarControl);
+        SelectionBarControl.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        UpdateShellLayout();
+        if (restoreTransferFocus)
+            DispatcherQueue.TryEnqueue(() => TransferList.Focus(FocusState.Programmatic));
+    }
+    private static bool IsDescendantOf(DependencyObject? element, DependencyObject ancestor)
+    {
+        for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+            if (ReferenceEquals(current, ancestor)) return true;
+        return false;
     }
     private void SelectedCommandChanged(object? sender, EventArgs args) => RefreshSelectionPresentation();
     private void RowCheckLoaded(object sender, RoutedEventArgs args)
@@ -554,13 +571,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     }
     private void RefreshSidebarCounts()
     {
-        for (var i = 0; i < StatusFilters.Items.Count; i++)
-        {
-            if (StatusFilters.Items[i] is not Grid row) continue;
-            var number = ViewModel.SidebarCounts.GetValueOrDefault((DownloadFilter)i);
-            ((TextBlock)row.Children[1]).Text = number.ToString();
-            AutomationProperties.SetName(row, $"{FilterLabels[i]}, {number} transfers");
-        }
+        FiltersRailControl.RefreshCounts();
         UpdateFilterCaption();
         UpdateBatchNotice();
     }
@@ -568,9 +579,9 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     {
         if (FiltersButton is null) return;
         var index = Math.Clamp(ViewModel.FilterIndex, 0, FilterLabels.Length - 1);
-        FiltersRailControl.UpdateSelection(ViewModel.IsHistoryView);
         if (_settingsVisible) FiltersRailControl.SetSettingsSelected(true);
         else if (_notificationsVisible) FiltersRailControl.SetNotificationsSelected(true);
+        else FiltersRailControl.UpdateSelection(ViewModel.IsHistoryView);
         FilterCaption.Text = $"Filters: {FilterLabels[index]}";
         ToolTipService.SetToolTip(FiltersButton, $"{FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");
         AutomationProperties.SetName(FiltersButton, $"Filters: {FilterLabels[index]}{(ViewModel.IsHistoryView ? ", saved history" : "")}");
@@ -592,20 +603,24 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         if (Toolbar is null || ActualWidth <= 0) return;
         // Page ActualWidth is the client area in DIPs; never infer it from physical window bounds.
         FiltersButton.Visibility = Visibility.Visible;
-        RetryButton.Visibility = Visibility.Visible;
-        var commands = NaturalWidth(PrimaryActions) + NaturalWidth(SelectedActions) + 40;
-        _shellMode = ResponsiveShellLayoutPolicy.Resolve(ActualWidth, Math.Max(1100, commands + 240), Math.Max(800, commands));
+        _shellMode = ResponsiveShellLayoutPolicy.Resolve(ActualWidth);
         var wide = _shellMode == ShellLayoutMode.Wide;
         var compact = _shellMode == ShellLayoutMode.Compact;
         RetryButton.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
         OverflowRetry.Visibility = wide ? Visibility.Collapsed : Visibility.Visible;
-        Grid.SetRow(SearchBox, wide ? 0 : 1); Grid.SetColumn(SearchBox, wide ? 1 : 0);
-        Grid.SetColumnSpan(SearchBox, wide ? 1 : 2);
-        SearchBox.Width = wide ? Math.Clamp(ActualWidth - commands, 240, 420) : double.NaN;
-        SearchBox.HorizontalAlignment = wide ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
-        SearchBox.Margin = new Thickness(0, wide ? 0 : 6, 0, 0);
         DownloadsToolbarControl.SetCompact(compact);
         FiltersButton.Visibility = compact || !Preferences.SidebarVisible ? Visibility.Visible : Visibility.Collapsed;
+        var spacing = (Thickness)Microsoft.UI.Xaml.Application.Current.Resources["AriaSpace1"];
+        SearchBox.Margin = spacing;
+        var toolbarInset = (Thickness)Microsoft.UI.Xaml.Application.Current.Resources["AriaSpace2"];
+        var searchSpace = Toolbar.ActualWidth - toolbarInset.Left - toolbarInset.Right
+            - NaturalWidth(PrimaryActions) - spacing.Left - spacing.Right;
+        var searchSharesRow = !compact && searchSpace >= 240;
+        Grid.SetRow(SearchBox, searchSharesRow ? 0 : 1);
+        Grid.SetColumn(SearchBox, searchSharesRow ? 1 : 0);
+        Grid.SetColumnSpan(SearchBox, searchSharesRow ? 1 : 2);
+        SearchBox.Width = searchSharesRow ? Math.Clamp(searchSpace, 240, 420) : double.NaN;
+        SearchBox.HorizontalAlignment = searchSharesRow ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
         var docked = !compact && Preferences.SidebarVisible;
         if (docked) RestoreDockedFilters();
         else
@@ -621,7 +636,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         ConnectionText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         FooterStatus.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
         TotalText.MaxWidth = compact ? 90 : 180;
-        SelectionBarControl.Visibility = _selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SelectionBarControl.Visibility = SelectionBarControl.HasSelection ? Visibility.Visible : Visibility.Collapsed;
         UpdateFilterCaption();
         UpdatePaneLayout();
         SizeActiveDialog();
@@ -677,12 +692,25 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         if (Workspace is null || Workspace.ActualHeight <= 0) return;
         Downloads.DownloadsTable.SetGripAutomation(SidebarSplitter, "sidebar width", Preferences.SidebarWidth, 120, 400, "left and right");
         _detailsSideDocked = ActualWidth >= 1100;
+        var preferredDetailsHeight = Preferences.DetailsHeight;
+        var transferWorkspaceHeight = TransferWorkspace.ActualHeight;
+        var compactTransferWorkspace = !_detailsSideDocked && transferWorkspaceHeight > 0
+            && transferWorkspaceHeight < (double)Microsoft.UI.Xaml.Application.Current.Resources["AriaShortTransferWorkspaceHeight"];
+        if (compactTransferWorkspace)
+        {
+            var compactDetailsHeight = (double)Microsoft.UI.Xaml.Application.Current.Resources["AriaShortTransferDetailsHeight"];
+            preferredDetailsHeight = Math.Min(preferredDetailsHeight, compactDetailsHeight);
+        }
+        var minimumTableHeight = _detailsSideDocked
+            ? ResponsivePaneLayoutPolicy.MinimumTableHeight
+            : compactTransferWorkspace
+                ? (double)Microsoft.UI.Xaml.Application.Current.Resources["AriaShortTransferTableMinimumHeight"]
+                : ResponsivePaneLayoutPolicy.MinimumBottomDockTableHeight;
         var layout = ResponsivePaneLayoutPolicy.Resolve(Workspace.ActualHeight + NoticeScroller.ActualHeight,
-            HistoryBar.ActualHeight, Workspace.ActualWidth, Preferences.DetailsHeight, Preferences.SidebarWidth,
+            HistoryBar.ActualHeight, Workspace.ActualWidth, preferredDetailsHeight, Preferences.SidebarWidth,
             Preferences.DetailsVisible || _detailsOpenForSelection, TransferList.SelectedItem is not null,
             !string.IsNullOrWhiteSpace(ViewModel.BatchMessage) || ViewModel.HasError || ViewModel.HasCompletion,
-            Preferences.SidebarVisible && _shellMode != ShellLayoutMode.Compact,
-            _detailsSideDocked ? ResponsivePaneLayoutPolicy.MinimumTableHeight : ResponsivePaneLayoutPolicy.MinimumBottomDockTableHeight);
+            Preferences.SidebarVisible && _shellMode != ShellLayoutMode.Compact, minimumTableHeight);
         if (Math.Abs(NoticeScroller.MaxHeight - layout.NoticeHeight) > .1) NoticeScroller.MaxHeight = layout.NoticeHeight;
         if (Math.Abs(SidebarColumn.Width.Value - layout.SidebarWidth) > .1) SidebarColumn.Width = new GridLength(layout.SidebarWidth);
         _detailsHeight = layout.DetailsHeight;
@@ -702,7 +730,18 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         DetailsGripColumn.Width = new GridLength(_detailsSideDocked && visible ? 6 : 0);
         DetailsColumn.Width = new GridLength(_detailsSideDocked && visible ? effectiveWidth : 0);
         DetailsGripRow.Height = new GridLength(!_detailsSideDocked && visible ? 6 : 0);
-        DetailsRow.Height = new GridLength(!_detailsSideDocked && visible ? layout.DetailsHeight : 0);
+        var detailsRowHeight = !_detailsSideDocked && visible ? layout.DetailsHeight : 0;
+        var detailsRowChanged = Math.Abs(DetailsRow.Height.Value - detailsRowHeight) > .1;
+        DetailsRow.Height = new GridLength(detailsRowHeight);
+        if (detailsRowChanged && visible && TransferList.SelectedItem is DownloadItemViewModel selectedForVisibility)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!ReferenceEquals(TransferList.SelectedItem, selectedForVisibility) || Inspector.Visibility != Visibility.Visible) return;
+                TransferList.UpdateLayout();
+                TransferList.ScrollIntoView(selectedForVisibility, ScrollIntoViewAlignment.Default);
+            });
+        }
         Downloads.DownloadsTable.SetGripAutomation(DetailsSplitter, _detailsSideDocked ? "details pane width" : "details pane height",
             _detailsSideDocked ? Preferences.DetailsWidth : Preferences.DetailsHeight, _detailsSideDocked ? 280 : 120, 600,
             _detailsSideDocked ? "left and right" : "up and down");

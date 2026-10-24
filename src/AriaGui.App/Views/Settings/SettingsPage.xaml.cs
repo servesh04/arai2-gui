@@ -48,6 +48,23 @@ public sealed partial class SettingsPage : Page
     {
         var narrow = args.NewSize.Width < 800;
         CompactBackButton.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
+        SettingsContentColumn.Width = narrow
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(2, GridUnitType.Star);
+        SettingsSpacerColumn.Width = narrow
+            ? new GridLength(0)
+            : new GridLength(1, GridUnitType.Star);
+        UpdateCategoryScrolling();
+    }
+
+    private void CategoryScrollerSizeChanged(object sender, SizeChangedEventArgs args) => UpdateCategoryScrolling();
+    private void CategoryTabsSizeChanged(object sender, SizeChangedEventArgs args) => UpdateCategoryScrolling();
+
+    private void UpdateCategoryScrolling()
+    {
+        var overflow = SectionScroller.ScrollableWidth > 0;
+        SectionScroller.HorizontalScrollBarVisibility = overflow ? ScrollBarVisibility.Visible : ScrollBarVisibility.Auto;
+        CategoryScrollHint.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void CompactBackClick(object sender, RoutedEventArgs args) => BackRequested?.Invoke(this, args);

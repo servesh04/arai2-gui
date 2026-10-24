@@ -2,19 +2,30 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:icons="using:AriaGui.App.Icons">
-    <StackPanel x:Name="SelectedActions" Orientation="Horizontal" Spacing="4" Padding="{StaticResource AriaSpace2}" Background="{ThemeResource AriaSelectionTintBrush}">
-        <TextBlock x:Name="SelectedCountText" Text="0 selected" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,8,0" />
-        <Button x:Name="ResumeButton" Command="{Binding ViewModel.BatchResumeCommand}" Style="{StaticResource AriaToolbarButtonStyle}" AutomationProperties.Name="Resume selected downloads">
-            <StackPanel Orientation="Horizontal" Spacing="5"><icons:FluentIcon IconName="Play" FontSize="12" /><TextBlock Text="Resume" /></StackPanel>
+    <StackPanel x:Name="SelectedActions" Orientation="Horizontal" Padding="{StaticResource AriaSpace2}" Background="{ThemeResource AriaSelectionTintBrush}">
+        <TextBlock x:Name="SelectedCountText" Text="0 selected" FontSize="{StaticResource AriaFontSizePrimary}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{StaticResource AriaSpace1}" />
+        <Button x:Name="ResumeButton" Command="{Binding ViewModel.BatchResumeCommand}" Style="{StaticResource AriaToolbarButtonStyle}" Margin="{StaticResource AriaSpace1}" AutomationProperties.Name="Resume selected downloads">
+            <StackPanel Orientation="Horizontal">
+                <icons:FluentIcon IconName="Play" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock Text="Resume" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" />
+            </StackPanel>
         </Button>
-        <Button x:Name="PauseButton" Command="{Binding ViewModel.BatchPauseCommand}" Style="{StaticResource AriaToolbarButtonStyle}" AutomationProperties.Name="Pause selected downloads">
-            <StackPanel Orientation="Horizontal" Spacing="5"><icons:FluentIcon IconName="Pause" FontSize="12" /><TextBlock Text="Pause" /></StackPanel>
+        <Button x:Name="PauseButton" Command="{Binding ViewModel.BatchPauseCommand}" Style="{StaticResource AriaToolbarButtonStyle}" Margin="{StaticResource AriaSpace1}" AutomationProperties.Name="Pause selected downloads">
+            <StackPanel Orientation="Horizontal">
+                <icons:FluentIcon IconName="Pause" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock Text="Pause" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" />
+            </StackPanel>
         </Button>
-        <Button x:Name="RetryButton" Command="{Binding ViewModel.BatchRetryCommand}" Style="{StaticResource AriaToolbarButtonStyle}" AutomationProperties.Name="Retry selected downloads">
-            <StackPanel Orientation="Horizontal" Spacing="5"><icons:FluentIcon IconName="Retry" FontSize="12" /><TextBlock Text="Retry" /></StackPanel>
+        <Button x:Name="RetryButton" Command="{Binding ViewModel.BatchRetryCommand}" Style="{StaticResource AriaToolbarButtonStyle}" Margin="{StaticResource AriaSpace1}" AutomationProperties.Name="Retry selected downloads">
+            <StackPanel Orientation="Horizontal">
+                <icons:FluentIcon IconName="Retry" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock Text="Retry" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" />
+            </StackPanel>
         </Button>
-        <DropDownButton x:Name="MoreButton" Padding="10,5" MinHeight="32" AutomationProperties.Name="More actions for selected downloads">
-            <StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="More" /><icons:FluentIcon IconName="ChevronDown" FontSize="10" /></StackPanel>
+        <DropDownButton x:Name="MoreButton" Padding="{StaticResource AriaSecondaryButtonPadding}" MinHeight="{StaticResource AriaControlTargetSize}" Margin="{StaticResource AriaSpace1}" AutomationProperties.Name="More actions for selected downloads">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="More" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" />
+            </StackPanel>
             <DropDownButton.Flyout>
                 <MenuFlyout x:Name="MoreMenu">
                     <MenuFlyoutItem x:Name="OverflowRetry" Text="Retry" Command="{Binding ViewModel.BatchRetryCommand}" Visibility="Collapsed" />
@@ -29,6 +40,6 @@
                 </MenuFlyout>
             </DropDownButton.Flyout>
         </DropDownButton>
-        <Button x:Name="ClearButton" Content="Clear" Style="{StaticResource AriaToolbarButtonStyle}" Click="ClearClick" AutomationProperties.Name="Clear download selection" />
+        <Button x:Name="ClearButton" Content="Clear" Style="{StaticResource AriaToolbarButtonStyle}" Margin="{StaticResource AriaSpace1}" Click="ClearClick" AutomationProperties.Name="Clear download selection" />
     </StackPanel>
 </UserControl>

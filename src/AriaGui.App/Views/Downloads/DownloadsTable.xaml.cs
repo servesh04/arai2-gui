@@ -242,7 +242,7 @@ public sealed partial class DownloadsTable : UserControl
             return;
         }
 
-        HeaderRow.Height = new GridLength(30);
+        HeaderRow.Height = new GridLength((double)Microsoft.UI.Xaml.Application.Current.Resources["AriaControlTargetSize"]);
         TableHeader.Visibility = Visibility.Visible;
         TableScroller.HorizontalScrollMode = ScrollMode.Enabled;
         TableScroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
@@ -465,13 +465,9 @@ public sealed partial class DownloadsTable : UserControl
             var button = new Button
             {
                 Content = column.Label + arrow,
-                Padding = new Thickness(8, 0, 12, 0),
-                MinHeight = 28,
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Style = (Style)Resources["TableHeaderButtonStyle"],
                 HorizontalContentAlignment = column.ModelColumn is DownloadSortColumn.Speed or DownloadSortColumn.Eta or DownloadSortColumn.Size
                     ? HorizontalAlignment.Right : HorizontalAlignment.Left,
-                BorderThickness = new Thickness(0),
                 Tag = column
             };
             button.Click += HeaderClick;
@@ -480,10 +476,11 @@ public sealed partial class DownloadsTable : UserControl
             if (column.ModelColumn is not { } modelColumn) continue;
             var grip = new Thumb
             {
-                Width = 7,
+                Width = (double)Microsoft.UI.Xaml.Application.Current.Resources["AriaTableResizeHitTarget"],
                 HorizontalAlignment = HorizontalAlignment.Right,
                 IsTabStop = true,
                 UseSystemFocusVisuals = true,
+                Style = (Style)Microsoft.UI.Xaml.Application.Current.Resources["AriaTableColumnResizeGripStyle"],
                 Tag = modelColumn
             };
             grip.AddHandler(PointerPressedEvent, new PointerEventHandler(GripPointerPressed), true);
@@ -514,6 +511,12 @@ public sealed partial class DownloadsTable : UserControl
         if (TableHeader.ColumnDefinitions.Count > 0) Grid.SetColumn(_headerCheckBox, 0);
         Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(_headerCheckBox, 10);
         TableHeader.Children.Add(_headerCheckBox);
+        TableHeader.Children.Add(new Border
+        {
+            Style = (Style)Microsoft.UI.Xaml.Application.Current.Resources["AriaTableHeaderSeparatorStyle"],
+            VerticalAlignment = VerticalAlignment.Bottom,
+            IsHitTestVisible = false
+        });
         UpdateHeaderSelection();
         TableHeader.ContextFlyout = CreateColumnMenu();
     }
@@ -670,6 +673,7 @@ public sealed partial class DownloadsTable : UserControl
         };
         return $"{item.FileName}, {(item.Kind == TransferKind.Torrent ? "BitTorrent, " : "")}{status}"
             + (string.IsNullOrWhiteSpace(item.SubstateText) ? "" : $", {item.SubstateText}")
+            + (string.IsNullOrWhiteSpace(item.FailureReason) ? "" : $", {item.FailureReason}")
             + $", {item.ProgressLabel}, {item.SpeedLabel}";
     }
 
@@ -917,6 +921,7 @@ public sealed class CurrentStatusVisibilityConverter : IValueConverter
         if (value is not DownloadStatus status) return Visibility.Collapsed;
         var visible = (parameter as string) switch
         {
+            "Progress" => status != DownloadStatus.Completed,
             "Plain" => status is DownloadStatus.Downloading or DownloadStatus.Completed,
             "Pill" => status is DownloadStatus.Queued or DownloadStatus.Paused or DownloadStatus.Interrupted or DownloadStatus.Removed,
             "Failed" => status == DownloadStatus.Failed,

@@ -7,6 +7,9 @@
     <SolidColorBrush x:Key="AriaBorderBrush" Color="#71878C" />
     <SolidColorBrush x:Key="AriaTextPrimaryBrush" Color="#142E33" />
     <SolidColorBrush x:Key="AriaTextSecondaryBrush" Color="#496168" />
+    <SolidColorBrush x:Key="AriaTextBodyBrush" Color="#142E33" />
+    <SolidColorBrush x:Key="AriaTextFilenameBrush" Color="#142E33" />
+    <SolidColorBrush x:Key="AriaTextMetadataBrush" Color="#496168" />
     <SolidColorBrush x:Key="AriaTextDisabledBrush" Color="#657B81" />
     <SolidColorBrush x:Key="AriaAccentBrush" Color="#006D5F" />
     <SolidColorBrush x:Key="AriaAccentTextBrush" Color="#FFFFFF" />
@@ -15,6 +18,11 @@
     <SolidColorBrush x:Key="AriaDangerBrush" Color="#A62E26" />
     <SolidColorBrush x:Key="AriaFocusRingBrush" Color="#005BAA" />
     <SolidColorBrush x:Key="AriaSelectionTintBrush" Color="#D7EAE7" />
+    <SolidColorBrush x:Key="AriaQuietDividerBrush" Color="#CFDAD8" />
+    <SolidColorBrush x:Key="AriaHoverBrush" Color="#EDF3F2" />
+    <SolidColorBrush x:Key="AriaSelectedBackgroundBrush" Color="#D7EAE7" />
+    <SolidColorBrush x:Key="AriaSelectedForegroundBrush" Color="#142E33" />
+    <SolidColorBrush x:Key="AriaSelectedIndicatorBrush" Color="#006D5F" />
     <SolidColorBrush x:Key="ListViewItemCheckBoxBrush" Color="#496168" />
     <SolidColorBrush x:Key="ListViewItemCheckBoxPointerOverBrush" Color="#142E33" />
     <SolidColorBrush x:Key="ListViewItemCheckBoxPressedBrush" Color="#142E33" />

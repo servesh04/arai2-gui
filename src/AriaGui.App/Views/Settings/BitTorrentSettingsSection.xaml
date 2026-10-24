@@ -1,3 +1,16 @@
-<UserControl x:Class="AriaGui.App.Views.Settings.BitTorrentSettingsSection" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel Spacing="16"><InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Message="Local .torrent files are supported. Peer discovery stays off, upload is capped, and seeding stops when downloading finishes. Network settings are fixed for now." /><ToggleSwitch Header="Distributed hash table (DHT)" IsEnabled="False" ToolTipService.ToolTip="DHT is off for torrent transfers and cannot be changed yet" OffContent="Off" OnContent="On" /><NumberBox Header="Listen port" Minimum="1" Maximum="65535" IsEnabled="False" ToolTipService.ToolTip="The torrent listen port cannot be changed yet" /><HyperlinkButton Content="Reset this section to defaults" IsEnabled="False" ToolTipService.ToolTip="No saved settings in this section yet" HorizontalAlignment="Left" /></StackPanel>
+<UserControl x:Class="AriaGui.App.Views.Settings.BitTorrentSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Margin="{StaticResource AriaSpace1}"
+                 Message="Local .torrent files are supported. Peer discovery stays off, upload is capped, and seeding stops when downloading finishes. Network settings are fixed for now." />
+        <ToggleSwitch Header="Distributed hash table (DHT)" IsEnabled="False"
+                      ToolTipService.ToolTip="DHT is disabled for torrent transfers in this build."
+                      OffContent="Off" OnContent="On" AutomationProperties.Name="Distributed hash table (DHT)" Margin="{StaticResource AriaSpace1}" />
+        <NumberBox Header="Listen port" Minimum="1" Maximum="65535" IsEnabled="False"
+                   ToolTipService.ToolTip="The torrent listen port is fixed in this build."
+                   AutomationProperties.Name="Torrent listen port" Margin="{StaticResource AriaSpace1}" HorizontalAlignment="Stretch" />
+        <HyperlinkButton Content="Reset this section to defaults" IsEnabled="False" ToolTipService.ToolTip="No saved settings exist in this section yet."
+                         HorizontalAlignment="Left" Margin="{StaticResource AriaSpace1}" />
+    </StackPanel>
 </UserControl>

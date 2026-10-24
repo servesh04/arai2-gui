@@ -7,24 +7,32 @@
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
         <Grid Margin="{StaticResource AriaSpace2}">
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <Button x:Name="CompactBackButton" Visibility="Collapsed" Click="CompactBackClick" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Back to downloads" AutomationProperties.Name="Back to downloads">
+            <Button x:Name="CompactBackButton" Margin="{StaticResource AriaSpace1}" Visibility="Collapsed" Click="CompactBackClick" Style="{StaticResource AriaToolbarButtonStyle}" ToolTipService.ToolTip="Back to downloads" AutomationProperties.Name="Back to downloads">
                 <icons:FluentIcon IconName="Back" AutomationProperties.AccessibilityView="Raw" />
             </Button>
-            <TextBlock Grid.Column="1" Text="Settings" FontSize="28" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="Settings" Style="{StaticResource TitleTextBlockStyle}" FontWeight="SemiBold" Margin="{StaticResource AriaSpace1}" VerticalAlignment="Center" />
         </Grid>
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
-            <SelectorBar x:Name="SectionTabs" HorizontalAlignment="Left" SelectionChanged="SectionChanged" AutomationProperties.Name="Settings sections">
-                <SelectorBarItem Text="General" /><SelectorBarItem Text="Appearance" /><SelectorBarItem Text="Downloads" /><SelectorBarItem Text="Network" />
-                <SelectorBarItem Text="BitTorrent" /><SelectorBarItem Text="Integration" /><SelectorBarItem Text="Notifications" /><SelectorBarItem Text="Advanced" /><SelectorBarItem Text="About" />
-            </SelectorBar>
-        </ScrollViewer>
+        <StackPanel Grid.Row="1">
+            <ScrollViewer x:Name="SectionScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled" SizeChanged="CategoryScrollerSizeChanged" AutomationProperties.Name="Scroll settings categories horizontally">
+                <SelectorBar x:Name="SectionTabs" HorizontalAlignment="Left" SelectionChanged="SectionChanged" SizeChanged="CategoryTabsSizeChanged" AutomationProperties.Name="Settings sections">
+                    <SelectorBarItem Text="General" /><SelectorBarItem Text="Appearance" /><SelectorBarItem Text="Downloads" /><SelectorBarItem Text="Network" />
+                    <SelectorBarItem Text="BitTorrent" /><SelectorBarItem Text="Integration" /><SelectorBarItem Text="Notifications" /><SelectorBarItem Text="Advanced" /><SelectorBarItem Text="About" />
+                </SelectorBar>
+            </ScrollViewer>
+            <TextBlock x:Name="CategoryScrollHint" Text="Use the horizontal scroll bar or left and right arrow keys to reach all settings categories."
+                       Style="{StaticResource AriaMetadataTextStyle}" TextWrapping="Wrap" Margin="{StaticResource AriaSpace2}" Visibility="Collapsed" />
+        </StackPanel>
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-            <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="720" /></Grid.ColumnDefinitions>
-            <StackPanel Grid.Column="0" Spacing="8">
+            <Grid x:Name="SectionLayoutGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="SettingsContentColumn" Width="2*" />
+                    <ColumnDefinition x:Name="SettingsSpacerColumn" Width="*" />
+                </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Padding="{StaticResource AriaSpace1}">
                 <Grid>
-                    <TextBlock x:Name="SectionTitle" Text="General" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock Text="{x:Bind ViewModel.SaveStatus, Mode=OneWay}" HorizontalAlignment="Right" Foreground="{ThemeResource AriaTextSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="SectionTitle" Text="General" Style="{StaticResource SubtitleTextBlockStyle}" FontWeight="SemiBold" Margin="{StaticResource AriaSpace2}" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SaveStatus, Mode=OneWay}" HorizontalAlignment="Right" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" Margin="{StaticResource AriaSpace2}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 </Grid>
                 <ContentControl x:Name="SectionContent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" />
             </StackPanel>

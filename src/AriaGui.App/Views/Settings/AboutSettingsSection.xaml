@@ -1,3 +1,25 @@
-<UserControl x:Class="AriaGui.App.Views.Settings.AboutSettingsSection" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel Spacing="16"><Border Style="{StaticResource AriaCardStyle}"><StackPanel Spacing="8"><TextBlock Text="AriaGUI" FontSize="20" FontWeight="SemiBold" /><TextBlock Text="Version 0.8.0 beta 1" /><TextBlock Text="aria2 version is shown when the engine is connected." Foreground="{ThemeResource AriaTextSecondaryBrush}" /></StackPanel></Border><Button Content="Source code" IsEnabled="False" ToolTipService.ToolTip="Not available yet" Style="{StaticResource AriaSecondaryButtonStyle}" HorizontalAlignment="Left" /><Button Content="User manual" IsEnabled="False" ToolTipService.ToolTip="Not available yet" Style="{StaticResource AriaSecondaryButtonStyle}" HorizontalAlignment="Left" /><Button Content="Open logs folder" IsEnabled="False" ToolTipService.ToolTip="Not available yet" Style="{StaticResource AriaSecondaryButtonStyle}" HorizontalAlignment="Left" /></StackPanel>
+<UserControl x:Class="AriaGui.App.Views.Settings.AboutSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace1}">
+            <StackPanel>
+                <TextBlock Text="AriaGUI" Style="{StaticResource TitleTextBlockStyle}" FontWeight="SemiBold" Margin="{StaticResource AriaSpace1}" />
+                <TextBlock Text="Version 0.8.0 beta 1" Style="{StaticResource AriaBodyTextStyle}" Margin="{StaticResource AriaSpace1}" />
+                <TextBlock Text="aria2 version is shown when the engine is connected." Style="{StaticResource AriaMetadataTextStyle}"
+                           TextWrapping="Wrap" Margin="{StaticResource AriaSpace1}" />
+            </StackPanel>
+        </Border>
+        <TextBlock Text="External links and log-folder access are not available in this build."
+                   Style="{StaticResource AriaMetadataTextStyle}" TextWrapping="Wrap" Margin="{StaticResource AriaSpace1}" />
+        <Button Content="Source code" IsEnabled="False" ToolTipService.ToolTip="The source code link is not configured in this build."
+                AutomationProperties.Name="Open source code" Style="{StaticResource AriaSecondaryButtonStyle}"
+                HorizontalAlignment="Left" Margin="{StaticResource AriaSpace1}" />
+        <Button Content="User manual" IsEnabled="False" ToolTipService.ToolTip="The user manual link is not configured in this build."
+                AutomationProperties.Name="Open user manual" Style="{StaticResource AriaSecondaryButtonStyle}"
+                HorizontalAlignment="Left" Margin="{StaticResource AriaSpace1}" />
+        <Button Content="Open logs folder" IsEnabled="False" ToolTipService.ToolTip="Opening the logs folder is not available in this build."
+                AutomationProperties.Name="Open logs folder" Style="{StaticResource AriaSecondaryButtonStyle}"
+                HorizontalAlignment="Left" Margin="{StaticResource AriaSpace1}" />
+    </StackPanel>
 </UserControl>

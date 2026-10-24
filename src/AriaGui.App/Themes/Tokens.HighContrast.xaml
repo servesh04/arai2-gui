@@ -7,6 +7,9 @@
     <SolidColorBrush x:Key="AriaBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
     <SolidColorBrush x:Key="AriaTextPrimaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
     <SolidColorBrush x:Key="AriaTextSecondaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="AriaTextBodyBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="AriaTextFilenameBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="AriaTextMetadataBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
     <SolidColorBrush x:Key="AriaTextDisabledBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
     <SolidColorBrush x:Key="AriaAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
     <SolidColorBrush x:Key="AriaAccentTextBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
@@ -15,6 +18,11 @@
     <SolidColorBrush x:Key="AriaDangerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
     <SolidColorBrush x:Key="AriaFocusRingBrush" Color="{ThemeResource SystemColorHighlightColor}" />
     <SolidColorBrush x:Key="AriaSelectionTintBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="AriaQuietDividerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+    <SolidColorBrush x:Key="AriaHoverBrush" Color="{ThemeResource SystemColorButtonFaceColor}" />
+    <SolidColorBrush x:Key="AriaSelectedBackgroundBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    <SolidColorBrush x:Key="AriaSelectedForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+    <SolidColorBrush x:Key="AriaSelectedIndicatorBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
     <SolidColorBrush x:Key="ListViewItemCheckBoxBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
     <SolidColorBrush x:Key="ListViewItemCheckBoxPointerOverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
     <SolidColorBrush x:Key="ListViewItemCheckBoxPressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />

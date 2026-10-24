@@ -2,75 +2,102 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:icons="using:AriaGui.App.Icons">
-    <Grid Background="{ThemeResource AriaBackgroundBrush}" Padding="{StaticResource AriaSpace2}">
+    <Grid x:Name="RailLayout" Background="{ThemeResource AriaBackgroundBrush}" Padding="{StaticResource AriaSpace2}"
+          SizeChanged="RailLayoutSizeChanged" Loaded="RailLayoutLoaded">
         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-        <StackPanel Spacing="{StaticResource AriaRadiusOuter}">
-            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusOuter}" Margin="{StaticResource AriaSpace2}">
-                <icons:FluentIcon IconName="Download" FontSize="{StaticResource AriaMinimumFontSize}" Foreground="{ThemeResource AriaAccentBrush}" AutomationProperties.AccessibilityView="Raw" />
-                <TextBlock Text="AriaGUI" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <StackPanel x:Name="RailHeader" Grid.Row="0" Margin="{StaticResource AriaSpace1}">
+            <StackPanel Orientation="Horizontal" Margin="{StaticResource AriaSpace1}">
+                <icons:FluentIcon IconName="Download" FontSize="{StaticResource AriaIconSizeSmall}" Foreground="{ThemeResource AriaAccentBrush}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock Text="AriaGUI" Style="{StaticResource AriaBodyTextStyle}" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
-            <ToggleButton x:Name="DownloadsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" Click="DownloadsClick" AutomationProperties.Name="Downloads">
-                <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusOuter}"><icons:FluentIcon IconName="Download" /><TextBlock Text="Downloads" /></StackPanel>
+            <ToggleButton x:Name="DownloadsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" Margin="{StaticResource AriaSpace1}" Click="DownloadsClick" AutomationProperties.Name="Downloads">
+                <StackPanel Orientation="Horizontal">
+                    <icons:FluentIcon IconName="Download" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                    <TextBlock Text="Downloads" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" />
+                </StackPanel>
             </ToggleButton>
         </StackPanel>
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="{StaticResource AriaRadiusOuter}">
-                <StackPanel x:Name="TransferFilters" Spacing="{StaticResource AriaRadiusControl}" Margin="{StaticResource AriaSpace1}">
-                    <TextBlock Text="TRANSFERS" FontWeight="SemiBold" Foreground="{ThemeResource AriaTextSecondaryBrush}" FontSize="{StaticResource AriaMinimumFontSize}" />
-                    <ListView x:Name="StatusFilters" SelectedIndex="{Binding ActiveFilterIndex, Mode=TwoWay}" SelectionMode="Single" ItemContainerStyle="{StaticResource AriaSidebarFilterStyle}" AutomationProperties.Name="Transfer status filter">
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="List" /><TextBlock Text="All" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" /><TextBlock Text="Downloading" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE823;" /><TextBlock Text="Waiting" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE769;" /><TextBlock Text="Paused" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE7BA;" /><TextBlock Text="Interrupted" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE73E;" /><TextBlock Text="Completed" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" /><TextBlock Text="Failed" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                        <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE71A;" /><TextBlock Text="Stopped" /></StackPanel><TextBlock Grid.Column="1" HorizontalAlignment="Right" />
-                        </Grid>
-                    </ListView>
-                </StackPanel>
+        <ScrollViewer x:Name="TransferFiltersScroller" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="TransferFilters" Margin="{StaticResource AriaSpace1}">
+                <TextBlock Text="TRANSFERS" Style="{StaticResource AriaMetadataTextStyle}" FontWeight="SemiBold" Margin="{StaticResource AriaSpace1}" />
+                <ListView x:Name="StatusFilters" SelectedIndex="{Binding ActiveFilterIndex, Mode=TwoWay}" SelectionMode="Single" ItemContainerStyle="{StaticResource AriaSidebarFilterStyle}" AutomationProperties.Name="Transfer status filter">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <icons:FluentIcon IconName="List" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="All" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE896;" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Downloading" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE823;" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Waiting" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE769;" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Paused" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE7BA;" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Interrupted" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE73E;" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Completed" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE711;" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Failed" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE71A;" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Stopped" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Tag="FilterCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                </ListView>
+            </StackPanel>
+        </ScrollViewer>
+        <ScrollViewer x:Name="NavigationScroller" Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
                 <Border Style="{StaticResource AriaDividerStyle}" Margin="{StaticResource AriaSpace2}" />
-                <ToggleButton x:Name="HistoryButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="HistoryClick" AutomationProperties.Name="History">
-                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="History" /><TextBlock Text="History" /></StackPanel>
-                        <TextBlock x:Name="HistoryCount" Grid.Column="1" />
+                <ToggleButton x:Name="HistoryButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="{StaticResource AriaSpace1}" Click="HistoryClick" AutomationProperties.Name="History">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <icons:FluentIcon IconName="History" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="History" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="HistoryCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
                     </Grid>
                 </ToggleButton>
-                <ToggleButton x:Name="NotificationsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Click="NotificationsClick" AutomationProperties.Name="Notifications">
-                    <Grid ColumnSpacing="{StaticResource AriaRadiusControl}">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="Notifications" /><TextBlock Text="Notifications" /></StackPanel>
-                        <TextBlock x:Name="NotificationsCount" Grid.Column="1" />
+                <ToggleButton x:Name="NotificationsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="{StaticResource AriaSpace1}" Click="NotificationsClick" AutomationProperties.Name="Notifications">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <icons:FluentIcon IconName="Notifications" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Grid.Column="1" Text="Notifications" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="NotificationsCount" Grid.Column="2" FontSize="{StaticResource AriaFontSizeMetadata}" MaxWidth="{StaticResource AriaControlTargetSize}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center" />
                     </Grid>
+                </ToggleButton>
+                <ToggleButton x:Name="SettingsButton" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="{StaticResource AriaSpace1}" Click="SettingsClick" AutomationProperties.Name="Settings">
+                    <StackPanel Orientation="Horizontal">
+                        <icons:FluentIcon IconName="Settings" FontSize="{StaticResource AriaIconSizeSmall}" Margin="{StaticResource AriaSpace1}" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock Text="Settings" FontSize="{StaticResource AriaFontSizePrimary}" VerticalAlignment="Center" />
+                    </StackPanel>
                 </ToggleButton>
             </StackPanel>
         </ScrollViewer>
-        <ToggleButton x:Name="SettingsButton" Grid.Row="2" Style="{StaticResource AriaSidebarToggleStyle}" HorizontalAlignment="Stretch" Click="SettingsClick" AutomationProperties.Name="Settings">
-            <StackPanel Orientation="Horizontal" Spacing="{StaticResource AriaRadiusControl}"><icons:FluentIcon IconName="Settings" /><TextBlock Text="Settings" /></StackPanel>
-        </ToggleButton>
     </Grid>
 </UserControl>

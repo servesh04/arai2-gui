@@ -18,7 +18,6 @@ public sealed partial class SelectionBar : UserControl
     {
         InitializeComponent();
         Loaded += SelectionBarLoaded;
-        RegisterPropertyChangedCallback(VisibilityProperty, (_, _) => UpdateToolbarReplacement());
         LayoutUpdated += (_, _) =>
         {
             if (!_hasRetry)
@@ -33,6 +32,9 @@ public sealed partial class SelectionBar : UserControl
     public Button Retry => RetryButton;
     public MenuFlyout Menu => MoreMenu;
     public MenuFlyoutItem OverflowRetryItem => OverflowRetry;
+    public int SelectedCount { get; private set; }
+    public bool HasSelection => SelectedCount > 0;
+    public event EventHandler? SelectionCountChanged;
     public event RoutedEventHandler? SingleActionRequested;
     private void SingleActionClick(object sender, RoutedEventArgs args) => SingleActionRequested?.Invoke(sender, args);
 
@@ -50,7 +52,6 @@ public sealed partial class SelectionBar : UserControl
         _page.ViewModel.Downloads.CollectionChanged += DownloadsChanged;
         SyncObservedItems();
         Refresh();
-        UpdateToolbarReplacement();
     }
 
     private void DownloadsChanged(object? sender, NotifyCollectionChangedEventArgs args)
@@ -95,7 +96,12 @@ public sealed partial class SelectionBar : UserControl
         if (_page is null) return;
         var selectedIds = _page.ViewModel.SelectedIds.ToHashSet();
         var selected = _page.ViewModel.Downloads.Where(item => selectedIds.Contains(item.Id)).ToArray();
-        SelectedCountText.Text = $"{selected.Length} selected";
+        if (SelectedCount != selected.Length)
+        {
+            SelectedCount = selected.Length;
+            SelectionCountChanged?.Invoke(this, EventArgs.Empty);
+        }
+        SelectedCountText.Text = $"{SelectedCount} selected";
         PauseButton.Visibility = selected.Any(item => item.ShowPause) ? Visibility.Visible : Visibility.Collapsed;
         ResumeButton.Visibility = selected.Any(item => item.ShowResume) ? Visibility.Visible : Visibility.Collapsed;
         _hasRetry = selected.Any(item => item.ShowRetry);
@@ -112,14 +118,6 @@ public sealed partial class SelectionBar : UserControl
     {
         if (_page is null) return;
         if (FindDescendant<DownloadsTable>(_page) is { } table) table.List.SelectedItems.Clear();
-    }
-
-    private void UpdateToolbarReplacement()
-    {
-        _page ??= FindAncestor<DownloadsPage>(this);
-        if (_page is null) return;
-        if (FindDescendant<DownloadsToolbar>(_page) is { } toolbar)
-            toolbar.Visibility = Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private static T? FindAncestor<T>(DependencyObject child) where T : DependencyObject
