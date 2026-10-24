@@ -97,6 +97,12 @@ public sealed class SettingsViewModel : ObservableObject
         set { if (value == _preferences.CompactRows) return; var old = _preferences.CompactRows; _preferences.CompactRows = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.CompactRows = old, nameof(CompactRows)); }
     }
 
+    public bool AnimationsEnabled
+    {
+        get => _preferences.AnimationsEnabled;
+        set { if (value == _preferences.AnimationsEnabled) return; var old = _preferences.AnimationsEnabled; _preferences.AnimationsEnabled = value; OnPropertyChanged(); _ = SaveOrRevertAsync(() => _preferences.AnimationsEnabled = old, nameof(AnimationsEnabled)); }
+    }
+
     public string DefaultFolder
     {
         get => _preferences.DefaultFolder;
@@ -178,7 +184,7 @@ public sealed class SettingsViewModel : ObservableObject
         switch (section)
         {
             case "General": DefaultFolder = string.Empty; break;
-            case "Appearance": ThemeIndex = 0; CompactRows = false; break;
+            case "Appearance": ThemeIndex = 0; CompactRows = false; AnimationsEnabled = true; break;
             case "Integration" when BrowserHandoffAvailable: BrowserEnabled = false; BrowserAutoCapture = false;
                 BrowserAltBypass = true; BrowserStartPaused = false; BrowserMinimumMb = 0;
                 BrowserFileTypes = string.Empty; BrowserExcludedSites = string.Empty; break;

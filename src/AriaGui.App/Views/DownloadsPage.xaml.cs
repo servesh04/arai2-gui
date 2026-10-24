@@ -90,6 +90,12 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     private bool _exiting;
     private bool _settingsVisible;
     private bool _notificationsVisible;
+    private bool _selectionStripHasSelection;
+    private Storyboard? _selectionStripStoryboard;
+    private Storyboard? _settingsHostStoryboard;
+    private Storyboard? _dialogStoryboard;
+    private UISettings? _systemUiSettings;
+    private AccessibilitySettings? _systemAccessibilitySettings;
     private readonly INotificationRepository _notificationRepository;
     private readonly NotificationsViewModel _notificationsViewModel;
     private DownloadItemViewModel? _observedSelected;
@@ -122,6 +128,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         }
 #endif
         InitializeComponent();
+        InitializeSystemMotionEvents();
         DataContext = this;
         SelectionBarControl.SelectionCountChanged += SelectionCountChanged;
         DownloadsTableControl.Initialize(ViewModel, Preferences, ScheduleLayoutSave, RefreshRowChecks);
@@ -130,7 +137,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         DownloadsTableControl.RowCheckReady += DownloadTableRowCheckReady;
         DownloadsTableControl.RealizedContainersChanged += (_, _) => RefreshRowChecks();
         StatusBarControl.ApplyServices(engineControl, speedLimitService, features);
-        HandoffToastControl.Initialize(handoffNotifier, features);
+        HandoffToastControl.Initialize(handoffNotifier, features, () => Preferences.AnimationsEnabled);
         HandoffToastControl.ShowRequested += ShowHandoffItem;
         DetailsPaneControl.Initialize(_torrentRepository, _torrentEngine);
         _removeAndDeleteMenu = new MenuFlyoutItem { Text = "Remove and delete torrent files…" };
@@ -287,6 +294,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     }
     private void PreferencesClick(object sender, RoutedEventArgs args)
     {
+        var entering = !_settingsVisible;
         if (SettingsHost.Content is not Settings.SettingsPage)
         {
             var settings = new Settings.SettingsPage(Preferences, Features);
@@ -298,10 +306,12 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         DownloadsContent.Visibility = Visibility.Collapsed;
         HandoffToastControl.Visibility = Visibility.Collapsed;
         SettingsHost.Visibility = Visibility.Visible;
+        if (entering) AnimateSettingsHostEntry();
         FiltersRailControl.SetSettingsSelected(true);
     }
     private void ShowDownloads()
     {
+        StopSettingsHostTransition();
         DownloadsToolbarControl.Visibility = Visibility.Visible;
         _settingsVisible = false;
         _notificationsVisible = false;
@@ -314,6 +324,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     }
     private void ShowNotifications()
     {
+        var entering = !_notificationsVisible;
         if (SettingsHost.Content is not NotificationsPage)
             SettingsHost.Content = new NotificationsPage(_notificationsViewModel);
         _settingsVisible = false;
@@ -321,6 +332,7 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         DownloadsContent.Visibility = Visibility.Collapsed;
         HandoffToastControl.Visibility = Visibility.Collapsed;
         SettingsHost.Visibility = Visibility.Visible;
+        if (entering) AnimateSettingsHostEntry();
         FiltersRailControl.SetNotificationsSelected(true);
         _ = _notificationsViewModel.RefreshAsync();
     }
@@ -377,20 +389,36 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
             dialog.Content = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         }
         SizeActiveDialog();
-        if (Preferences.AnimationsEnabled && new UISettings().AnimationsEnabled)
+        if (UiMotion.IsEnabled(Preferences.AnimationsEnabled, XamlRoot))
             dialog.Opened += (_, _) =>
             {
                 if (dialog.Content is not UIElement content) return;
-                var animation = new DoubleAnimation { From = 0, To = 1, Duration = new Duration(TimeSpan.FromMilliseconds(170)) };
-                Storyboard.SetTarget(animation, content); Storyboard.SetTargetProperty(animation, "Opacity");
-                var storyboard = new Storyboard(); storyboard.Children.Add(animation); storyboard.Begin();
+                _dialogStoryboard = UiMotion.Fade(
+                    content, 0, 1, UiMotion.Duration("AriaMotionDialogMilliseconds"),
+                    () => _dialogStoryboard = null);
             };
         try { await dialog.ShowAsync(); }
         catch (OperationCanceledException) { }
         catch (System.Runtime.InteropServices.COMException) when (_exiting || XamlRoot is null) { }
-        finally { _activeDialog = null; _dialogOpen = false; }
+        finally
+        {
+            _dialogStoryboard?.Stop();
+            _dialogStoryboard = null;
+            if (dialog.Content is UIElement content) content.Opacity = 1;
+            _activeDialog = null;
+            _dialogOpen = false;
+        }
     }
-    public void PrepareForExit() { _exiting = true; _layoutSaveTimer.Stop(); _activeDialog?.Hide(); Preferences.PropertyChanged -= PreferencesChanged; }
+    public void PrepareForExit()
+    {
+        _exiting = true;
+        _layoutSaveTimer.Stop();
+        _activeDialog?.Hide();
+        Preferences.PropertyChanged -= PreferencesChanged;
+        if (_systemUiSettings is not null) _systemUiSettings.AnimationsEnabledChanged -= SystemAnimationsChanged;
+        if (_systemAccessibilitySettings is not null) _systemAccessibilitySettings.HighContrastChanged -= HighContrastChanged;
+        FinishTransitionsImmediately();
+    }
     public Task SaveLayoutAsync() => Preferences.SaveLayoutAsync();
 
     private void SizeActiveDialog()
@@ -503,7 +531,6 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         }
         DetailsHost.Visibility = selected is null ? Visibility.Collapsed : Visibility.Visible;
         SelectionHint.Visibility = selected is null ? Visibility.Visible : Visibility.Collapsed;
-        SelectionBarControl.Visibility = SelectionBarControl.HasSelection ? Visibility.Visible : Visibility.Collapsed;
         UpdatePaneLayout();
     }
     private void SelectionCountChanged(object? sender, EventArgs args)
@@ -512,10 +539,103 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         var restoreTransferFocus = !hasSelection && SelectionBarControl.SelectedCount == 0
             && XamlRoot is { } root
             && IsDescendantOf(FocusManager.GetFocusedElement(root) as DependencyObject, SelectionBarControl);
-        SelectionBarControl.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        UpdateSelectionStripPresentation(allowMotion: true);
         UpdateShellLayout();
-        if (restoreTransferFocus)
-            DispatcherQueue.TryEnqueue(() => TransferList.Focus(FocusState.Programmatic));
+        if (restoreTransferFocus) TransferList.Focus(FocusState.Programmatic);
+    }
+    private void UpdateSelectionStripPresentation(bool allowMotion)
+    {
+        var hasSelection = SelectionBarControl.HasSelection;
+        if (hasSelection == _selectionStripHasSelection) return;
+        _selectionStripHasSelection = hasSelection;
+        _selectionStripStoryboard?.Stop();
+        _selectionStripStoryboard = null;
+
+        if (hasSelection)
+        {
+            SelectionBarControl.Visibility = Visibility.Visible;
+            SelectionBarControl.Actions.Opacity = 1;
+            if (allowMotion && UiMotion.IsEnabled(Preferences.AnimationsEnabled, XamlRoot))
+            {
+                SelectionBarControl.Actions.Opacity = 0;
+                _selectionStripStoryboard = UiMotion.Fade(
+                    SelectionBarControl.Actions, 0, 1, UiMotion.Duration("AriaMotionSelectionEnterMilliseconds"),
+                    () =>
+                    {
+                        SelectionBarControl.Actions.Opacity = 1;
+                        _selectionStripStoryboard = null;
+                    });
+            }
+        }
+        else
+        {
+            SelectionBarControl.Visibility = Visibility.Collapsed;
+            SelectionBarControl.Actions.Opacity = 1;
+        }
+    }
+    private void AnimateSettingsHostEntry()
+    {
+        var interrupted = _settingsHostStoryboard is not null;
+        StopSettingsHostTransition();
+        if (interrupted) return;
+        if (!UiMotion.IsEnabled(Preferences.AnimationsEnabled, XamlRoot)) return;
+        SettingsHost.Opacity = 0;
+        _settingsHostStoryboard = UiMotion.Fade(
+            SettingsHost, 0, 1, UiMotion.Duration("AriaMotionPageEntryMilliseconds"),
+            () =>
+            {
+                SettingsHost.Opacity = 1;
+                _settingsHostStoryboard = null;
+            });
+    }
+    private void StopSettingsHostTransition()
+    {
+        _settingsHostStoryboard?.Stop();
+        _settingsHostStoryboard = null;
+        if (SettingsHost is not null) SettingsHost.Opacity = 1;
+    }
+    private void InitializeSystemMotionEvents()
+    {
+        try
+        {
+            _systemUiSettings = new UISettings();
+            _systemUiSettings.AnimationsEnabledChanged += SystemAnimationsChanged;
+            _systemAccessibilitySettings = new AccessibilitySettings();
+            _systemAccessibilitySettings.HighContrastChanged += HighContrastChanged;
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            if (_systemUiSettings is not null)
+                _systemUiSettings.AnimationsEnabledChanged -= SystemAnimationsChanged;
+            if (_systemAccessibilitySettings is not null)
+                _systemAccessibilitySettings.HighContrastChanged -= HighContrastChanged;
+            _systemUiSettings = null;
+            _systemAccessibilitySettings = null;
+        }
+    }
+    private void SystemAnimationsChanged(UISettings sender, UISettingsAnimationsEnabledChangedEventArgs args)
+        => QueueMotionPolicyCheck();
+    private void HighContrastChanged(AccessibilitySettings sender, object args)
+        => QueueMotionPolicyCheck();
+    private void QueueMotionPolicyCheck()
+        => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!UiMotion.IsEnabled(Preferences.AnimationsEnabled, XamlRoot)) FinishTransitionsImmediately();
+        });
+    private void FinishTransitionsImmediately()
+    {
+        _selectionStripStoryboard?.Stop();
+        _selectionStripStoryboard = null;
+        _selectionStripHasSelection = SelectionBarControl.HasSelection;
+        SelectionBarControl.Actions.Opacity = 1;
+        SelectionBarControl.Visibility = _selectionStripHasSelection ? Visibility.Visible : Visibility.Collapsed;
+        StopSettingsHostTransition();
+        _dialogStoryboard?.Stop();
+        _dialogStoryboard = null;
+        if (_activeDialog?.Content is UIElement content) content.Opacity = 1;
+        DetailsPaneControl.CancelContentEntrance();
+        HandoffToastControl.CompleteTransitionsImmediately();
+        if (SettingsHost.Content is Settings.SettingsPage settings) settings.CompleteMotionImmediately();
     }
     private static bool IsDescendantOf(DependencyObject? element, DependencyObject ancestor)
     {
@@ -636,7 +756,6 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         ConnectionText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         FooterStatus.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
         TotalText.MaxWidth = compact ? 90 : 180;
-        SelectionBarControl.Visibility = SelectionBarControl.HasSelection ? Visibility.Visible : Visibility.Collapsed;
         UpdateFilterCaption();
         UpdatePaneLayout();
         SizeActiveDialog();
@@ -789,6 +908,8 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         Preferences.DetailsVisible = DetailsToggle.IsChecked;
         _detailsOpenForSelection = DetailsToggle.IsChecked && TransferList.SelectedItem is not null;
         UpdatePaneLayout();
+        if (DetailsToggle.IsChecked) DetailsPaneControl.AnimateContentEntrance(Preferences.AnimationsEnabled);
+        else DetailsPaneControl.CancelContentEntrance();
         ScheduleLayoutSave();
     }
     internal void CloseDetailsFromPane()
@@ -872,7 +993,12 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
         foreach (var item in selected)
             if (item.RemoveAndDeleteCommand.CanExecute(null)) await item.RemoveAndDeleteCommand.ExecuteAsync(null);
     }
-    private void PreferencesChanged(object? sender, PropertyChangedEventArgs args) => ApplyLayout();
+    private void PreferencesChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(Preferences.AnimationsEnabled) && !Preferences.AnimationsEnabled)
+            FinishTransitionsImmediately();
+        ApplyLayout();
+    }
     private void ScheduleLayoutSave() { _layoutSaveTimer.Stop(); _layoutSaveTimer.Start(); }
     private void SavePaneLayout()
     {
@@ -895,4 +1021,55 @@ public sealed partial class DownloadsPage : Page, INotifyPropertyChanged
     }
     private async void ColumnsClick(object sender, RoutedEventArgs args) =>
         await DownloadsTableControl.ShowColumnsAsync(ShowDialogAsync);
+}
+
+internal static class UiMotion
+{
+    public static bool IsEnabled(bool appAnimationsEnabled, XamlRoot? root)
+    {
+        if (!appAnimationsEnabled || root is null) return false;
+        try
+        {
+            return new UISettings().AnimationsEnabled && !new AccessibilitySettings().HighContrast;
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return false;
+        }
+    }
+
+    public static double Duration(string key)
+    {
+        var resources = Microsoft.UI.Xaml.Application.Current.Resources;
+        if (resources.TryGetValue(key, out var value) && value is double duration) return duration;
+        foreach (var dictionary in resources.MergedDictionaries)
+            if (dictionary.TryGetValue(key, out value) && value is double durationFromMerged) return durationFromMerged;
+        return 0d;
+    }
+
+    public static Storyboard? Fade(UIElement target, double from, double to, double durationMilliseconds, Action completed)
+    {
+        if (durationMilliseconds <= 0)
+        {
+            target.Opacity = to;
+            completed();
+            return null;
+        }
+
+        target.Opacity = from;
+        var animation = new DoubleAnimation
+        {
+            From = from,
+            To = to,
+            Duration = new Duration(TimeSpan.FromMilliseconds(durationMilliseconds)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        Storyboard.SetTarget(animation, target);
+        Storyboard.SetTargetProperty(animation, "Opacity");
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(animation);
+        storyboard.Completed += (_, _) => completed();
+        storyboard.Begin();
+        return storyboard;
+    }
 }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using AriaGui.App.ViewModels;
+using AriaGui.App.Views;
 using AriaGui.Core.Downloads;
 using AriaGui.Application.Downloads;
 using AriaGui.Application.Engine;
@@ -11,6 +12,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace AriaGui.App.Views.Downloads;
@@ -24,12 +26,17 @@ public sealed partial class DetailsPane : UserControl
     private DownloadItemViewModel? _selectedTorrent;
     private bool _refreshingFiles;
     private TorrentPublicationProgress? _latestPublication;
+    private Storyboard? _contentEntranceStoryboard;
 
     public DetailsPane()
     {
         InitializeComponent();
         DetailsTabs.TabItems.Remove(TorrentFilesTab);
-        Inspector.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) => CloseOpenFlyouts());
+        Inspector.RegisterPropertyChangedCallback(VisibilityProperty, (_, _) =>
+        {
+            CloseOpenFlyouts();
+            if (Inspector.Visibility != Visibility.Visible) CancelContentEntrance();
+        });
         DetailsHost.DataContextChanged += (_, _) => { CloseOpenFlyouts(); SelectionChanged(); };
         _fileRefreshTimer.Tick += async (_, _) => await RefreshTorrentFilesAsync();
         Loaded += (_, _) => SubscribePublication();
@@ -43,6 +50,32 @@ public sealed partial class DetailsPane : UserControl
     public Button OpenFile => InspectorOpenFile;
     public Button OpenFolder => InspectorOpenFolder;
     public event RoutedEventHandler? SingleActionRequested;
+
+    public void AnimateContentEntrance(bool appAnimationsEnabled)
+    {
+        CancelContentEntrance();
+        if (Inspector.Visibility != Visibility.Visible || DetailsHost.Visibility != Visibility.Visible
+            || !UiMotion.IsEnabled(appAnimationsEnabled, XamlRoot))
+        {
+            DetailsHost.Opacity = 1;
+            return;
+        }
+        DetailsHost.Opacity = 0;
+        _contentEntranceStoryboard = UiMotion.Fade(
+            DetailsHost, 0, 1, UiMotion.Duration("AriaMotionInspectorMilliseconds"),
+            () =>
+            {
+                DetailsHost.Opacity = 1;
+                _contentEntranceStoryboard = null;
+            });
+    }
+
+    public void CancelContentEntrance()
+    {
+        _contentEntranceStoryboard?.Stop();
+        _contentEntranceStoryboard = null;
+        if (DetailsHost is not null) DetailsHost.Opacity = 1;
+    }
 
     public void Initialize(SqliteTorrentMetadataRepository repository, Aria2ProcessManager engine)
     {

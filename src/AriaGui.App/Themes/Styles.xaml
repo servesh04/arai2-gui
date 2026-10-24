@@ -30,6 +30,13 @@
     <x:Double x:Key="AriaShortTransferWorkspaceHeight">520</x:Double>
     <x:Double x:Key="AriaShortTransferDetailsHeight">180</x:Double>
     <x:Double x:Key="AriaShortTransferTableMinimumHeight">160</x:Double>
+    <x:Double x:Key="AriaMotionSelectionEnterMilliseconds">120</x:Double>
+    <x:Double x:Key="AriaMotionInspectorMilliseconds">160</x:Double>
+    <x:Double x:Key="AriaMotionPageEntryMilliseconds">140</x:Double>
+    <x:Double x:Key="AriaMotionToastEnterMilliseconds">160</x:Double>
+    <x:Double x:Key="AriaMotionToastExitMilliseconds">100</x:Double>
+    <x:Double x:Key="AriaMotionToastOffsetY">4</x:Double>
+    <x:Double x:Key="AriaMotionDialogMilliseconds">170</x:Double>
     <Thickness x:Key="AriaFocusRingThickness">2</Thickness>
     <Thickness x:Key="AriaStandardBorderThickness">1</Thickness>
     <Thickness x:Key="AriaPrimaryButtonPadding">12,6</Thickness>

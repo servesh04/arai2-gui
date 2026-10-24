@@ -19,6 +19,14 @@
         </StackPanel>
 
         <StackPanel Margin="{StaticResource AriaSpace1}">
+            <TextBlock Text="Animations" Style="{StaticResource AriaBodyTextStyle}" Margin="{StaticResource AriaSpace1}" />
+            <TextBlock Text="Use subtle transitions when Windows animations are enabled. High Contrast always shows changes immediately."
+                       Style="{StaticResource AriaMetadataTextStyle}" TextWrapping="Wrap" Margin="{StaticResource AriaSpace1}" />
+            <ToggleSwitch IsOn="{Binding AnimationsEnabled, Mode=TwoWay}" OffContent="Off" OnContent="On"
+                          AutomationProperties.Name="Enable interface animations" Margin="{StaticResource AriaSpace1}" />
+        </StackPanel>
+
+        <StackPanel Margin="{StaticResource AriaSpace1}">
             <TextBlock Text="Language" Style="{StaticResource AriaBodyTextStyle}" Margin="{StaticResource AriaSpace1}" />
             <TextBlock Text="Choose the app display language." Style="{StaticResource AriaMetadataTextStyle}" TextWrapping="Wrap" Margin="{StaticResource AriaSpace1}" />
             <ComboBox IsEnabled="False" ToolTipService.ToolTip="Language selection is not supported in this build."

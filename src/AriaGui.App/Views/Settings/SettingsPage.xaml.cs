@@ -1,7 +1,9 @@
 using AriaGui.App.Features;
 using AriaGui.App.ViewModels;
+using AriaGui.App.Views;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 
 namespace AriaGui.App.Views.Settings;
 
@@ -9,13 +11,17 @@ public sealed partial class SettingsPage : Page
 {
     public SettingsViewModel ViewModel { get; }
     public event RoutedEventHandler? BackRequested;
+    private readonly PreferencesViewModel _preferences;
+    private Storyboard? _sectionStoryboard;
 
     public SettingsPage(PreferencesViewModel preferences, FeatureFlags features)
     {
+        _preferences = preferences;
         ViewModel = new(preferences, features);
         InitializeComponent();
         DataContext = ViewModel;
         SectionTabs.SelectedItem = SectionTabs.Items[0];
+        Unloaded += (_, _) => StopSectionTransition();
     }
 
     public void SelectSection(string name)
@@ -42,7 +48,35 @@ public sealed partial class SettingsPage : Page
         };
         content.DataContext = ViewModel;
         SectionContent.Content = content;
+        if (IsLoaded) AnimateSectionContent();
     }
+
+    private void AnimateSectionContent()
+    {
+        StopSectionTransition();
+        if (!UiMotion.IsEnabled(_preferences.AnimationsEnabled, XamlRoot))
+        {
+            SectionContent.Opacity = 1;
+            return;
+        }
+        SectionContent.Opacity = 0;
+        _sectionStoryboard = UiMotion.Fade(
+            SectionContent, 0, 1, UiMotion.Duration("AriaMotionPageEntryMilliseconds"),
+            () =>
+            {
+                SectionContent.Opacity = 1;
+                _sectionStoryboard = null;
+            });
+    }
+
+    private void StopSectionTransition()
+    {
+        _sectionStoryboard?.Stop();
+        _sectionStoryboard = null;
+        if (SectionContent is not null) SectionContent.Opacity = 1;
+    }
+
+    public void CompleteMotionImmediately() => StopSectionTransition();
 
     private void PageSizeChanged(object sender, SizeChangedEventArgs args)
     {

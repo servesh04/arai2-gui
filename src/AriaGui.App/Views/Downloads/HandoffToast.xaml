@@ -7,8 +7,10 @@
         <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:HandoffToastItem">
                 <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace1}"
+                        Loaded="ToastCardLoaded" Unloaded="ToastCardUnloaded"
                         PointerEntered="ToastPointerEntered" PointerExited="ToastPointerExited"
                         GotFocus="ToastGotFocus" LostFocus="ToastLostFocus">
+                    <Border.RenderTransform><TranslateTransform /></Border.RenderTransform>
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <TextBlock Text="{x:Bind Message}" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="{StaticResource AriaMinimumFontSize}" />

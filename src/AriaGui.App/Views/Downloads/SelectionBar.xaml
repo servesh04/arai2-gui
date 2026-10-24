@@ -2,7 +2,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:icons="using:AriaGui.App.Icons">
-    <StackPanel x:Name="SelectedActions" Orientation="Horizontal" Padding="{StaticResource AriaSpace2}" Background="{ThemeResource AriaSelectionTintBrush}">
+    <Grid Background="{ThemeResource AriaSelectionTintBrush}">
+    <StackPanel x:Name="SelectedActions" Orientation="Horizontal" Padding="{StaticResource AriaSpace2}">
         <TextBlock x:Name="SelectedCountText" Text="0 selected" FontSize="{StaticResource AriaFontSizePrimary}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="{StaticResource AriaSpace1}" />
         <Button x:Name="ResumeButton" Command="{Binding ViewModel.BatchResumeCommand}" Style="{StaticResource AriaToolbarButtonStyle}" Margin="{StaticResource AriaSpace1}" AutomationProperties.Name="Resume selected downloads">
             <StackPanel Orientation="Horizontal">
@@ -42,4 +43,5 @@
         </DropDownButton>
         <Button x:Name="ClearButton" Content="Clear" Style="{StaticResource AriaToolbarButtonStyle}" Margin="{StaticResource AriaSpace1}" Click="ClearClick" AutomationProperties.Name="Clear download selection" />
     </StackPanel>
+    </Grid>
 </UserControl>
