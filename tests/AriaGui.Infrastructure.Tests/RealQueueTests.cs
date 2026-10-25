@@ -499,7 +499,7 @@ public sealed class RealQueueTests(Xunit.Abstractions.ITestOutputHelper output)
         await runtime.Repository().InsertOperationAsync(legacy with { PendingOperation = uncertain }, default);
         await runtime.Repository().SaveAsync([legacy with { Progress = new(DownloadStatus.Interrupted, legacy.Progress.DownloadedBytes, legacy.Progress.TotalBytes, 0), PendingOperation = uncertain }], default);
         var requestCount = server.Observations.Count; server.ChangeEntity = true; Volatile.Write(ref server.RecoverPartial, true);
-        var options = runtime.Options with { UseContinuityGateway = true, ContinuityTestOrigins = source => new ControlledLoopbackOrigin(source) };
+        var options = runtime.Options with { UseContinuityGateway = true, ContinuityTestOrigins = source => new ControlledLoopbackOrigin(source), RequestTimeout = TimeSpan.FromSeconds(10) };
         await using var guarded = new Aria2ProcessManager(options, runtime.Repository()); await guarded.StartAsync(default);
         var reopened = new DownloadRuntimeStore(); var restart = runtime.Coordinator(new ManagedAria2Client(guarded), reopened);
         await restart.RefreshAsync(); Assert.Equal(DownloadStatus.Interrupted, Assert.Single(reopened.Current.Downloads).Progress.Status);
