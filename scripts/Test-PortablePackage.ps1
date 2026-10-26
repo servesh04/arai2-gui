@@ -24,6 +24,9 @@ try {
         $reader = [IO.StreamReader]::new($entries['AriaGUI/' + $name].Open())
         try { $reader.ReadToEnd() } finally { $reader.Dispose() }
     }
+    function Normalize-LineEndings([string]$value) {
+        $value.Replace("`r`n", "`n").Replace("`r", "`n")
+    }
     function Entry-Hash([string]$name) {
         Require-Entry $name
         $stream = $entries['AriaGUI/' + $name].Open()
@@ -38,14 +41,20 @@ try {
         'Microsoft.AspNetCore.Server.Kestrel.Core.dll')) {
         Require-Entry $name
     }
-    $licenseHash = (Get-FileHash -LiteralPath (Join-Path $projectRoot 'LICENSE') -Algorithm SHA256).Hash
-    if ((Entry-Hash 'LICENSE') -ne $licenseHash) { throw 'Portable AriaGUI license differs from the repository license.' }
+    $repositoryLicense = Normalize-LineEndings ([IO.File]::ReadAllText((Join-Path $projectRoot 'LICENSE')))
+    $packageLicense = Normalize-LineEndings (Read-Entry 'LICENSE')
+    if (![string]::Equals($packageLicense, $repositoryLicense, [StringComparison]::Ordinal)) {
+        throw 'Portable AriaGUI license differs from the repository license.'
+    }
     if ((Entry-Hash 'Engine/aria2c.exe') -ne $provenance.executableSha256) {
         throw 'Portable engine hash differs from the pinned binary.'
     }
     foreach ($notice in @($provenance.notices) + @('provenance.json')) {
-        $expected = (Get-FileHash -LiteralPath (Join-Path $projectRoot "vendor/aria2/$notice") -Algorithm SHA256).Hash
-        if ((Entry-Hash "Engine/Notices/$notice") -ne $expected) { throw "Portable engine notice differs: $notice" }
+        $expected = Normalize-LineEndings ([IO.File]::ReadAllText((Join-Path $projectRoot "vendor/aria2/$notice")))
+        $actual = Normalize-LineEndings (Read-Entry "Engine/Notices/$notice")
+        if (![string]::Equals($actual, $expected, [StringComparison]::Ordinal)) {
+            throw "Portable engine notice differs: $notice"
+        }
     }
     $source = Read-Entry 'Source/aria2/source-manifest.json' | ConvertFrom-Json
     if ($source.aria2Version -ne $provenance.version -or
