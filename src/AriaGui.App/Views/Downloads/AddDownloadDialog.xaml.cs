@@ -25,6 +25,7 @@ public sealed partial class AddDownloadDialog : ContentDialog
     private byte[]? _metainfo;
     private bool _torrentMode;
     private bool _folderValid;
+    private string? _validatedFolder;
     private bool _populating;
 
     public AddDownloadDialog(DownloadsViewModel viewModel, WindowId windowId, string privateRuntimeRoot,
@@ -75,6 +76,7 @@ public sealed partial class AddDownloadDialog : ContentDialog
     private void ValidateUrls()
     {
         if (_torrentMode) return;
+        if (FolderBox?.Text.Trim() != _validatedFolder || !_folderValid) ValidateFolder();
         _urls = UrlsBox.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var invalid = _urls.Where(url => !IsSupportedUrl(url)).ToArray();
         UrlError.Text = _urls.Count == 0 ? "Enter at least one URL." : invalid.Length > 0 ? "Use one supported http, https, or ftp URL per line." : string.Empty;
@@ -91,6 +93,7 @@ public sealed partial class AddDownloadDialog : ContentDialog
     {
         if (FolderBox is null || FolderStatus is null) return;
         var path = FolderBox.Text.Trim();
+        _validatedFolder = path;
         _folderValid = Directory.Exists(path);
         if (!_folderValid) FolderStatus.Text = "Choose an existing, writable folder.";
         else

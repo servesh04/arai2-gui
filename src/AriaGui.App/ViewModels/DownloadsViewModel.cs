@@ -167,11 +167,15 @@ public sealed class DownloadsViewModel : RuntimeViewModel
     {
         if (IsBatchRunning) return;
         var selection = _selectedIds.ToArray(); IsBatchRunning = true;
+        var deleted = new HashSet<Guid>();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _commandsLifetime.Token);
         try
         {
-            Func<Guid, DownloadAction, CancellationToken, Task> execute = freshRestart ? (id, _, cancellation) => _coordinator.RestartFreshAsync(id, cancellation) : ExecuteCoordinatorAsync;
-            _batchResults = await DownloadBatch.ExecuteAsync(selection, action, ResolveBatchEntry,
+            Func<Guid, DownloadAction, CancellationToken, Task> execute = freshRestart
+                ? (id, _, cancellation) => _coordinator.RestartFreshAsync(id, cancellation)
+                : (id, command, cancellation) => ExecuteCoordinatorAsync(id, command, cancellation, () => deleted.Add(id));
+            _batchResults = await DownloadBatch.ExecuteAsync(selection, action,
+                id => deleted.Contains(id) ? null : ResolveBatchEntry(id),
                 () => _runtimeStore.Current.Connection == EngineConnectionState.Connected || action == DownloadAction.Remove,
                 execute, linked.Token,
                 freshRestart ? CanRestartFresh : entry => CanExecuteEntry(entry, action));
@@ -610,7 +614,7 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         };
         return (SortDescending ? entries.OrderByDescending(key) : entries.OrderBy(key)).ThenBy(row => row.Job.Id);
     }
-    private async Task ExecuteCoordinatorAsync(Guid id, DownloadAction action, CancellationToken token)
+    private async Task ExecuteCoordinatorAsync(Guid id, DownloadAction action, CancellationToken token, Action? onDeleted = null)
     {
         if (ResolveBatchEntry(id)?.Kind == TransferKind.Torrent)
         {
@@ -625,12 +629,29 @@ public sealed class DownloadsViewModel : RuntimeViewModel
                 default: throw new ArgumentOutOfRangeException(nameof(action));
             }
             if (_torrentTransfers is not null) await _torrentTransfers.RefreshAsync(token);
+            if (action == DownloadAction.Remove) onDeleted?.Invoke();
+            return;
+        }
+        if (action == DownloadAction.Remove)
+        {
+            if (ResolveBatchEntry(id) is { } current && DownloadBrowsing.IsTerminal(current.Progress.Status))
+            {
+                await _coordinator.DeleteTerminalHistoryAsync(id, token);
+                onDeleted?.Invoke();
+                return;
+            }
+            await _coordinator.RemoveAsync(id, token);
+            if (ResolveBatchEntry(id) is { Progress.Status: DownloadStatus.Removed, PendingOperation: null })
+            {
+                await _coordinator.DeleteTerminalHistoryAsync(id, token);
+                onDeleted?.Invoke();
+            }
             return;
         }
         await (action switch
         {
             DownloadAction.Pause => _coordinator.PauseAsync(id, token), DownloadAction.Resume => _coordinator.ResumeAsync(id, token),
-            DownloadAction.Remove => _coordinator.RemoveAsync(id, token), DownloadAction.Retry => _coordinator.RetryAsync(id, token),
+            DownloadAction.Retry => _coordinator.RetryAsync(id, token),
             DownloadAction.Recover => _coordinator.RecoverAsync(id, token), _ => throw new ArgumentOutOfRangeException(nameof(action))
         });
     }
@@ -667,6 +688,7 @@ public sealed class DownloadsViewModel : RuntimeViewModel
         catch (OperationCanceledException) { }
         catch (DownloadRequestException ex) { _dispatcher.Enqueue(() => ErrorMessage = ex.Message); }
         catch (DownloadStorageException ex) { _dispatcher.Enqueue(() => ErrorMessage = ex.Message); }
+        catch (EngineException ex) { _dispatcher.Enqueue(() => ErrorMessage = ex.Message); }
         catch (ArgumentException ex) { _dispatcher.Enqueue(() => ErrorMessage = ex.Message.Split(Environment.NewLine)[0]); }
         catch (Exception) { _dispatcher.Enqueue(() => ErrorMessage = "The command was not confirmed. Check the row and engine connection; its saved intent will be reconciled."); }
     }

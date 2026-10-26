@@ -102,7 +102,7 @@ public sealed class DownloadItemViewModel : ObservableObject
     public bool ShowPause => Kind == TransferKind.Torrent ? CanExecute(DownloadAction.Pause) : _entry.Verification != VerificationStatus.Verifying &&
         _entry.Progress.Status is (DownloadStatus.Downloading or DownloadStatus.Queued);
     public bool ShowResume => _entry.Progress.Status == DownloadStatus.Paused;
-    public bool ShowRemove => Kind == TransferKind.Torrent ? CanExecute(DownloadAction.Remove) : ShowPause || ShowResume;
+    public bool ShowRemove => CanExecute(DownloadAction.Remove);
     public bool ShowRetry => _entry.Progress.Status is DownloadStatus.Failed or DownloadStatus.Removed;
     public bool ShowRecover => _entry.Progress.Status == DownloadStatus.Interrupted || _entry.PendingOperation?.Status == OperationStatus.Uncertain;
     public bool ShowQueue => _entry.Progress.Status == DownloadStatus.Queued;

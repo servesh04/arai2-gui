@@ -8,6 +8,8 @@ public static class DownloadBatch
 {
     public static bool CanExecute(DownloadEntry entry, bool connected, DownloadAction action)
     {
+        if (action == DownloadAction.Remove && DownloadBrowsing.IsTerminal(entry.Progress.Status))
+            return entry.PendingOperation is null;
         if (!connected) return false;
         if (action == DownloadAction.Recover)
             return entry.PendingOperation?.Status != OperationStatus.Pending &&

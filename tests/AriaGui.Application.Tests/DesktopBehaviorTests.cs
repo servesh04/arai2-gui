@@ -2,6 +2,7 @@ using AriaGui.Application.Downloads;
 using AriaGui.Core.Downloads;
 using AriaGui.App.Services;
 using AriaGui.App.ViewModels;
+using AriaGui.Infrastructure.Persistence;
 
 namespace AriaGui.Application.Tests;
 
@@ -45,6 +46,50 @@ public sealed class DesktopBehaviorTests
         Assert.True(item.RemoveCommand.CanExecute(null));
         Assert.True(item.RemoveAndDeleteCommand.CanExecute(null));
         Assert.False(item.PauseCommand.CanExecute(null));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_http_remove_from_list_deletes_the_record_but_keeps_its_file(bool useSelectionBar)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AriaGUI.RemoveTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "partial.bin");
+            await File.WriteAllTextAsync(path, "partial");
+            var repository = new SqliteDownloadRepository(Path.Combine(root, "downloads.db"));
+            await repository.InitializeAsync(default);
+            var row = Entry(DownloadStatus.Failed);
+            row = row with { Job = row.Job with { Destination = path } };
+            var intent = row with
+            {
+                Progress = new(DownloadStatus.Queued, 0, 100, 0),
+                PendingOperation = new(Guid.NewGuid(), row.Job.Id, DownloadAction.Add,
+                    OperationStatus.Pending, DateTimeOffset.UtcNow)
+            };
+            await repository.InsertIntentAsync(intent, default);
+            await repository.SaveAsync([row], default);
+            var store = new DownloadRuntimeStore();
+            var coordinator = new DownloadCoordinator(new MutableEngine(), store, TimeProvider.System,
+                repository, new TestDownloadDestination());
+            await coordinator.InitializeAsync();
+            using var view = new DownloadsViewModel(coordinator, store, new ImmediateDispatcher(), repository: repository);
+            var item = Assert.Single(view.Downloads);
+            Assert.True(item.RemoveCommand.CanExecute(null));
+            if (useSelectionBar)
+            {
+                view.SetSelection([row.Job.Id]);
+                await view.BatchRemoveCommand.ExecuteAsync(null);
+                Assert.Equal(BatchOutcome.Confirmed, Assert.Single(view.BatchResults).Outcome);
+            }
+            else await item.RemoveCommand.ExecuteAsync(null);
+            Assert.Null(await repository.GetAsync(row.Job.Id, default));
+            Assert.Empty(view.Downloads);
+            Assert.True(File.Exists(path));
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     [Theory]

@@ -827,7 +827,18 @@ public sealed partial class DownloadsTable : UserControl
 
     private void RowCheckLoaded(object sender, RoutedEventArgs args) => RowCheckReady?.Invoke(this, (CheckBox)sender);
     private void RowCheckTapped(object sender, TappedRoutedEventArgs args) => args.Handled = true;
-    private void RowCheckClick(object sender, RoutedEventArgs args) => RefreshSelectionChecks();
+    private void RowCheckClick(object sender, RoutedEventArgs args)
+    {
+        if (sender is CheckBox { DataContext: DownloadItemViewModel item } check)
+        {
+            if (check.IsChecked == true)
+            {
+                if (!TransferList.SelectedItems.Contains(item)) TransferList.SelectedItems.Add(item);
+            }
+            else TransferList.SelectedItems.Remove(item);
+        }
+        RefreshSelectionChecks();
+    }
 
     private void UpdateRealizedContainers()
     {

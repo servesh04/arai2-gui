@@ -89,9 +89,12 @@ public sealed partial class Aria2ProcessManager
                 {
                     var rpc = ConnectedClient();
                     var observed = await rpc.GetTorrentAsync(binding.EngineId, draft.Manifest, draft.Selection, draft.PayloadRoot, token).ConfigureAwait(false);
-                    if (draft.Stage == TorrentStage.Completed || observed?.Stage is TorrentStage.Publishing or TorrentStage.Failed
+                    if (observed?.Stage is TorrentStage.Publishing or TorrentStage.Failed
                         || observed?.Stage == TorrentStage.Stopped && draft.Stage != TorrentStage.Stopped)
-                        await rpc.RemoveFailedTorrentResultAsync(binding.EngineId, token).ConfigureAwait(false);
+                    {
+                        try { await rpc.RemoveFailedTorrentResultAsync(binding.EngineId, token).ConfigureAwait(false); }
+                        catch (EngineException ex) when (ex.Failure == EngineFailure.TransferNotFound) { }
+                    }
                     else if (observed is not null)
                         await rpc.ExecuteAsync(binding.EngineId, DownloadAction.Remove, null, token).ConfigureAwait(false);
                     await rpc.SaveSessionAsync(token).ConfigureAwait(false);

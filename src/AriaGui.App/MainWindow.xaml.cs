@@ -19,8 +19,18 @@ public sealed partial class MainWindow : Window
     private bool _enforcingMinimumSize;
     public event Action? ExitRequested;
     public void SetDesktopStatus(string message) { DesktopStatus.Text = message; DesktopStatus.Visibility = Visibility.Visible; }
-    public void SetTheme(AppTheme theme) => ((FrameworkElement)Content).RequestedTheme = theme switch
-        { AppTheme.Light => ElementTheme.Light, AppTheme.Dark => ElementTheme.Dark, _ => ElementTheme.Default };
+    public void SetTheme(AppTheme theme)
+    {
+        ((FrameworkElement)Content).RequestedTheme = theme switch
+            { AppTheme.Light => ElementTheme.Light, AppTheme.Dark => ElementTheme.Dark, _ => ElementTheme.Default };
+        if (AppWindowTitleBar.IsCustomizationSupported())
+            AppWindow.TitleBar.PreferredTheme = theme switch
+            {
+                AppTheme.Light => TitleBarTheme.Light,
+                AppTheme.Dark => TitleBarTheme.Dark,
+                _ => TitleBarTheme.UseDefaultAppMode
+            };
+    }
     public void ShowFromTray()
     {
         AppWindow.Show();
