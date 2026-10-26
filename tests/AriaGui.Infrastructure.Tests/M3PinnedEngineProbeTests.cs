@@ -43,7 +43,8 @@ public sealed class M3PinnedEngineProbeTests
         Assert.Equal(VerificationStatus.Verified, completed.Verification);
         Assert.Equal(connections, completed.Attempt.HttpConnections);
         Assert.Equal(bytes, await File.ReadAllBytesAsync(completed.Job.Destination));
-        Assert.True(origin.Bounded >= connections, $"Only {origin.Bounded} bounded requests.");
+        // The first origin body uses OpenAsync; only the additional streams use bounded ranges.
+        Assert.True(origin.Bounded >= connections - 1, $"Only {origin.Bounded} bounded requests.");
         Assert.True(origin.Maximum >= 2, $"Only {origin.Maximum} concurrent origin bodies.");
     }
     [Theory]

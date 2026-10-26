@@ -5,7 +5,7 @@
         <Border Style="{StaticResource AriaCardStyle}" Margin="{StaticResource AriaSpace1}">
             <StackPanel>
                 <TextBlock Text="AriaGUI" Style="{StaticResource TitleTextBlockStyle}" FontWeight="SemiBold" Margin="{StaticResource AriaSpace1}" />
-                <TextBlock Text="Version 0.8.0 beta 1" Style="{StaticResource AriaBodyTextStyle}" Margin="{StaticResource AriaSpace1}" />
+                <TextBlock Text="Version 1.0.0" Style="{StaticResource AriaBodyTextStyle}" Margin="{StaticResource AriaSpace1}" />
                 <TextBlock Text="aria2 version is shown when the engine is connected." Style="{StaticResource AriaMetadataTextStyle}"
                            TextWrapping="Wrap" Margin="{StaticResource AriaSpace1}" />
             </StackPanel>

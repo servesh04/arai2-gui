@@ -24,6 +24,8 @@ try {
         $options + @('-o', (Join-Path $appRoot 'host'))
     & dotnet @hostArgs
     if ($LASTEXITCODE -ne 0) { throw 'Portable native host publish failed.' }
+    & (Join-Path $PSScriptRoot 'Prepare-Aria2SourceBundle.ps1') -OutputDirectory (Join-Path $appRoot 'Source/aria2') -NoticeDirectory (Join-Path $appRoot 'Notices/EngineStatic')
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $appRoot
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/RELEASE_NOTES.md') -Destination $appRoot
     $zipPath = Join-Path $runRoot ('AriaGUI-' + $version + '-win-x64.zip')
     [IO.Compression.ZipFile]::CreateFromDirectory($appRoot, $zipPath, [IO.Compression.CompressionLevel]::Optimal, $true)

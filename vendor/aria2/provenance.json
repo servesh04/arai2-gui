@@ -6,5 +6,18 @@
   "sourceUrl": "https://github.com/aria2/aria2/tree/release-1.37.0",
   "archiveSha256": "67D015301EEF0B612191212D564C5BB0A14B5B9C4796B76454276A4D28D9B288",
   "executableSha256": "BE2099C214F63A3CB4954B09A0BECD6E2E34660B886D4C898D260FEBFE9D70C2",
-  "notices": ["COPYING", "LICENSE.OpenSSL", "AUTHORS", "README.mingw"]
+  "notices": ["COPYING", "LICENSE.OpenSSL", "AUTHORS", "README.mingw"],
+  "sourceArchives": [
+    {"component": "aria2", "name": "aria2-1.37.0.tar.xz", "url": "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.xz", "sha256": "60A420AD7085EB616CB6E2BDF0A7206D68FF3D37FB5A956DC44242EB2F79B66B"},
+    {"component": "GMP", "name": "gmp-6.3.0.tar.xz", "url": "https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.xz", "sha256": "A3C2B80201B89E68616F4AD30BC66AEE4927C3CE50E33929CA819D5C43538898"},
+    {"component": "Expat", "name": "expat-2.5.0.tar.bz2", "url": "https://github.com/libexpat/libexpat/releases/download/R_2_5_0/expat-2.5.0.tar.bz2", "sha256": "6F0E6E01F7B30025FA05C85FDAD1E5D0EC7FD35D9F61B22F34998DE11969FF67"},
+    {"component": "SQLite", "name": "sqlite-autoconf-3430100.tar.gz", "url": "https://www.sqlite.org/2023/sqlite-autoconf-3430100.tar.gz", "sha256": "39116C94E76630F22D54CD82C3CEA308565F1715F716D1B2527F1C9C969BA4D9"},
+    {"component": "zlib", "name": "zlib-1.3.tar.gz", "url": "https://zlib.net/fossils/zlib-1.3.tar.gz", "sha256": "FF0BA4C292013DBC27530B3A81E1F9A813CD39DE01CA5E0F8BF355702EFA593E"},
+    {"component": "c-ares", "name": "c-ares-1.19.1.tar.gz", "url": "https://github.com/c-ares/c-ares/releases/download/cares-1_19_1/c-ares-1.19.1.tar.gz", "sha256": "321700399B72ED0E037D0074C629E7741F6B2EC2DDA92956ABE3E9671D3E268E"},
+    {"component": "libssh2", "name": "libssh2-1.11.0.tar.bz2", "url": "https://libssh2.org/download/libssh2-1.11.0.tar.bz2", "sha256": "E56D81F01F090D3C6EAF5F56C645610FD1A90D92819541D0079AE363D1EED11E"}
+  ],
+  "buildFiles": [
+    {"name": "Dockerfile.mingw", "url": "https://raw.githubusercontent.com/aria2/aria2/release-1.37.0/Dockerfile.mingw", "sha256": "D1AD52D4920F5327149F344679B5632BC3DF7814A1E6188EAE0A5E95E5DB4107"},
+    {"name": "mingw-config", "url": "https://raw.githubusercontent.com/aria2/aria2/release-1.37.0/mingw-config", "sha256": "20A8FEA4C9619230045468DDBB74F4BB9F7C426F53A158AE8D39EE1D300398F5"}
+  ]
 }
